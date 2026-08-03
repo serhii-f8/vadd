@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { CreateObjectiveBody, ObjectiveCommand } from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { objectives, projects } from '../../db/schema.js'
+import type { AgentRegistry } from '../../agent/registry.js'
+import { agentSessions, objectives, projects } from '../../db/schema.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
 import { worktreePathFor } from '../../paths.js'
 import type { AppDeps } from '../app.js'
@@ -96,6 +97,10 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       if (objective.worktreePath && objective.branchName) {
         await removeWorktree(project.repoPath, objective.worktreePath, objective.branchName)
       }
+      // agent_sessions.objective_id has a foreign key on objectives.id with no
+      // cascade, so a discard with a recorded session must clear those rows
+      // first or the delete below fails the constraint.
+      db.delete(agentSessions).where(eq(agentSessions.objectiveId, objective.id)).run()
       db.delete(objectives).where(eq(objectives.id, objective.id)).run()
       bus.emit({
         objectiveId: objective.id,
@@ -105,7 +110,43 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       return reply.code(200).send({ ok: true })
     }
 
-    // 'prompt' and 'cancel' are wired in Task 11.
-    return reply.code(501).send({ error: 'Not implemented yet' })
+    const agents = deps.agents
+    if (!agents) return reply.code(500).send({ error: 'Agent registry is not configured' })
+
+    if (parsed.data.type === 'cancel') {
+      const live = agents.get(objective.id)
+      if (!live) return reply.code(409).send({ error: 'No active agent session' })
+      await live.port.cancel(live.sessionId)
+      bus.emit({ objectiveId: objective.id, type: 'prompt_cancelled', payload: {} })
+      return reply.code(200).send({ ok: true })
+    }
+
+    // type === 'prompt'
+    const text = parsed.data.text
+    let entry: Awaited<ReturnType<AgentRegistry['ensure']>>
+    try {
+      entry = await agents.ensure(objective)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      bus.emit({ objectiveId: objective.id, type: 'agent_start_failed', payload: { message } })
+      return reply.code(500).send({ error: message })
+    }
+
+    bus.emit({ objectiveId: objective.id, type: 'prompt_sent', payload: { text } })
+
+    // Do not await the turn: it can run for minutes, and progress is observable
+    // over SSE. The response only confirms the prompt was accepted.
+    void entry.port
+      .prompt(entry.sessionId, text)
+      .then((r) => bus.emit({ objectiveId: objective.id, type: 'prompt_finished', payload: r }))
+      .catch((err: unknown) =>
+        bus.emit({
+          objectiveId: objective.id,
+          type: 'prompt_failed',
+          payload: { message: err instanceof Error ? err.message : String(err) },
+        }),
+      )
+
+    return reply.code(202).send({ ok: true, sessionId: entry.sessionId })
   })
 }
