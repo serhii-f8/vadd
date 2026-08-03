@@ -30,7 +30,11 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(vite@8.2.0(esbuild@0.28.1)(tsx@4.23.4))
 
-  packages/core: {}
+  packages/core:
+    dependencies:
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
 
 packages:
 
