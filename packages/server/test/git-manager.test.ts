@@ -57,6 +57,24 @@ test('pruneWorktrees is safe on a clean repo', async () => {
   await expect(pruneWorktrees(repo)).resolves.toBeUndefined()
 })
 
+test('removeWorktree throws rather than silently leaking a stuck worktree', async () => {
+  const repo = makeTempRepo()
+  const wt = join(mkdtempSync(join(tmpdir(), 'vadd-wt-')), 'objective')
+  await createWorktree(repo, wt, 'vadd/stuck123')
+
+  // A lock file makes `worktree remove` fail while the directory still exists.
+  // prune is a no-op here, so without the post-condition check this call would
+  // resolve successfully and leave the worktree registered.
+  const { writeFileSync, readdirSync } = await import('node:fs')
+  const adminDir = join(repo, '.git', 'worktrees')
+  const entry = readdirSync(adminDir)[0]
+  if (!entry) throw new Error('expected a worktree admin entry')
+  writeFileSync(join(adminDir, entry, 'locked'), 'held by test\n')
+
+  await expect(removeWorktree(repo, wt, 'vadd/stuck123')).rejects.toMatchObject({ code: 'EGIT' })
+  expect(await listWorktrees(repo)).toHaveLength(2)
+})
+
 test('GitError is thrown, not a raw execa error', async () => {
   const notRepo = mkdtempSync(join(tmpdir(), 'vadd-plain-'))
   await expect(validateRepo(notRepo)).rejects.toBeInstanceOf(GitError)

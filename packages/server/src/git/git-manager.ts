@@ -52,6 +52,14 @@ export async function createWorktree(
  * Idempotent teardown. `git worktree remove` fails if the directory has already
  * been deleted, so a prune-and-retry covers the crash-between-steps case; the
  * branch delete is best-effort because the branch may never have been created.
+ *
+ * `pruneWorktrees` only clears admin entries whose working directories are
+ * already gone — it is a no-op if `remove` failed for any other reason (a
+ * stale `.git/worktrees/<name>/locked` file, a permissions error, ...). Left
+ * unchecked, this function would then resolve successfully while the
+ * worktree stayed registered and on disk, silently violating the leak-free
+ * lifecycle guarantee. The post-condition check below turns that into a
+ * loud `EGIT` failure instead.
  */
 export async function removeWorktree(
   repoPath: string,
@@ -69,6 +77,15 @@ export async function removeWorktree(
     // Branch absent or already deleted — not an error for teardown.
   }
   await pruneWorktrees(repoPath)
+
+  const target = resolve(worktreePath)
+  if ((await listWorktrees(repoPath)).some((w) => resolve(w) === target)) {
+    throw new GitError(
+      `Worktree still registered after removal: ${worktreePath}. ` +
+        'Check for a stale lock in .git/worktrees or a permissions problem.',
+      'EGIT',
+    )
+  }
 }
 
 /** Absolute paths of every worktree, including the main one. */
