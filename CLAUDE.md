@@ -4,19 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-This repo is **pre-implementation**. It contains only:
+This repo is **pre-implementation** — currently in **M0 (Skeleton)**, spec §9, weeks 1–2. It contains only:
 
 - `vadd-spec-final.md` — the authoritative, locked v1.0 spec (read it before writing any code)
-- `package.json` — an npm-init stub (`name: flowforge`, no real scripts); the spec calls for a **pnpm workspaces monorepo**, so this stub will be replaced, not extended
-- Not a git repository yet
+- `docs/superpowers/specs/2026-08-03-m0-skeleton-design.md` — the approved M0 design; read it alongside the spec before touching M0 work
+- `package.json` — an npm-init stub (`name: vadd`, no real scripts); the spec calls for a **pnpm workspaces monorepo**, so this stub will be replaced, not extended
 
 There is no source, no build, no test runner, and no lint config. Commands below come from the spec and will only work after the corresponding scaffolding exists. Do not invent additional commands or "common tasks" until they are real.
+
+Verified on this machine 2026-08-03: Node v22.20.0, pnpm 11.9.0, git 2.43.0, `@zed-industries/claude-code-acp@0.16.2`, `@zed-industries/agent-client-protocol@0.4.5`. Pin the two ACP packages exactly (spec §2).
 
 ## The spec is binding
 
 `vadd-spec-final.md` is marked FINAL. Every choice in §1 (D1–D15) and §2 (stack) is locked. **Deviations require editing the spec file first** — if a task implies a different framework, a different isolation model, telemetry, gamification, an orchestrator role, or anything in §11 ("Explicitly out"), stop and raise it rather than implementing it.
 
-Notes on naming: the directory is `flowforge`, the product in the spec is **VADD** (Visual AI Development Dashboard), and the spec's repo layout is rooted at `vadd/`. Ask which name wins before creating the workspace root.
+Naming is settled: **VADD everywhere** — packages `@vadd/*`, binary `vadd`, state in `~/.vadd/`, fence tag `vadd-event`, repo config `.vadd/config.json`. (The directory was briefly named `flowforge`; that name is retired.)
+
+## M0 scope
+
+The M0 design spec fixes three boundaries the spec's one-line M0 summary left open. Don't re-litigate these without reading it:
+
+- **Five tables migrate in M0** — `projects`, `events`, `agent_sessions`, `settings`, and a **reduced `objectives`** (`id, projectId, title, goalText, worktreePath, branchName, status, createdAt, updatedAt`). `objectives` is present because D4 keys worktree paths on `objectiveId`. The other four §3 tables are M1.
+- **`AgentPort` is defined in M0** with `update: unknown` raw passthrough. M1 adds the contract pipeline as a transform over `onUpdate` — the interface shape must not change.
+- **ACP is bidirectional.** `claude-code-acp` calls back with `session/request_permission` and `fs/*`; unanswered, it hangs on the first file write. M0 auto-approves resolved paths inside the objective's worktree and rejects everything outside.
+
+Deferred out of M0: XState machine, contract pipeline, EvidenceCollector, verification spec resolution, shadcn/ui, `npx` packaging, Playwright.
 
 ## What VADD is
 
@@ -49,10 +61,11 @@ Three concerns are where the real complexity lives; they are worth understanding
 ## Planned commands (post-scaffold)
 
 ```
-pnpm test     # Vitest — unit + eval harness
-pnpm eval     # eval harness: per-event-type precision/recall vs. golden transcripts
-pnpm lint     # Biome (lint + format; the only such tool)
-npx vadd      # packaged entry point → localhost web app
+pnpm test                          # Vitest — unit + eval harness
+pnpm eval                          # eval harness: precision/recall vs. golden transcripts (M1)
+pnpm lint                          # Biome (lint + format; the only such tool)
+pnpm transcript:export <objId>     # dump events rows → evals/transcripts/<name>.jsonl
+npx vadd                           # packaged entry point → localhost web app (M2)
 ```
 
-Playwright covers 2–3 smoke E2E tests only. For a single Vitest file: `pnpm vitest run <path>`; single test: add `-t "<name>"`.
+Single Vitest file: `pnpm vitest run <path>`; single test: add `-t "<name>"`. The real-adapter integration test is skipped unless `VADD_E2E=1`. Playwright covers 2–3 smoke E2E tests and lands in M2, not M0.
