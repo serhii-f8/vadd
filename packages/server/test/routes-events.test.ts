@@ -15,6 +15,14 @@ async function listening() {
   return { app, bus, url: `http://127.0.0.1:${addr.port}` }
 }
 
+async function until(cond: () => boolean, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!cond()) {
+    if (Date.now() > deadline) throw new Error('condition not met within timeout')
+    await new Promise((r) => setTimeout(r, 5))
+  }
+}
+
 /** Reads SSE frames until `count` events arrive, then aborts. */
 async function readFrames(url: string, headers: Record<string, string>, count: number) {
   const ac = new AbortController()
@@ -43,7 +51,7 @@ async function readFrames(url: string, headers: Record<string, string>, count: n
 test('live events stream to a connected client', async () => {
   const { app, bus, url } = await listening()
   const pending = readFrames(`${url}/api/events`, {}, 2)
-  await new Promise((r) => setTimeout(r, 100))
+  await until(() => bus.subscriberCount > 0)
   bus.emit({ type: 'a', payload: { n: 1 } })
   bus.emit({ type: 'b', payload: { n: 2 } })
   const frames = await pending
@@ -74,7 +82,7 @@ test('the lastId query parameter works when the header is absent', async () => {
 test('objectiveId filters the stream', async () => {
   const { app, bus, url } = await listening()
   const pending = readFrames(`${url}/api/events?objectiveId=o1`, {}, 1)
-  await new Promise((r) => setTimeout(r, 100))
+  await until(() => bus.subscriberCount > 0)
   bus.emit({ objectiveId: 'o2', type: 'ignored', payload: {} })
   bus.emit({ objectiveId: 'o1', type: 'wanted', payload: {} })
   const frames = await pending
@@ -84,9 +92,17 @@ test('objectiveId filters the stream', async () => {
 
 test('a disconnected client is unsubscribed', async () => {
   const { app, bus, url } = await listening()
-  await readFrames(`${url}/api/events`, {}, 0)
-  await new Promise((r) => setTimeout(r, 100))
-  expect(() => bus.emit({ type: 'after-close', payload: {} })).not.toThrow()
+  const ac = new AbortController()
+  await fetch(`${url}/api/events`, { signal: ac.signal })
+  await until(() => bus.subscriberCount === 1)
+
+  ac.abort()
+
+  // Assert the subscriber is actually gone. `emit()` not throwing proves
+  // nothing here — writing to a destroyed socket does not throw synchronously,
+  // so that assertion would pass even if unsubscribe were a no-op.
+  await until(() => bus.subscriberCount === 0)
+  expect(bus.subscriberCount).toBe(0)
   await app.close()
 })
 

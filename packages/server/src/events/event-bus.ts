@@ -67,4 +67,14 @@ export class EventBus {
         : and(gt(events.id, lastId), eq(events.objectiveId, objectiveId))
     return this.db.select().from(events).where(where).orderBy(events.id).all() as VaddEvent[]
   }
+
+  /**
+   * Live subscriber count. Exists so tests can wait on the real attach/detach
+   * signal instead of sleeping a guessed interval — a sleep that loses the race
+   * makes the test hang to timeout rather than fail, which reads as a hang
+   * rather than a bug.
+   */
+  get subscriberCount(): number {
+    return this.#subs.size
+  }
 }

@@ -30,12 +30,15 @@ test('subscribers receive events for their objective only', () => {
   expect(forAll).toHaveBeenCalledTimes(2)
 })
 
-test('unsubscribe stops delivery', () => {
+test('unsubscribe stops delivery and drops the subscriber count', () => {
   const b = bus()
   const cb = vi.fn()
+  expect(b.subscriberCount).toBe(0)
   const off = b.subscribe(null, cb)
+  expect(b.subscriberCount).toBe(1)
   b.emit({ type: 'x', payload: {} })
   off()
+  expect(b.subscriberCount).toBe(0)
   b.emit({ type: 'y', payload: {} })
   expect(cb).toHaveBeenCalledTimes(1)
 })
