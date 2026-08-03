@@ -64,14 +64,18 @@ export class AgentRegistry {
     })
 
     port.onExit?.((info) => {
+      // `stop()` removes the entry from #live *before* killing the child, so an
+      // exit that still finds an entry here was not intentional. Emitting
+      // unconditionally would write a false crash on every discard and corrupt
+      // the agent-flakiness signal this milestone exists to measure.
       const entry = this.#live.get(objective.id)
-      if (entry) {
-        this.db
-          .update(agentSessions)
-          .set({ status: 'failed', endedAt: new Date().toISOString() })
-          .where(eq(agentSessions.id, entry.rowId))
-          .run()
-      }
+      if (!entry) return
+
+      this.db
+        .update(agentSessions)
+        .set({ status: 'failed', endedAt: new Date().toISOString() })
+        .where(eq(agentSessions.id, entry.rowId))
+        .run()
       this.#live.delete(objective.id)
       this.bus.emit({
         objectiveId: objective.id,

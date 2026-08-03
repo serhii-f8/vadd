@@ -141,7 +141,7 @@ test('permission decisions reach the event log with their reason', async () => {
 })
 
 test('discarding an objective stops its agent', async () => {
-  const { app, agents, objective } = await withObjective()
+  const { app, bus, agents, objective } = await withObjective()
   await app.inject({
     method: 'POST',
     url: `/api/objectives/${objective.id}/events`,
@@ -154,5 +154,10 @@ test('discarding an objective stops its agent', async () => {
     payload: { type: 'integrate', action: 'discard' },
   })
   expect(res.statusCode).toBe(200)
+
+  // An intentional stop must not look like a crash. Without the guard in the
+  // onExit handler this emits agent_failed and poisons the flakiness signal.
+  const failures = bus.since(objective.id, 0).filter((e) => e.type === 'agent_failed')
+  expect(failures).toHaveLength(0)
   await agents.stopAll()
 })
