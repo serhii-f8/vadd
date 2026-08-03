@@ -8,6 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "dev": "pnpm --parallel --filter @vadd/server --filter @vadd/web dev",
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "vitest run",
