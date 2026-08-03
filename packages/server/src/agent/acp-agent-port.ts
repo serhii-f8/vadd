@@ -163,8 +163,8 @@ export class AcpAgentPort implements AgentPort {
         }
       }) => {
         const paths = pathsFromToolCall(params.toolCall, this.#knownLocations)
-        const { allowed } = decidePermission(this.opts.worktreePath, paths)
-        this.opts.onPermission?.({ allowed, paths })
+        const { allowed, reason } = decidePermission(this.opts.worktreePath, paths)
+        this.opts.onPermission?.({ allowed, paths, reason })
 
         const wanted = allowed ? 'allow_once' : 'reject_once'
         const option =

@@ -25,7 +25,7 @@ function makePort(opts: {
   mode: string
   worktreePath?: string
   permissionPath?: string
-  onPermission?: (d: { allowed: boolean; paths: string[] }) => void
+  onPermission?: (d: { allowed: boolean; paths: string[]; reason?: string }) => void
 }) {
   const wt = opts.worktreePath ?? mkdtempSync(join(tmpdir(), 'vadd-wt-'))
   return new AcpAgentPort({
@@ -60,7 +60,7 @@ test('start, newSession, prompt and stop complete against a fake agent', async (
 
 test('permission is granted for a path inside the worktree', async () => {
   const wt = mkdtempSync(join(tmpdir(), 'vadd-wt-'))
-  const decisions: { allowed: boolean; paths: string[] }[] = []
+  const decisions: { allowed: boolean; paths: string[]; reason?: string }[] = []
   const port = makePort({
     mode: 'permission',
     worktreePath: wt,
@@ -70,13 +70,14 @@ test('permission is granted for a path inside the worktree', async () => {
   await port.start()
   const { sessionId } = await port.newSession({ cwd: wt })
   await port.prompt(sessionId, 'write a file')
-  expect(decisions).toEqual([{ allowed: true, paths: [join(wt, 'src', 'new.ts')] }])
+  expect(decisions).toHaveLength(1)
+  expect(decisions[0]).toMatchObject({ allowed: true, paths: [join(wt, 'src', 'new.ts')] })
   await port.stop()
 })
 
 test('permission is refused for a path outside the worktree', async () => {
   const wt = mkdtempSync(join(tmpdir(), 'vadd-wt-'))
-  const decisions: { allowed: boolean; paths: string[] }[] = []
+  const decisions: { allowed: boolean; paths: string[]; reason?: string }[] = []
   const port = makePort({
     mode: 'permission',
     worktreePath: wt,
@@ -86,7 +87,10 @@ test('permission is refused for a path outside the worktree', async () => {
   await port.start()
   const { sessionId } = await port.newSession({ cwd: wt })
   await port.prompt(sessionId, 'read a secret')
-  expect(decisions).toEqual([{ allowed: false, paths: ['/etc/passwd'] }])
+  expect(decisions).toHaveLength(1)
+  expect(decisions[0]).toMatchObject({ allowed: false, paths: ['/etc/passwd'] })
+  // The reason is the diagnostic a rejection is logged with — assert it exists.
+  expect(decisions[0]?.reason).toMatch(/outside the objective worktree/i)
   await port.stop()
 })
 
