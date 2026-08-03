@@ -22,6 +22,11 @@ export function registerEventRoutes(app: FastifyInstance, { bus }: AppDeps): voi
       'X-Accel-Buffering': 'no',
     })
 
+    // writeHead() only buffers — Node sends headers with the first body chunk.
+    // Without this, a client with no backlog to replay receives zero bytes until
+    // the keep-alive fires, leaving EventSource unopened for 15 seconds.
+    reply.raw.flushHeaders()
+
     const write = (e: VaddEvent) => {
       reply.raw.write(`id: ${e.id}\ndata: ${JSON.stringify(e)}\n\n`)
     }

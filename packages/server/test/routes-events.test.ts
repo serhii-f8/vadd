@@ -89,3 +89,19 @@ test('a disconnected client is unsubscribed', async () => {
   expect(() => bus.emit({ type: 'after-close', payload: {} })).not.toThrow()
   await app.close()
 })
+
+test('the stream opens promptly when there is nothing to replay', async () => {
+  const { app, url } = await listening()
+  const ac = new AbortController()
+  // fetch resolves when response headers arrive. If writeHead is left buffered,
+  // that does not happen until the 15s keep-alive, so this races a short timer.
+  const res = await Promise.race([
+    fetch(`${url}/api/events`, { signal: ac.signal }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('headers did not flush within 2s')), 2000),
+    ),
+  ])
+  expect(res.headers.get('content-type')).toMatch(/text\/event-stream/)
+  ac.abort()
+  await app.close()
+})
