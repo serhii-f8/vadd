@@ -1,0 +1,69 @@
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { expect, test } from 'vitest'
+import { createDb } from '../src/db/client.js'
+import { EventBus } from '../src/events/event-bus.js'
+import { buildApp } from '../src/http/app.js'
+import { makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
+
+function app() {
+  const home = withTempHome()
+  const db = createDb(`${home}/vadd.db`)
+  return buildApp({ db, bus: new EventBus(db) })
+}
+
+test('registering a valid repo returns 201 and persists it', async () => {
+  const a = app()
+  const repo = makeTempRepo()
+  const res = await a.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: repo } })
+  expect(res.statusCode).toBe(201)
+  const body = res.json()
+  expect(body.repoPath).toContain('vadd-repo-')
+  expect(body.id).toBeTruthy()
+
+  const list = await a.inject({ method: 'GET', url: '/api/projects' })
+  expect(list.json()).toHaveLength(1)
+})
+
+test('a non-git path is rejected with a specific message', async () => {
+  const a = app()
+  const plain = mkdtempSync(join(tmpdir(), 'vadd-plain-'))
+  const res = await a.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: plain } })
+  expect(res.statusCode).toBe(400)
+  expect(res.json().error).toMatch(/not a git repository/i)
+})
+
+test('a missing path reports differently from a non-repo', async () => {
+  const a = app()
+  const res = await a.inject({
+    method: 'POST',
+    url: '/api/projects',
+    payload: { repoPath: join(tmpdir(), 'vadd-nope-99999') },
+  })
+  expect(res.statusCode).toBe(400)
+  expect(res.json().error).toMatch(/does not exist/i)
+})
+
+test('an invalid body is rejected by schema validation', async () => {
+  const a = app()
+  const res = await a.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: '' } })
+  expect(res.statusCode).toBe(400)
+})
+
+test('registering the same repo twice returns 409', async () => {
+  const a = app()
+  const repo = makeTempRepo()
+  await a.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: repo } })
+  const res = await a.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: repo } })
+  expect(res.statusCode).toBe(409)
+})
+
+test('registration appends a project_registered event', async () => {
+  const home = withTempHome()
+  const db = createDb(`${home}/vadd.db`)
+  const bus = new EventBus(db)
+  const a = buildApp({ db, bus })
+  await a.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: makeTempRepo() } })
+  expect(bus.since(null, 0).map((e) => e.type)).toContain('project_registered')
+})
