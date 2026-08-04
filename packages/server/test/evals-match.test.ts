@@ -56,6 +56,28 @@ test('the earliest candidate wins and a duplicate counts as a false positive', (
   expect(r.falsePositives).toHaveLength(1)
 })
 
+test('a leading (?i) makes the regex match regardless of case', () => {
+  const caseInsensitive = LabelFile.parse({
+    schemaVersion: 1,
+    transcript: 't',
+    labels: [{ turn: 1, type: 'evidence', key: 'ci', match: { headline: '(?i)\\d+ TESTS?' } }],
+  })
+  // The pattern is uppercase, the emission is lowercase: this only matches if
+  // the `i` flag is actually applied, not merely accepted at parse time.
+  const r = matchEmissions(caseInsensitive.labels, new Map([[1, [evidence('OK (12 tests)')]]]))
+  expect(r.matched).toHaveLength(1)
+})
+
+test('a non-leading (?i) is unsupported and rejected at load time, not silently mishandled', () => {
+  expect(() =>
+    LabelFile.parse({
+      schemaVersion: 1,
+      transcript: 't',
+      labels: [{ turn: 1, type: 'evidence', key: 'k', match: { headline: 'foo(?i)bar' } }],
+    }),
+  ).toThrow()
+})
+
 test('ignores emissions of non-gated types entirely', () => {
   const status: AgentEvent = { type: 'status', phase: 'executing', headline: 'x' }
   const r = matchEmissions(labels.labels, new Map([[1, [status, evidence('OK (12 tests)')]]]))

@@ -6,9 +6,14 @@ export const GATED_TYPES = ['decision_needed', 'evidence'] as const
 export type GatedType = (typeof GATED_TYPES)[number]
 
 /**
- * Compiles a label-file pattern to a RegExp. A leading `(?i)` — the common
- * portable case-insensitive marker (Go RE2, PCRE) — is stripped and mapped to
- * JS's `i` flag, since plain `new RegExp` rejects it as an invalid group.
+ * Compiles a label-file pattern to a RegExp.
+ *
+ * Contract for anyone hand-writing these patterns: a pattern that starts with
+ * `(?i)` is matched case-insensitively — the `(?i)` prefix itself is stripped
+ * before matching. `(?i)` anywhere other than the very start (e.g. `foo(?i)bar`)
+ * is not supported and is rejected at label-file load time, not silently
+ * matched literally or mishandled. Everything else is standard JavaScript
+ * `RegExp` syntax.
  */
 export function compileRegex(pattern: string): RegExp {
   const caseInsensitive = /^\(\?i\)([\s\S]*)$/.exec(pattern)
