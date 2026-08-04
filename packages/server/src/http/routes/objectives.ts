@@ -6,13 +6,8 @@ import { AgentStoppedError } from '../../agent/acp-agent-port.js'
 import type { AgentRegistry } from '../../agent/registry.js'
 import { agentSessions, objectives, projects } from '../../db/schema.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
-import { worktreePathFor } from '../../paths.js'
+import { branchNameFor, worktreePathFor } from '../../paths.js'
 import type { AppDeps } from '../app.js'
-
-/** Branch names use the first 8 characters of the objective UUID. */
-export function branchNameFor(objectiveId: string): string {
-  return `vadd/${objectiveId.slice(0, 8)}`
-}
 
 /** ACP rejects with plain objects, so `String(err)` yields "[object Object]". */
 export function errorMessage(err: unknown): string {
@@ -21,7 +16,23 @@ export function errorMessage(err: unknown): string {
   if (err && typeof err === 'object') {
     const o = err as { message?: unknown; code?: unknown; data?: unknown }
     if (typeof o.message === 'string') {
-      return o.code === undefined ? o.message : `${o.message} (code ${String(o.code)})`
+      const head = o.code === undefined ? o.message : `${o.message} (code ${String(o.code)})`
+      // `data` is where JSON-RPC puts the actionable part. The SDK's own
+      // helpers pair a constant message ("Internal error", "Authentication
+      // required") with a populated `data`, so dropping it discards everything
+      // that would tell the user what to do. Truncated so a zod error tree
+      // cannot flood the event log or the page's error banner.
+      if (o.data !== undefined) {
+        try {
+          const detail = JSON.stringify(o.data)
+          if (detail && detail !== '{}') {
+            return `${head}: ${detail.length > 300 ? `${detail.slice(0, 300)}…` : detail}`
+          }
+        } catch {
+          // A circular or unserialisable `data` is not worth failing over.
+        }
+      }
+      return head
     }
     try {
       return JSON.stringify(err)

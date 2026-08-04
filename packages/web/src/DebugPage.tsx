@@ -26,12 +26,23 @@ export function DebugPage() {
     const es = new EventSource(`/api/events?objectiveId=${objective.id}`)
     es.onmessage = (m) => setEvents((prev) => [...prev, JSON.parse(m.data) as VaddEvent])
     es.onerror = () => setError('SSE connection lost — retrying')
+    // EventSource reconnects silently, so without this the "connection lost"
+    // banner stayed up forever after a blip that had already healed.
+    es.onopen = () => setError((e) => (e?.startsWith('SSE connection lost') ? null : e))
     return () => es.close()
   }, [objective])
 
+  // One action at a time. Two clicks on Send used to issue two concurrent
+  // prompts; the registry now serialises agent startup, but firing duplicate
+  // requests at all is not something to rely on the server to absorb.
+  const [busy, setBusy] = useState(false)
   const run = (fn: () => Promise<unknown>) => () => {
+    if (busy) return
+    setBusy(true)
     setError(null)
-    fn().catch((e: Error) => setError(e.message))
+    fn()
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setBusy(false))
   }
 
   return (
@@ -55,7 +66,8 @@ export function DebugPage() {
           />
           <button
             type="button"
-            className="rounded bg-black px-3 py-1 text-white"
+            className="rounded bg-black px-3 py-1 text-white disabled:opacity-40"
+            disabled={busy}
             onClick={run(async () => {
               await api.registerProject(repoPath)
               setProjects(await api.listProjects())
@@ -90,7 +102,7 @@ export function DebugPage() {
         <button
           type="button"
           className="rounded bg-black px-3 py-1 text-white disabled:opacity-40"
-          disabled={projects.length === 0}
+          disabled={busy || projects.length === 0}
           onClick={run(async () => {
             const first = projects[0]
             if (!first) return
@@ -122,7 +134,7 @@ export function DebugPage() {
           <button
             type="button"
             className="rounded bg-black px-3 py-1 text-white disabled:opacity-40"
-            disabled={!objective}
+            disabled={busy || !objective}
             onClick={run(async () => {
               if (objective) await api.sendPrompt(objective.id, prompt)
             })}
@@ -132,7 +144,7 @@ export function DebugPage() {
           <button
             type="button"
             className="rounded border px-3 py-1 disabled:opacity-40"
-            disabled={!objective}
+            disabled={busy || !objective}
             onClick={run(async () => {
               if (!objective) return
               await api.discard(objective.id)

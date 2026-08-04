@@ -71,3 +71,20 @@ test('registration appends a project_registered event', async () => {
   await a.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: makeTempRepo() } })
   expect(bus.since(null, 0).map((e) => e.type)).toContain('project_registered')
 })
+
+test('a failed registration appends project_registration_failed with the reason', async () => {
+  // Only the success path had event coverage, so the failure event could have
+  // stopped firing without a single test noticing.
+  const home = withTempHome()
+  const db = createDb(`${home}/vadd.db`)
+  const bus = new EventBus(db)
+  const a = buildApp({ db, bus })
+  await a.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: home } })
+
+  const failed = bus.since(null, 0).find((e) => e.type === 'project_registration_failed')
+  expect(failed).toBeDefined()
+  expect(failed?.payload).toMatchObject({ repoPath: home })
+  expect((failed?.payload as { message?: string } | undefined)?.message).toMatch(
+    /not a git repository/i,
+  )
+})

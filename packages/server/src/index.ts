@@ -35,8 +35,20 @@ async function shutdown(signal: string) {
   if (shuttingDown) return
   shuttingDown = true
   console.log(`\nReceived ${signal}, shutting down…`)
-  await agents.stopAll()
-  await app.close()
+  // Each step is isolated: a throw in stopAll() must not skip app.close(), and
+  // neither may skip the exit. Previously this was fire-and-forget, so one
+  // rejection aborted the process before it stopped anything — the opposite of
+  // what a shutdown handler exists to do, and it would strand adapters.
+  try {
+    await agents.stopAll()
+  } catch (err) {
+    console.error('Failed to stop agents cleanly:', err)
+  }
+  try {
+    await app.close()
+  } catch (err) {
+    console.error('Failed to close the server cleanly:', err)
+  }
   process.exit(0)
 }
 

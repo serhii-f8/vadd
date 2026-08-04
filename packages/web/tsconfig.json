@@ -6,6 +6,13 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "noEmit": true,
+    // `composite: false` with `noEmit` means tsc -b can never mark this project
+    // up to date, so it is re-checked on every build and reports a misleading
+    // "output file ... does not exist" reason. That is the trade we want: Vite
+    // strips types without checking them, so this project's only type safety is
+    // the root `tsc -b` visiting it every time. Do not "fix" the cache warning
+    // by dropping the reference from the root tsconfig — that reinstates the
+    // blind spot where packages/web went unchecked entirely.
     "composite": false
   },
   "include": ["src", "vite.config.ts"]

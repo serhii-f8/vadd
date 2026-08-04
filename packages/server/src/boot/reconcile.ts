@@ -3,8 +3,7 @@ import type { Db } from '../db/client.js'
 import { agentSessions, objectives, projects } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
 import { pruneWorktrees, removeWorktree } from '../git/git-manager.js'
-import { branchNameFor } from '../http/routes/objectives.js'
-import { worktreePathFor } from '../paths.js'
+import { branchNameFor, worktreePathFor } from '../paths.js'
 
 /**
  * Two sweeps, both from design §5.
@@ -27,10 +26,15 @@ export async function reconcileOnBoot(
       const branch = o.branchName ?? branchNameFor(o.id)
       try {
         await removeWorktree(project.repoPath, path, branch)
-      } catch {
-        // Best-effort: the worktree may never have been created.
+      } catch (err) {
+        // Best-effort: the worktree may never have been created. But say so —
+        // silently swallowing this leaves an operator unable to tell a genuine
+        // teardown failure from a no-op, across every boot.
+        console.warn(`reconcile: could not remove worktree ${path}:`, err)
       }
-      await pruneWorktrees(project.repoPath).catch(() => {})
+      await pruneWorktrees(project.repoPath).catch((err: unknown) => {
+        console.warn(`reconcile: prune failed for ${project.repoPath}:`, err)
+      })
     }
     db.delete(objectives).where(eq(objectives.id, o.id)).run()
   }

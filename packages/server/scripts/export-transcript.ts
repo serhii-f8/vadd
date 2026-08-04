@@ -1,14 +1,35 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { asc, eq } from 'drizzle-orm'
 import { createDb } from '../src/db/client.js'
 import { events } from '../src/db/schema.js'
-import { dbPath } from '../src/paths.js'
+import { dbPath, vaddHome } from '../src/paths.js'
 
 const [objectiveId, nameArg] = process.argv.slice(2)
 if (!objectiveId) {
   console.error('Usage: pnpm transcript:export <objectiveId> [name]')
+  process.exit(1)
+}
+
+// A name is a filename, not a path. Without this, `../../pwned` writes outside
+// the anchored output directory and silently clobbers whatever is there.
+if (
+  nameArg !== undefined &&
+  (nameArg.includes('/') || nameArg.includes('\\') || nameArg === '..')
+) {
+  console.error(`Invalid name "${nameArg}": it must be a plain filename, with no path separators.`)
+  process.exit(1)
+}
+
+// createDb() CREATES and migrates an empty database when none exists, so a
+// wrong or unset VADD_HOME would otherwise report "no events found" — which
+// reads as a bad objective id rather than as the wrong home directory.
+if (!existsSync(dbPath())) {
+  console.error(
+    `No VADD database at ${dbPath()}. Set VADD_HOME if your state lives elsewhere ` +
+      `(currently ${vaddHome()}), or start the server once to create it.`,
+  )
   process.exit(1)
 }
 

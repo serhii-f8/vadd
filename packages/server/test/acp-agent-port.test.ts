@@ -149,6 +149,63 @@ test('permission is refused for a path outside the worktree', async () => {
   await port.stop()
 })
 
+test('an inside path is NOT escalated to allow_always when allow_once is absent', async () => {
+  // In this adapter allow_always maps to `acceptEdits`, which sets the session's
+  // permission mode and thereafter bypasses requestPermission entirely for every
+  // Edit and Write. Falling back to it would mean one missing allow_once
+  // silently disables the whole containment policy for the rest of the session.
+  const wt = mkdtempSync(join(tmpdir(), 'vadd-wt-'))
+  const decisions: { allowed: boolean; paths: string[]; reason?: string }[] = []
+  const port = makePort({
+    mode: 'permission-always-only',
+    worktreePath: wt,
+    permissionPath: join(wt, 'src', 'new.ts'),
+    onPermission: (d) => decisions.push(d),
+  })
+  const updates: RawAgentUpdate[] = []
+  port.onUpdate((u) => updates.push(u))
+
+  await port.start()
+  const { sessionId } = await port.newSession({ cwd: wt })
+  await port.prompt(sessionId, 'write a file')
+
+  // The path IS inside, so the policy allows it...
+  expect(decisions[0]).toMatchObject({ allowed: true })
+  // ...but with no allow_once on offer it declines rather than taking the
+  // broader grant.
+  const echoed = updates.find(
+    (u) => (u.update as { sessionUpdate?: string }).sessionUpdate === 'permission_outcome',
+  )?.update as { outcome?: { outcome?: { outcome?: string } } }
+  expect(echoed?.outcome?.outcome?.outcome).toBe('cancelled')
+  // Nothing selected — least of all the session-wide grant.
+  expect(JSON.stringify(echoed)).not.toContain('yes-always')
+  expect(JSON.stringify(echoed)).not.toContain('selected')
+
+  await port.stop()
+})
+
+test('a refusal through the fs write callback is logged with a reason', async () => {
+  // The requestPermission path logs `reason`; the fs callbacks used to log it
+  // as undefined, while the milestone requires every refusal to record why.
+  const wt = mkdtempSync(join(tmpdir(), 'vadd-wt-'))
+  const decisions: { allowed: boolean; paths: string[]; reason?: string }[] = []
+  const port = makePort({
+    mode: 'fs-write-outside',
+    worktreePath: wt,
+    permissionPath: join(mkdtempSync(join(tmpdir(), 'vadd-outside-')), 'stolen.txt'),
+    onPermission: (d) => decisions.push(d),
+  })
+  await port.start()
+  const { sessionId } = await port.newSession({ cwd: wt })
+  await port.prompt(sessionId, 'write outside the worktree')
+
+  expect(decisions).toHaveLength(1)
+  expect(decisions[0]?.allowed).toBe(false)
+  expect(decisions[0]?.reason).toMatch(/outside the objective worktree/i)
+
+  await port.stop()
+})
+
 test('a crashing agent rejects the pending prompt rather than hanging', async () => {
   const port = makePort({ mode: 'crash-on-prompt' })
   const exits: { code: number | null }[] = []
@@ -161,11 +218,22 @@ test('a crashing agent rejects the pending prompt rather than hanging', async ()
   await port.stop()
 })
 
-test('stop is safe to call twice', async () => {
-  const port = makePort({ mode: 'normal' })
+test('stop is safe to call twice, including concurrently', async () => {
+  // The original version stopped an already-dead child and so passed with the
+  // #stopped guard deleted — it asserted a property that held either way. The
+  // meaningful case is two stops racing against a LIVE child: exactly one exit
+  // must be observed, because a second one would drive a second agent_failed
+  // through the registry's onExit handler.
+  const port = makePort({ mode: 'hang-on-prompt' })
+  const exits: { code: number | null }[] = []
+  port.onExit((e) => exits.push(e))
   await port.start()
-  await port.stop()
+  const { sessionId } = await port.newSession({ cwd: process.cwd() })
+  void port.prompt(sessionId, 'a turn that never finishes').catch(() => {})
+
+  await Promise.all([port.stop(), port.stop()])
   await expect(port.stop()).resolves.toBeUndefined()
+  expect(exits).toHaveLength(1)
 })
 
 test('start rejects with an install hint when the adapter is missing', async () => {

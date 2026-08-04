@@ -1,8 +1,8 @@
 packages:
   - 'packages/*'
+
+# pnpm 11 renamed onlyBuiltDependencies to allowBuilds. Both were carried for a
+# while; only the current spelling is kept.
 allowBuilds:
   better-sqlite3: true
   esbuild: true
-onlyBuiltDependencies:
-  - better-sqlite3
-  - esbuild

@@ -17,3 +17,14 @@ export function dbPath(): string {
 export function worktreePathFor(projectId: string, objectiveId: string): string {
   return join(vaddHome(), 'worktrees', projectId, objectiveId)
 }
+
+/**
+ * Branch names use the first 8 characters of the objective UUID.
+ *
+ * Lives here beside the worktree layout rather than in the HTTP routes: boot
+ * reconciliation needs it too, and having the boot path import from the routes
+ * layer inverted the dependency for no reason.
+ */
+export function branchNameFor(objectiveId: string): string {
+  return `vadd/${objectiveId.slice(0, 8)}`
+}

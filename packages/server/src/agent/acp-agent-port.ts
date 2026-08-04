@@ -219,10 +219,21 @@ export class AcpAgentPort implements AgentPort {
         const { allowed, reason } = decidePermission(this.opts.worktreePath, paths)
         this.opts.onPermission?.({ allowed, paths, reason })
 
-        const wanted = allowed ? 'allow_once' : 'reject_once'
-        const option =
-          params.options.find((o) => o.kind === wanted) ??
-          params.options.find((o) => o.kind === (allowed ? 'allow_always' : 'reject_always'))
+        // An allow is only ever granted ONCE. The previous fallback to
+        // `allow_always` was a containment kill-switch: in this adapter that
+        // option maps to `acceptEdits`, which sets the session's permission mode
+        // and thereafter bypasses requestPermission entirely for every Edit and
+        // Write — so one missing `allow_once` would have silently disabled the
+        // whole policy for the rest of the session. Not reachable with the
+        // pinned 0.16.2, which always offers `allow_once`, but a policy whose
+        // job is containment must not have a broader grant as its fallback.
+        //
+        // Rejection may still fall back to `reject_always`: that is strictly
+        // more restrictive, so it fails in the safe direction.
+        const option = allowed
+          ? params.options.find((o) => o.kind === 'allow_once')
+          : (params.options.find((o) => o.kind === 'reject_once') ??
+            params.options.find((o) => o.kind === 'reject_always'))
         if (!option) return { outcome: { outcome: 'cancelled' as const } }
         return { outcome: { outcome: 'selected' as const, optionId: option.optionId } }
       },
@@ -252,13 +263,21 @@ export class AcpAgentPort implements AgentPort {
       locations?: { path: string }[] | null
     }
     if (u?.sessionUpdate !== 'tool_call' || !u.toolCallId) return
-    const paths = (u.locations ?? []).map((l) => l.path).filter(Boolean)
+    // Guard the entries themselves, not just the resulting strings: a malformed
+    // `locations: [{}]` would otherwise throw inside this async handler.
+    const paths = (u.locations ?? [])
+      .filter((l) => l && typeof l.path === 'string' && l.path.length > 0)
+      .map((l) => l.path)
     if (paths.length > 0) this.#knownLocations.set(u.toolCallId, paths)
   }
 
   #assertInside(path: string): void {
     if (!isInsideWorktree(this.opts.worktreePath, path)) {
-      this.opts.onPermission?.({ allowed: false, paths: [path] })
+      // Same `reason` shape the requestPermission path logs. Without it this
+      // rejection reached the event log with reason undefined, while the
+      // milestone requires every refusal to be logged with why.
+      const reason = `Outside the objective worktree: ${path}`
+      this.opts.onPermission?.({ allowed: false, paths: [path], reason })
       throw new Error(`Path is outside the objective worktree: ${path}`)
     }
   }

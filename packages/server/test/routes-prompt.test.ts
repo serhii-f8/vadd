@@ -70,7 +70,7 @@ test('a prompt reaches the agent and its updates become events', async () => {
   })
   expect(res.statusCode).toBe(202)
 
-  await new Promise((r) => setTimeout(r, 500))
+  await until(() => bus.since(objective.id, 0).some((e) => e.type === 'agent_update'))
   const types = bus.since(objective.id, 0).map((e) => e.type)
   expect(types).toContain('agent_update')
   await agents.stopAll()
@@ -83,7 +83,7 @@ test('an agent_sessions row is recorded on first prompt', async () => {
     url: `/api/objectives/${objective.id}/events`,
     payload: { type: 'prompt', text: 'hi' },
   })
-  await new Promise((r) => setTimeout(r, 500))
+  await until(() => db.select().from(agentSessions).all().length === 1)
   const rows = db.select().from(agentSessions).all()
   expect(rows).toHaveLength(1)
   expect(rows[0]?.acpSessionId).toBe('fake-session-1')
@@ -91,14 +91,19 @@ test('an agent_sessions row is recorded on first prompt', async () => {
 })
 
 test('a second prompt reuses the same session', async () => {
-  const { app, db, agents, objective } = await withObjective()
-  for (const text of ['one', 'two']) {
+  const { app, db, bus, agents, objective } = await withObjective()
+  const finishedCount = () =>
+    bus.since(objective.id, 0).filter((e) => e.type === 'prompt_finished').length
+
+  for (const [i, text] of ['one', 'two'].entries()) {
     await app.inject({
       method: 'POST',
       url: `/api/objectives/${objective.id}/events`,
       payload: { type: 'prompt', text },
     })
-    await new Promise((r) => setTimeout(r, 400))
+    // Count, not existence: after the first turn a "some(prompt_finished)"
+    // check is already true, so the second prompt would not be waited on at all.
+    await until(() => finishedCount() === i + 1)
   }
   expect(db.select().from(agentSessions).all()).toHaveLength(1)
   await agents.stopAll()
@@ -111,7 +116,7 @@ test('an agent crash marks the session failed and emits an event', async () => {
     url: `/api/objectives/${objective.id}/events`,
     payload: { type: 'prompt', text: 'crash' },
   })
-  await new Promise((r) => setTimeout(r, 700))
+  await until(() => bus.since(objective.id, 0).some((e) => e.type === 'agent_failed'))
 
   const types = bus.since(objective.id, 0).map((e) => e.type)
   expect(types).toContain('agent_failed')
@@ -130,7 +135,7 @@ test('permission decisions reach the event log with their reason', async () => {
     url: `/api/objectives/${objective.id}/events`,
     payload: { type: 'prompt', text: 'touch something outside' },
   })
-  await new Promise((r) => setTimeout(r, 600))
+  await until(() => bus.since(objective.id, 0).some((e) => e.type === 'permission_decision'))
 
   const decisions = bus.since(objective.id, 0).filter((e) => e.type === 'permission_decision')
   expect(decisions).toHaveLength(1)

@@ -16,6 +16,31 @@ async function listening() {
   return { app, bus, url: `http://127.0.0.1:${addr.port}` }
 }
 
+test('an oversized replay is capped and the cut is announced, not silent', async () => {
+  // The bare route replays the whole table synchronously. Silent truncation
+  // would be worse than the unbounded read: a client resuming from
+  // Last-Event-ID is owed a contiguous stream, so if it cannot have one it has
+  // to be told.
+  const { app, bus, url } = await listening()
+  for (let i = 0; i < 5100; i++) bus.emit({ type: 'noise', payload: { i } })
+
+  const ac = new AbortController()
+  const res = await fetch(`${url}/api/events`, { signal: ac.signal })
+  const reader = res.body?.getReader()
+  let text = ''
+  // The truncation notice is written before any event frame, so a single read
+  // is enough to see it.
+  const chunk = await reader?.read()
+  text += new TextDecoder().decode(chunk?.value)
+  ac.abort()
+  await app.close()
+
+  expect(text).toContain('event: replay-truncated')
+  const notice = JSON.parse(/data: (\{.*?\})\n/.exec(text)?.[1] ?? '{}')
+  expect(notice.skipped).toBeGreaterThan(0)
+  expect(notice.streamingFrom).toBeGreaterThan(notice.skipped)
+})
+
 /** Reads SSE frames until `count` events arrive, then aborts. */
 async function readFrames(url: string, headers: Record<string, string>, count: number) {
   const ac = new AbortController()

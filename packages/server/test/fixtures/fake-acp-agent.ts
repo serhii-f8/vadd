@@ -64,6 +64,40 @@ rl.on('line', async (line) => {
 
     const sessionId = (msg.params as { sessionId: string }).sessionId
 
+    if (mode === 'fs-write-outside') {
+      // Exercises the client's fs/write_text_file callback, which enforces
+      // containment separately from session/request_permission.
+      await request('fs/write_text_file', {
+        sessionId,
+        path: permissionPath,
+        content: 'stolen',
+      })
+      send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      return
+    }
+
+    if (mode === 'permission-always-only') {
+      // Offers ONLY the "always" variants. A client that falls back to
+      // allow_always here would hand this adapter a session-wide grant; the
+      // policy must decline instead. The outcome is echoed back as an update so
+      // the test can assert what the client actually chose.
+      const outcome = await request('session/request_permission', {
+        sessionId,
+        toolCall: { toolCallId: 'fake-tc-1', locations: [{ path: permissionPath }] },
+        options: [
+          { optionId: 'yes-always', name: 'Allow always', kind: 'allow_always' },
+          { optionId: 'no-always', name: 'Reject always', kind: 'reject_always' },
+        ],
+      })
+      send({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: { sessionId, update: { sessionUpdate: 'permission_outcome', outcome } },
+      })
+      send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      return
+    }
+
     if (mode === 'permission') {
       await request('session/request_permission', {
         sessionId,

@@ -4,6 +4,9 @@ import type { AppDeps } from '../app.js'
 
 type Query = { objectiveId?: string; lastId?: string }
 
+/** Most events replayed into one connection before the stream announces a cut. */
+const REPLAY_LIMIT = 5000
+
 export function registerEventRoutes(app: FastifyInstance, { bus }: AppDeps): void {
   app.get<{ Querystring: Query }>('/api/events', (req, reply) => {
     const objectiveId = req.query.objectiveId ?? null
@@ -33,15 +36,42 @@ export function registerEventRoutes(app: FastifyInstance, { bus }: AppDeps): voi
 
     // Replay first, then attach. Any event emitted during replay has an id
     // greater than everything replayed, so it arrives via the subscriber.
-    for (const e of bus.since(objectiveId, lastId)) write(e)
+    //
+    // Bounded: `GET /api/events` with neither objectiveId nor Last-Event-ID
+    // replays the entire table synchronously into the socket, which grows
+    // without limit as transcripts accumulate. The debug page always sends an
+    // objectiveId, so this is a guard on the bare route rather than a hot path.
+    const backlog = bus.since(objectiveId, lastId)
+    if (backlog.length > REPLAY_LIMIT) {
+      // Announce the cut rather than truncating in silence. A client that
+      // resumed from Last-Event-ID is owed a contiguous stream; if it cannot
+      // have one, it needs to know that instead of quietly missing events.
+      const kept = backlog.slice(-REPLAY_LIMIT)
+      const skipped = backlog.length - kept.length
+      reply.raw.write(
+        `event: replay-truncated\ndata: ${JSON.stringify({
+          skipped,
+          requestedFrom: lastId,
+          streamingFrom: kept[0]?.id ?? null,
+        })}\n\n`,
+      )
+      for (const e of kept) write(e)
+    } else {
+      for (const e of backlog) write(e)
+    }
 
     const unsubscribe = bus.subscribe(objectiveId, write)
     const keepAlive = setInterval(() => reply.raw.write(': keep-alive\n\n'), 15_000)
 
-    req.raw.on('close', () => {
+    const teardown = () => {
       clearInterval(keepAlive)
       unsubscribe()
-    })
+    }
+    req.raw.on('close', teardown)
+    // An abrupt ECONNRESET in the window before 'close' fires would otherwise
+    // surface as an unhandled 'error' on the socket and take the process down.
+    reply.raw.on('error', teardown)
+    req.raw.on('error', teardown)
 
     return reply
   })
