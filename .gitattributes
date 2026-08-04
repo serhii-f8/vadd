@@ -1,0 +1,5 @@
+# Without this, a clone on a machine with core.autocrlf=true (the Windows/WSL
+# default) checks every file out with CRLF, and Biome — which formats to LF —
+# then rejects the entire tree. Pin the working-tree ending so the toolchain
+# behaves the same regardless of the developer's global git config.
+* text=auto eol=lf
