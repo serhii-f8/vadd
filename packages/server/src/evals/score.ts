@@ -145,7 +145,15 @@ export async function scoreCorpus(opts: {
   }
 
   const byType = tally(all)
-  const pass = byType.every((s) => s.precision >= GATE_THRESHOLD && s.recall >= GATE_THRESHOLD)
+  // The zero-denominator convention in tally() is correct for reporting — a 1.0
+  // grounded in zero labels is meaningful once a reader checks `labels`. It is
+  // not safe as the gate's own verdict: an empty or mis-pointed corpus (no
+  // transcripts, or a type with zero labels across every transcript) must not
+  // silently read PASS. `extra.transcripts > 0` and `s.labels > 0` make both
+  // holes explicit failures instead of vacuous successes.
+  const pass =
+    extra.transcripts > 0 &&
+    byType.every((s) => s.labels > 0 && s.precision >= GATE_THRESHOLD && s.recall >= GATE_THRESHOLD)
   return {
     gate: { pass, threshold: GATE_THRESHOLD },
     byType,

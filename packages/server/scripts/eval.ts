@@ -33,4 +33,7 @@ if (process.argv.includes('--json')) {
   console.log(`\nGate (>= ${pct(report.gate.threshold)}): ${report.gate.pass ? 'PASS' : 'FAIL'}`)
 }
 
-process.exit(report.gate.pass ? 0 : 1)
+// Not process.exit(): that can truncate the report above when stdout is a
+// pipe, which is how a human running this to make the kill-switch call will
+// invoke it. Setting exitCode lets the process end naturally once stdout drains.
+process.exitCode = report.gate.pass ? 0 : 1
