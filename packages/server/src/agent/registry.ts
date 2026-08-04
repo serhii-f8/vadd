@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentPort } from '@vadd/core'
 import { eq } from 'drizzle-orm'
+import { ContractPipeline } from '../contract/pipeline.js'
+import { summarizerFromSettings } from '../contract/summarizer.js'
 import type { Db } from '../db/client.js'
 import { agentSessions } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
 import type { ExitInfo, PermissionDecision } from './acp-agent-port.js'
 import { AcpAgentPort } from './acp-agent-port.js'
+import { ensureAgentProfile } from './profile.js'
 
 type PortWithExit = AgentPort & { onExit?(cb: (e: ExitInfo) => void): () => void }
 
@@ -21,7 +24,21 @@ export type PortFactory = (o: {
   onPermission: (d: PermissionDecision) => void
 }) => PortWithExit
 
-type Entry = { port: PortWithExit; sessionId: string; rowId: string }
+type Entry = {
+  port: PortWithExit
+  sessionId: string
+  rowId: string
+  pipeline: ContractPipeline
+  /**
+   * The open turn's id, or null between turns.
+   *
+   * The route holds it here rather than in a closure because `cancel` arrives
+   * on a *different* request and has to end the same turn: without it, cancel
+   * closed the turn in the event log while leaving the pipeline's turn open
+   * forever, and every later prompt on the objective 409'd.
+   */
+  turnId: string | null
+}
 
 export type ObjectiveRef = { id: string; worktreePath: string | null }
 
@@ -42,7 +59,15 @@ export class AgentRegistry {
   ) {
     this.factory =
       factory ??
-      (({ worktreePath, onPermission }) => new AcpAgentPort({ worktreePath, onPermission }))
+      (({ worktreePath, onPermission }) =>
+        new AcpAgentPort({
+          worktreePath,
+          onPermission,
+          // Isolation, not preference: with the user's global ~/.claude in
+          // scope, third-party skills load into VADD sessions and contaminate
+          // the eval corpus the M1 gate reads (vadd-spec-phase2.md §2).
+          env: { CLAUDE_CONFIG_DIR: ensureAgentProfile() },
+        }))
   }
 
   /**
@@ -85,8 +110,25 @@ export class AgentRegistry {
         this.bus.emit({ objectiveId: objective.id, type: 'permission_decision', payload: d }),
     })
 
+    // One pipeline per objective. The summarizer is resolved at start time so a
+    // key added in settings takes effect on the next session rather than
+    // requiring a restart.
+    const pipeline = new ContractPipeline({
+      summarizer: summarizerFromSettings(this.db),
+      onEmit: (emission) => {
+        this.bus.emit({
+          objectiveId: objective.id,
+          type: emission.kind === 'event' ? 'agent_event' : 'contract_violation',
+          payload: emission,
+        })
+      },
+    })
+
     port.onUpdate((u) => {
-      this.bus.emit({ objectiveId: objective.id, type: 'agent_update', payload: u })
+      // Raw first: its row id is what the emission cites as its source, and the
+      // append-only log must record the update even if the pipeline throws.
+      const row = this.bus.emit({ objectiveId: objective.id, type: 'agent_update', payload: u })
+      pipeline.ingest(u, row.id)
     })
 
     port.onExit?.((info) => {
@@ -126,7 +168,7 @@ export class AgentRegistry {
       })
       .run()
 
-    const entry: Entry = { port, sessionId, rowId }
+    const entry: Entry = { port, sessionId, rowId, pipeline, turnId: null }
     this.#live.set(objective.id, entry)
     this.bus.emit({
       objectiveId: objective.id,

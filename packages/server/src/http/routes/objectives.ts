@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { CreateObjectiveBody, ObjectiveCommand } from '@vadd/core'
+import { type AgentEventType, CreateObjectiveBody, ObjectiveCommand } from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { AgentStoppedError } from '../../agent/acp-agent-port.js'
@@ -7,6 +7,12 @@ import type { AgentRegistry } from '../../agent/registry.js'
 import { agentSessions, objectives, projects } from '../../db/schema.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
+import {
+  loadTemplate,
+  type PromptTemplate,
+  placeholdersIn,
+  renderTemplate,
+} from '../../prompts/renderer.js'
 import type { AppDeps } from '../app.js'
 
 /** ACP rejects with plain objects, so `String(err)` yields "[object Object]". */
@@ -147,12 +153,74 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       const live = agents.get(objective.id)
       if (!live) return reply.code(409).send({ error: 'No active agent session' })
       await live.port.cancel(live.sessionId)
-      bus.emit({ objectiveId: objective.id, type: 'prompt_cancelled', payload: {} })
+
+      // Requesting a cancel is not the same event as a turn ending, and
+      // conflating them broke both ways. Emitting `prompt_cancelled` here put a
+      // *second* terminal record in the turn once the in-flight prompt settled
+      // and emitted its own — and `loadTranscript` closes a turn on the first
+      // terminal, so every update streamed in between was replayed outside the
+      // turn while the live pipeline had counted it. Emissions could vanish
+      // from scoring, which raises precision by hiding a false positive.
+      bus.emit({ objectiveId: objective.id, type: 'prompt_cancel_requested', payload: {} })
+
+      // The other half: the pipeline's turn has to be closed here, because the
+      // adapter may never settle the prompt at all. Verified with the
+      // `hang-on-prompt` fake peer — cancel returned 200, `turnActive` stayed
+      // true, and every later prompt on the objective 409'd permanently, with
+      // `integrate: discard` (which destroys the worktree) the only recovery.
+      // During hand-driven corpus recording, cancelling one slow turn cost the
+      // whole transcript. `endTurn` is a no-op for a turn that already closed,
+      // so the settle path's own call stays safe.
+      const openTurn = live.turnId
+      if (openTurn !== null) {
+        live.turnId = null
+        await live.pipeline.endTurn(openTurn)
+      }
       return reply.code(200).send({ ok: true })
     }
 
     // type === 'prompt'
-    const text = parsed.data.text
+    const { text: rawText, phase } = parsed.data
+    if ((rawText === undefined) === (phase === undefined)) {
+      return reply.code(400).send({ error: 'Provide exactly one of "text" or "phase"' })
+    }
+
+    let text = rawText ?? ''
+    let expect: AgentEventType[] = []
+    if (phase !== undefined) {
+      let template: PromptTemplate
+      try {
+        template = loadTemplate(phase)
+      } catch (err) {
+        return reply.code(400).send({ error: errorMessage(err) })
+      }
+      // The template's front-matter is the single source of truth for what the
+      // turn must produce: the machine will read the same field in phase 3.
+      expect = template.expects
+      text = renderTemplate(template, {
+        title: objective.title,
+        goalText: objective.goalText,
+        ...parsed.data.vars,
+      })
+
+      // renderTemplate deliberately leaves an unknown placeholder in place — a
+      // visibly broken prompt is debuggable, a silently empty one is not — but
+      // "visible" only helps if someone looks. Sending it anyway is how
+      // `verify.md` came to ship the literal string `{{verificationCommands}}`
+      // to the agent. On the corpus run that would have measured the gate's
+      // kill-switch number against a systematically broken prompt, and the
+      // resulting low `evidence` recall would have been indistinguishable from
+      // a genuine failure of the product bet.
+      const unresolved = placeholdersIn(text)
+      if (unresolved.length > 0) {
+        return reply.code(400).send({
+          error:
+            `Prompt for phase "${phase}" still contains ` +
+            `${unresolved.map((n) => `{{${n}}}`).join(', ')}. Supply the value(s) in "vars".`,
+        })
+      }
+    }
+
     let entry: Awaited<ReturnType<AgentRegistry['ensure']>>
     try {
       entry = await agents.ensure(objective)
@@ -162,14 +230,36 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       return reply.code(500).send({ error: message })
     }
 
-    bus.emit({ objectiveId: objective.id, type: 'prompt_sent', payload: { text } })
+    // A second prompt while one is still open would have beginTurn silently
+    // discard the first turn's buffered state (design rule 2: never drop
+    // silently) — reject it visibly instead. Matches the 409 the `cancel`
+    // branch already uses for "no active session".
+    if (entry.pipeline.turnActive) {
+      return reply.code(409).send({ error: 'A turn is already in flight' })
+    }
+
+    const turnId = randomUUID()
+    entry.pipeline.beginTurn({ turnId, expect })
+    // Published on the entry so the `cancel` request — a different request,
+    // with no access to this closure — can end the same turn.
+    entry.turnId = turnId
+
+    bus.emit({ objectiveId: objective.id, type: 'prompt_sent', payload: { text, phase } })
 
     // Do not await the turn: it can run for minutes, and progress is observable
     // over SSE. The response only confirms the prompt was accepted.
     void entry.port
       .prompt(entry.sessionId, text)
-      .then((r) => bus.emit({ objectiveId: objective.id, type: 'prompt_finished', payload: r }))
-      .catch((err: unknown) =>
+      .then(async (r) => {
+        if (entry.turnId === turnId) entry.turnId = null
+        await entry.pipeline.endTurn(turnId)
+        bus.emit({ objectiveId: objective.id, type: 'prompt_finished', payload: r })
+      })
+      .catch(async (err: unknown) => {
+        // Flush before reporting: a turn that died mid-block still produced
+        // text, and an unterminated fence is a finding, not noise.
+        if (entry.turnId === turnId) entry.turnId = null
+        await entry.pipeline.endTurn(turnId)
         bus.emit({
           objectiveId: objective.id,
           // A turn we ended is not a turn the agent lost. Reporting a discard
@@ -177,8 +267,8 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
           // milestone exists to collect.
           type: err instanceof AgentStoppedError ? 'prompt_cancelled' : 'prompt_failed',
           payload: { message: errorMessage(err) },
-        }),
-      )
+        })
+      })
 
     return reply.code(202).send({ ok: true, sessionId: entry.sessionId })
   })

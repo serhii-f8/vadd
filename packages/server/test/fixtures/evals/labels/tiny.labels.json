@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "transcript": "tiny",
+  "holdout": false,
+  "labels": [
+    {
+      "turn": 1,
+      "type": "evidence",
+      "key": "phpunit",
+      "match": { "kind": "test", "status": "pass", "headline": "(?i)\\d+ tests?" }
+    },
+    {
+      "turn": 2,
+      "type": "decision_needed",
+      "key": "queue-vs-sync",
+      "match": { "question": "(?i)queue|synchronous" },
+      "note": "Agent chose async dispatch without asking; the user should have decided."
+    }
+  ]
+}
