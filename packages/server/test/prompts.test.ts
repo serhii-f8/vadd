@@ -1,10 +1,12 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AgentEvent, fitsReadingBudget } from '@vadd/core'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { FenceScanner } from '../src/contract/fence-scanner.js'
+import { repoRoot } from '../src/paths.js'
 import {
+  bundledPromptDir,
   loadTemplate,
   PROMPT_PHASES,
   parseTemplate,
@@ -59,6 +61,23 @@ test('every bundled phase loads', () => {
   }
 })
 
+test('bundledPromptDir() resolves to a real directory holding the addendum', () => {
+  expect(existsSync(join(bundledPromptDir(), 'system-addendum.md'))).toBe(true)
+})
+
+test('repoRoot() finds the monorepo root regardless of caller depth', () => {
+  // Same assertion bundledPromptDir() relies on: this must hold from wherever
+  // repoRoot() is called from, including a `dist/` build one level deeper
+  // than `src/` — see the comment on repoRoot() for why that matters.
+  expect(existsSync(join(repoRoot(), 'pnpm-workspace.yaml'))).toBe(true)
+})
+
+test('a malformed user override throws rather than silently falling back', () => {
+  mkdirSync(userPromptDir(), { recursive: true })
+  writeFileSync(join(userPromptDir(), 'plan.md'), 'not a template at all')
+  expect(() => loadTemplate('plan')).toThrow()
+})
+
 test('a user override wins over the bundled template (D11)', () => {
   mkdirSync(userPromptDir(), { recursive: true })
   writeFileSync(
@@ -74,6 +93,8 @@ test('every example block in every bundled template is valid and within budget',
   for (const phase of PROMPT_PHASES) {
     const scanner = new FenceScanner()
     const blocks = [...scanner.push(loadTemplate(phase).body), ...scanner.flush().blocks]
+    // A phase that lost its example would otherwise pass this loop vacuously.
+    expect(blocks.length, `${phase}: expected at least one vadd-event block`).toBeGreaterThan(0)
     for (const block of blocks) {
       const parsed = AgentEvent.safeParse(JSON.parse(block.body))
       expect(parsed.success, `${phase}: ${block.body}`).toBe(true)

@@ -1,8 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { AGENT_EVENT_TYPES, type AgentEventType } from '@vadd/core'
-import { vaddHome } from '../paths.js'
+import { repoRoot, vaddHome } from '../paths.js'
 
 export const PROMPT_PHASES = [
   'explore',
@@ -27,8 +26,7 @@ export type PromptTemplate = {
 
 /** `prompts/claude-code/v1/`, anchored to the repo root, not `process.cwd()`. */
 export function bundledPromptDir(): string {
-  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..')
-  return join(repoRoot, 'prompts', 'claude-code', 'v1')
+  return join(repoRoot(), 'prompts', 'claude-code', 'v1')
 }
 
 /** D11: user overrides live in `~/.vadd/prompts/`. */
