@@ -1,0 +1,242 @@
+{
+  "$ref": "#/definitions/AgentEvent",
+  "definitions": {
+    "AgentEvent": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "status"
+            },
+            "phase": {
+              "type": "string",
+              "enum": [
+                "exploring",
+                "clarifying",
+                "proposing",
+                "planning",
+                "executing",
+                "verifying",
+                "reviewing",
+                "integrating"
+              ]
+            },
+            "headline": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          "required": ["type", "phase", "headline"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "decision_needed"
+            },
+            "question": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "pros": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "maxItems": 5
+                  },
+                  "cons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "maxItems": 5
+                  },
+                  "effort": {
+                    "type": "string",
+                    "enum": ["S", "M", "L"]
+                  },
+                  "reversibility": {
+                    "type": "string",
+                    "enum": ["high", "medium", "low"]
+                  },
+                  "verification": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                },
+                "required": ["id", "label", "pros", "cons", "reversibility", "verification"],
+                "additionalProperties": false
+              },
+              "minItems": 2,
+              "maxItems": 4
+            },
+            "recommendedId": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "question", "options", "recommendedId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "clarification"
+            },
+            "question": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "suggestedAnswers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "maxItems": 4
+            }
+          },
+          "required": ["type", "question", "suggestedAnswers"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "plan"
+            },
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": ["title", "description"],
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 12
+            }
+          },
+          "required": ["type", "tasks"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "task_result"
+            },
+            "taskId": {
+              "type": "string"
+            },
+            "claim": {
+              "type": "string",
+              "maxLength": 150
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["type", "taskId", "claim", "evidenceRefs"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "evidence"
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["test", "diff", "lint", "build", "check", "artifact", "warning"]
+            },
+            "status": {
+              "type": "string",
+              "enum": ["pass", "fail", "warn", "info"]
+            },
+            "headline": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "summary": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "maxItems": 6
+            },
+            "artifactPath": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "kind", "status", "headline", "summary"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "failure"
+            },
+            "headline": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "probableCause": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "suggestedActions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "maxItems": 3
+            }
+          },
+          "required": ["type", "headline", "probableCause", "suggestedActions"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
