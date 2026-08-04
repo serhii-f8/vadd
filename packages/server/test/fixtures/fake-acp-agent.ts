@@ -83,6 +83,38 @@ rl.on('line', async (line) => {
         update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hello' } },
       },
     })
+
+    if (mode === 'odd-raw-output') {
+      // The two rawOutput shapes claude-code-acp@0.16.2 really sends and the
+      // pinned SDK's `z.record(z.unknown())` really rejects. The SDK parses
+      // before dispatching, so an unrelaxed client drops both silently.
+      send({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'fake-tc-1',
+            status: 'completed',
+            rawOutput: ['an', 'array'],
+          },
+        },
+      })
+      send({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'fake-tc-2',
+            status: 'failed',
+            rawOutput: 'Editing file failed: The provided `old_string` does not appear in the file',
+          },
+        },
+      })
+    }
     send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
     return
   }

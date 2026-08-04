@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
@@ -32,6 +32,62 @@ test('symlinks cannot escape the worktree', () => {
   writeFileSync(join(outside, 'secret.txt'), 'secret')
   symlinkSync(outside, join(root, 'link'))
   expect(isInsideWorktree(root, join(root, 'link', 'secret.txt'))).toBe(false)
+})
+
+test('a DANGLING symlink cannot escape the worktree', () => {
+  // The symlink test above passes because its target exists. existsSync()
+  // follows the link, so a symlink whose target does NOT exist reports false
+  // and the resolver walked straight past it, treating the link name as an
+  // ordinary not-yet-created file inside the worktree — while a write through
+  // it landed on the outside target. `git worktree add` materialises committed
+  // symlinks verbatim, dangling ones included.
+  const root = worktree()
+  const outside = mkdtempSync(join(tmpdir(), 'vadd-outside-'))
+  const victim = join(outside, 'not-yet-created.txt')
+  symlinkSync(victim, join(root, 'dangling'))
+
+  expect(existsSync(victim)).toBe(false)
+  expect(isInsideWorktree(root, join(root, 'dangling'))).toBe(false)
+  expect(decidePermission(root, [join(root, 'dangling')]).allowed).toBe(false)
+})
+
+test('a symlink chain out of the worktree is followed to its real target', () => {
+  const root = worktree()
+  const outside = mkdtempSync(join(tmpdir(), 'vadd-outside-'))
+  // hop1 -> hop2 -> outside/target (which does not exist)
+  symlinkSync(join(outside, 'target.txt'), join(root, 'hop2'))
+  symlinkSync(join(root, 'hop2'), join(root, 'hop1'))
+  expect(isInsideWorktree(root, join(root, 'hop1'))).toBe(false)
+})
+
+test('a symlink loop fails closed rather than hanging or throwing', () => {
+  const root = worktree()
+  // a -> b -> a. Neither resolves; the resolver must give up and refuse.
+  symlinkSync(join(root, 'b'), join(root, 'a'))
+  symlinkSync(join(root, 'a'), join(root, 'b'))
+  expect(isInsideWorktree(root, join(root, 'a'))).toBe(false)
+})
+
+test('a dangling symlink INSIDE the worktree is still allowed', () => {
+  // Fail-closed must not become fail-useless: a link to a sibling file the
+  // agent has not written yet is a normal thing to permit.
+  const root = worktree()
+  symlinkSync(join(root, 'src', 'not-written-yet.ts'), join(root, 'inner-link'))
+  expect(isInsideWorktree(root, join(root, 'inner-link'))).toBe(true)
+})
+
+test('pathsFromToolCall drops malformed location entries', () => {
+  // `[{}]` yielded `[undefined]`, whose length is 1 — so decidePermission
+  // skipped its empty-set branch and then threw inside resolve(undefined).
+  // A throw is not an allow, but it turns a clean deny into an unhandled
+  // rejection inside the async requestPermission handler.
+  expect(pathsFromToolCall({ locations: [{}] as { path: string }[] })).toEqual([])
+  expect(pathsFromToolCall({ locations: [{ path: '/a' }, {}] as { path: string }[] })).toEqual([
+    '/a',
+  ])
+  expect(
+    decidePermission(worktree(), pathsFromToolCall({ locations: [{}] as { path: string }[] })),
+  ).toMatchObject({ allowed: false })
 })
 
 test('pathsFromToolCall handles absent and null locations', () => {

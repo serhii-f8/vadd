@@ -9,8 +9,46 @@ import {
   ClientSideConnection,
   ndJsonStream,
   PROTOCOL_VERSION,
+  sessionNotificationSchema,
 } from '@zed-industries/agent-client-protocol'
 import { decidePermission, isInsideWorktree, pathsFromToolCall } from './permissions.js'
+
+let notificationSchemaRelaxed = false
+
+/**
+ * Stops the SDK from silently discarding session updates it cannot parse.
+ *
+ * `ClientSideConnection` validates every `session/update` against a strict zod
+ * schema *before* dispatching it, and a parse failure throws instead of calling
+ * the handler — so the update never reaches `onUpdate` and only the SDK's own
+ * `console.error` records that anything happened.
+ *
+ * This is not hypothetical. agent-client-protocol@0.4.5 declares
+ * `rawOutput: z.record(z.unknown())`, while claude-code-acp@0.16.2 sends
+ * `rawOutput` as an array, and as a plain string when a tool fails. Six of
+ * twenty-five updates were lost this way in the session recorded as M0's
+ * evidence — including a tool failure, which is precisely the agent-flakiness
+ * signal this milestone exists to measure.
+ *
+ * M0 stores updates raw (`RawAgentUpdate.update` is `unknown`), so client-side
+ * validation buys nothing here and costs data. Well-formed updates still take
+ * the validated path; the rest now pass through untouched instead of vanishing.
+ * When M1's Output Contract starts narrowing these, it must do its own
+ * validation rather than relying on the SDK's.
+ */
+function relaxNotificationSchema(): void {
+  if (notificationSchemaRelaxed) return
+  notificationSchemaRelaxed = true
+  const target = sessionNotificationSchema as unknown as { parse: (p: unknown) => unknown }
+  const strict = target.parse.bind(target)
+  target.parse = (params: unknown) => {
+    try {
+      return strict(params)
+    } catch {
+      return params
+    }
+  }
+}
 
 export type PermissionDecision = { allowed: boolean; paths: string[]; reason?: string }
 export type ExitInfo = { code: number | null; signal: NodeJS.Signals | null; stderr: string }
@@ -119,6 +157,7 @@ export class AcpAgentPort implements AgentPort {
       Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
     )
 
+    relaxNotificationSchema()
     this.#conn = new ClientSideConnection(() => this.#client(), stream)
 
     // Race the handshake against process death: a missing or immediately

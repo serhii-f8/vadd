@@ -58,6 +58,36 @@ test('start, newSession, prompt and stop complete against a fake agent', async (
   await port.stop()
 })
 
+test('updates the SDK schema rejects are still delivered, not dropped', async () => {
+  // The SDK validates session/update against a strict zod schema BEFORE
+  // dispatching, and a parse failure throws instead of calling the handler —
+  // so the update vanishes with only the SDK's own console.error to show for
+  // it. claude-code-acp sends `rawOutput` as an array, and as a string when a
+  // tool fails, while the pinned SDK declares `z.record(z.unknown())`. Six of
+  // twenty-five updates were lost this way in the session recorded as this
+  // milestone's evidence — including the tool failure, which is exactly the
+  // signal M0 exists to capture.
+  const port = makePort({ mode: 'odd-raw-output' })
+  const updates: RawAgentUpdate[] = []
+  port.onUpdate((u) => updates.push(u))
+
+  await port.start()
+  const { sessionId } = await port.newSession({ cwd: process.cwd() })
+  await port.prompt(sessionId, 'do a thing')
+
+  // One agent_message_chunk plus BOTH tool_call_updates.
+  expect(updates).toHaveLength(3)
+  const kinds = updates.map((u) => (u.update as { sessionUpdate?: string }).sessionUpdate)
+  expect(kinds).toEqual(['agent_message_chunk', 'tool_call_update', 'tool_call_update'])
+
+  // The payload survives intact — this is a raw passthrough, not a coercion.
+  const failed = updates[2]?.update as { status?: string; rawOutput?: unknown }
+  expect(failed.status).toBe('failed')
+  expect(failed.rawOutput).toContain('old_string')
+
+  await port.stop()
+})
+
 test('permission is granted for a path inside the worktree', async () => {
   const wt = mkdtempSync(join(tmpdir(), 'vadd-wt-'))
   const decisions: { allowed: boolean; paths: string[]; reason?: string }[] = []

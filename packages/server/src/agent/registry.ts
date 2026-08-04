@@ -31,6 +31,8 @@ export type ObjectiveRef = { id: string; worktreePath: string | null }
  */
 export class AgentRegistry {
   readonly #live = new Map<string, Entry>()
+  /** Starts that have been requested but have not yet reached `#live`. */
+  readonly #starting = new Map<string, Promise<Entry>>()
   private readonly factory: PortFactory
 
   constructor(
@@ -43,12 +45,36 @@ export class AgentRegistry {
       (({ worktreePath, onPermission }) => new AcpAgentPort({ worktreePath, onPermission }))
   }
 
+  /**
+   * Starting an agent spans two awaits (spawn, then handshake), so a bare
+   * check-then-set on `#live` is not atomic: two concurrent prompts — a
+   * double-click on Send is enough — both missed, both spawned, and the second
+   * `set` overwrote the first. The first port then became unreachable, so
+   * `stop()` and `stopAll()` could never kill it, leaving an orphan adapter and
+   * two agents editing one worktree.
+   *
+   * The in-flight promise is recorded synchronously, before any await, so a
+   * second caller joins the first start instead of racing it.
+   */
   async ensure(objective: ObjectiveRef): Promise<Entry> {
     const existing = this.#live.get(objective.id)
     if (existing) return existing
 
+    const inFlight = this.#starting.get(objective.id)
+    if (inFlight) return inFlight
+
     if (!objective.worktreePath) throw new Error('Objective has no worktree')
 
+    const startup = this.#start({ ...objective, worktreePath: objective.worktreePath })
+    this.#starting.set(objective.id, startup)
+    try {
+      return await startup
+    } finally {
+      this.#starting.delete(objective.id)
+    }
+  }
+
+  async #start(objective: ObjectiveRef & { worktreePath: string }): Promise<Entry> {
     // Answering the agent's permission callbacks is not enough on its own: the
     // milestone requires an out-of-worktree request to be rejected *and logged*,
     // and the decision's `reason` is the only record of why it was refused.
@@ -115,6 +141,14 @@ export class AgentRegistry {
   }
 
   async stop(objectiveId: string): Promise<void> {
+    // A discard can land while the adapter is still handshaking. Without this
+    // wait, `#live` is still empty, stop() returns having done nothing, and the
+    // child that finishes starting a moment later is an orphan no one holds a
+    // reference to. Swallow the start's failure — a start that threw has no
+    // child to stop.
+    const starting = this.#starting.get(objectiveId)
+    if (starting) await starting.catch(() => undefined)
+
     const entry = this.#live.get(objectiveId)
     if (!entry) return
     this.#live.delete(objectiveId)
