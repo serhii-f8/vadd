@@ -53,6 +53,33 @@ test('a second prompt reuses the same session', async () => {
   await ctx.cleanup()
 })
 
+test('a second prompt while a turn is in flight is rejected, not silently dropped', async () => {
+  // 'hang-on-prompt' never resolves the first turn, so entry.pipeline stays
+  // turnActive indefinitely — the second POST deterministically lands while
+  // the guard is up, no sleep-based race needed. Before the guard, the second
+  // beginTurn would have reset the pipeline's buffered state out from under
+  // the first, still-open turn with no violation recorded.
+  const ctx = await buildTestApp({ fakeAcpMode: 'hang-on-prompt' })
+  const first = await ctx.app.inject({
+    method: 'POST',
+    url: `/api/objectives/${ctx.objectiveId}/events`,
+    payload: { type: 'prompt', text: 'first' },
+  })
+  expect(first.statusCode).toBe(202)
+  await ctx.until(() => ctx.events().some((e) => e.type === 'prompt_sent'))
+
+  const second = await ctx.app.inject({
+    method: 'POST',
+    url: `/api/objectives/${ctx.objectiveId}/events`,
+    payload: { type: 'prompt', text: 'second' },
+  })
+  expect(second.statusCode).toBe(409)
+
+  const sent = ctx.events().filter((e) => e.type === 'prompt_sent')
+  expect(sent).toHaveLength(1)
+  await ctx.cleanup()
+})
+
 test('an agent crash marks the session failed and emits an event', async () => {
   const ctx = await buildTestApp({ fakeAcpMode: 'crash-on-prompt' })
   await ctx.app.inject({

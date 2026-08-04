@@ -208,4 +208,15 @@ export class ContractPipeline {
   get hasSummarizer(): boolean {
     return this.#summarizer !== undefined
   }
+
+  /**
+   * True between `beginTurn` and `endTurn`. Callers must not start a second
+   * turn while this is true: `beginTurn` resets all buffered state, so a
+   * second call while one is open discards the first turn's unterminated
+   * fence with no violation and mis-attributes its still-arriving chunks to
+   * the new turnId.
+   */
+  get turnActive(): boolean {
+    return this.#turnId !== null
+  }
 }

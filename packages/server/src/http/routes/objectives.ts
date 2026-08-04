@@ -162,6 +162,14 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       return reply.code(500).send({ error: message })
     }
 
+    // A second prompt while one is still open would have beginTurn silently
+    // discard the first turn's buffered state (design rule 2: never drop
+    // silently) — reject it visibly instead. Matches the 409 the `cancel`
+    // branch already uses for "no active session".
+    if (entry.pipeline.turnActive) {
+      return reply.code(409).send({ error: 'A turn is already in flight' })
+    }
+
     const turnId = randomUUID()
     entry.pipeline.beginTurn({ turnId })
 
