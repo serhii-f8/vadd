@@ -24,7 +24,21 @@ export type PortFactory = (o: {
   onPermission: (d: PermissionDecision) => void
 }) => PortWithExit
 
-type Entry = { port: PortWithExit; sessionId: string; rowId: string; pipeline: ContractPipeline }
+type Entry = {
+  port: PortWithExit
+  sessionId: string
+  rowId: string
+  pipeline: ContractPipeline
+  /**
+   * The open turn's id, or null between turns.
+   *
+   * The route holds it here rather than in a closure because `cancel` arrives
+   * on a *different* request and has to end the same turn: without it, cancel
+   * closed the turn in the event log while leaving the pipeline's turn open
+   * forever, and every later prompt on the objective 409'd.
+   */
+  turnId: string | null
+}
 
 export type ObjectiveRef = { id: string; worktreePath: string | null }
 
@@ -154,7 +168,7 @@ export class AgentRegistry {
       })
       .run()
 
-    const entry: Entry = { port, sessionId, rowId, pipeline }
+    const entry: Entry = { port, sessionId, rowId, pipeline, turnId: null }
     this.#live.set(objective.id, entry)
     this.bus.emit({
       objectiveId: objective.id,

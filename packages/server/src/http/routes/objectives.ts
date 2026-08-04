@@ -153,7 +153,29 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       const live = agents.get(objective.id)
       if (!live) return reply.code(409).send({ error: 'No active agent session' })
       await live.port.cancel(live.sessionId)
-      bus.emit({ objectiveId: objective.id, type: 'prompt_cancelled', payload: {} })
+
+      // Requesting a cancel is not the same event as a turn ending, and
+      // conflating them broke both ways. Emitting `prompt_cancelled` here put a
+      // *second* terminal record in the turn once the in-flight prompt settled
+      // and emitted its own — and `loadTranscript` closes a turn on the first
+      // terminal, so every update streamed in between was replayed outside the
+      // turn while the live pipeline had counted it. Emissions could vanish
+      // from scoring, which raises precision by hiding a false positive.
+      bus.emit({ objectiveId: objective.id, type: 'prompt_cancel_requested', payload: {} })
+
+      // The other half: the pipeline's turn has to be closed here, because the
+      // adapter may never settle the prompt at all. Verified with the
+      // `hang-on-prompt` fake peer — cancel returned 200, `turnActive` stayed
+      // true, and every later prompt on the objective 409'd permanently, with
+      // `integrate: discard` (which destroys the worktree) the only recovery.
+      // During hand-driven corpus recording, cancelling one slow turn cost the
+      // whole transcript. `endTurn` is a no-op for a turn that already closed,
+      // so the settle path's own call stays safe.
+      const openTurn = live.turnId
+      if (openTurn !== null) {
+        live.turnId = null
+        await live.pipeline.endTurn(openTurn)
+      }
       return reply.code(200).send({ ok: true })
     }
 
@@ -218,6 +240,9 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
 
     const turnId = randomUUID()
     entry.pipeline.beginTurn({ turnId, expect })
+    // Published on the entry so the `cancel` request — a different request,
+    // with no access to this closure — can end the same turn.
+    entry.turnId = turnId
 
     bus.emit({ objectiveId: objective.id, type: 'prompt_sent', payload: { text, phase } })
 
@@ -226,12 +251,14 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     void entry.port
       .prompt(entry.sessionId, text)
       .then(async (r) => {
+        if (entry.turnId === turnId) entry.turnId = null
         await entry.pipeline.endTurn(turnId)
         bus.emit({ objectiveId: objective.id, type: 'prompt_finished', payload: r })
       })
       .catch(async (err: unknown) => {
         // Flush before reporting: a turn that died mid-block still produced
         // text, and an unterminated fence is a finding, not noise.
+        if (entry.turnId === turnId) entry.turnId = null
         await entry.pipeline.endTurn(turnId)
         bus.emit({
           objectiveId: objective.id,

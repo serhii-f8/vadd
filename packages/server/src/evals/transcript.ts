@@ -25,7 +25,25 @@ export type TranscriptRecord = {
 /** One prompt turn: `index` is 1-based, matching the label files. */
 export type TranscriptTurn = { index: number; updates: RawAgentUpdate[] }
 
-const TERMINAL = new Set(['prompt_finished', 'prompt_failed', 'prompt_cancelled'])
+/**
+ * Records that close a turn, i.e. the points at which the live pipeline's
+ * `endTurn` ran. Replay must close the turn wherever production did, or the
+ * replayed turn and the live turn contain different updates and the eval score
+ * measures something that never happened.
+ *
+ * `prompt_cancel_requested` is in the set for that reason: the cancel route
+ * ends the pipeline's turn immediately, because the adapter may never settle
+ * the in-flight prompt. The prompt's own terminal record may still arrive
+ * afterwards; closing an already-closed turn is a no-op both here and in the
+ * pipeline, and one turn carrying two closing records must not produce a
+ * phantom turn.
+ */
+const TURN_CLOSING = new Set([
+  'prompt_finished',
+  'prompt_failed',
+  'prompt_cancelled',
+  'prompt_cancel_requested',
+])
 
 export function loadTranscript(file: string): { name: string; turns: TranscriptTurn[] } {
   const lines = readFileSync(file, 'utf8')
@@ -56,7 +74,7 @@ export function loadTranscript(file: string): { name: string; turns: TranscriptT
       current.updates.push(record.payload as RawAgentUpdate)
       continue
     }
-    if (record.type && TERMINAL.has(record.type)) current = null
+    if (record.type && TURN_CLOSING.has(record.type)) current = null
   }
 
   return { name: basename(file).replace(/\.jsonl$/, ''), turns }

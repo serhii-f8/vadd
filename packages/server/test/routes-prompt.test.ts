@@ -80,6 +80,76 @@ test('a second prompt while a turn is in flight is rejected, not silently droppe
   await ctx.cleanup()
 })
 
+test('cancelling a turn the adapter never settles frees the objective for the next prompt', async () => {
+  // 'hang-on-prompt' never answers session/prompt, and the fake peer treats
+  // session/cancel as the notification it is — which is exactly the case the
+  // bug bit. The cancel branch used to emit an event and touch nothing else,
+  // so entry.pipeline stayed turnActive forever and every later prompt on this
+  // objective returned 409 permanently. The only recovery was
+  // `integrate: discard`, which destroys the worktree: during hand-driven
+  // corpus recording, cancelling one slow turn cost the whole transcript.
+  const ctx = await buildTestApp({ fakeAcpMode: 'hang-on-prompt' })
+  const send = (text: string) =>
+    ctx.app.inject({
+      method: 'POST',
+      url: `/api/objectives/${ctx.objectiveId}/events`,
+      payload: { type: 'prompt', text },
+    })
+
+  expect((await send('a slow turn')).statusCode).toBe(202)
+  await ctx.until(() => ctx.agents.get(ctx.objectiveId) !== undefined)
+  await ctx.until(() => ctx.agents.get(ctx.objectiveId)?.pipeline.turnActive === true)
+
+  const cancel = await ctx.app.inject({
+    method: 'POST',
+    url: `/api/objectives/${ctx.objectiveId}/events`,
+    payload: { type: 'cancel' },
+  })
+  expect(cancel.statusCode).toBe(200)
+  expect(ctx.agents.get(ctx.objectiveId)?.pipeline.turnActive).toBe(false)
+
+  expect((await send('the next turn')).statusCode).toBe(202)
+  await ctx.cleanup()
+})
+
+test('a cancel request is not itself a terminal record', async () => {
+  // Exactly one terminal per turn is what `loadTranscript` needs to replay the
+  // same updates the live pipeline saw. The request and the turn ending are two
+  // different events, and emitting `prompt_cancelled` for the request put a
+  // second terminal in the turn once the prompt settled.
+  const ctx = await buildTestApp({ fakeAcpMode: 'hang-on-prompt' })
+  await ctx.app.inject({
+    method: 'POST',
+    url: `/api/objectives/${ctx.objectiveId}/events`,
+    payload: { type: 'prompt', text: 'a slow turn' },
+  })
+  await ctx.until(() => ctx.agents.get(ctx.objectiveId)?.pipeline.turnActive === true)
+  await ctx.app.inject({
+    method: 'POST',
+    url: `/api/objectives/${ctx.objectiveId}/events`,
+    payload: { type: 'cancel' },
+  })
+
+  const types = ctx.events().map((e) => e.type)
+  expect(types).toContain('prompt_cancel_requested')
+  // The adapter never settled this prompt, so no terminal exists at all — and
+  // the objective is still usable, which is the point.
+  expect(types).not.toContain('prompt_cancelled')
+  expect(types).not.toContain('prompt_finished')
+  await ctx.cleanup()
+})
+
+test('cancelling with no live agent is still a 409', async () => {
+  const ctx = await buildTestApp()
+  const res = await ctx.app.inject({
+    method: 'POST',
+    url: `/api/objectives/${ctx.objectiveId}/events`,
+    payload: { type: 'cancel' },
+  })
+  expect(res.statusCode).toBe(409)
+  await ctx.cleanup()
+})
+
 test('an agent crash marks the session failed and emits an event', async () => {
   const ctx = await buildTestApp({ fakeAcpMode: 'crash-on-prompt' })
   await ctx.app.inject({
