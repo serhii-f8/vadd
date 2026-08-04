@@ -50,6 +50,7 @@ export function fitsReadingBudget(event: AgentEvent): BudgetViolation[] {
       level1('question', event.question)
       event.options.forEach((o, i) => {
         level1(`options[${i}].label`, o.label)
+        level1(`options[${i}].verification`, o.verification)
         level2(`options[${i}].pros+cons`, [...o.pros, ...o.cons])
       })
       break

@@ -78,3 +78,50 @@ test('the schema bounds cannot admit a Level 1 violation', () => {
   // budget is the tighter constraint, and is therefore the one worth testing.
   expect(LEVEL_1_WORD_LIMIT * 2).toBeLessThan(120)
 })
+
+test('a Level 1 string at exactly the limit has no violation', () => {
+  const ok: AgentEvent = {
+    type: 'status',
+    phase: 'executing',
+    headline: words(LEVEL_1_WORD_LIMIT),
+  }
+  expect(fitsReadingBudget(ok)).toEqual([])
+})
+
+test('a Level 2 block at exactly the limit has no violation', () => {
+  const ok: AgentEvent = {
+    type: 'evidence',
+    kind: 'test',
+    status: 'fail',
+    headline: 'Suite passed',
+    summary: [words(LEVEL_2_WORD_LIMIT)],
+  }
+  expect(fitsReadingBudget(ok)).toEqual([])
+})
+
+test('flags a long verification field as a Level 1 violation', () => {
+  const bad: AgentEvent = {
+    type: 'decision_needed',
+    question: 'A or B?',
+    recommendedId: 'a',
+    options: [
+      {
+        id: 'a',
+        label: 'A',
+        pros: ['Good'],
+        cons: ['Bad'],
+        reversibility: 'high',
+        verification: words(LEVEL_1_WORD_LIMIT + 1),
+      },
+    ],
+  }
+  const found = fitsReadingBudget(bad)
+  expect(found).toEqual([
+    {
+      level: 1,
+      field: 'options[0].verification',
+      words: LEVEL_1_WORD_LIMIT + 1,
+      limit: LEVEL_1_WORD_LIMIT,
+    },
+  ])
+})
