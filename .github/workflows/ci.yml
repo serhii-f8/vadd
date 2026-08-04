@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      # VADD_E2E is unset, so the real-adapter tests stay skipped: CI has no
+      # Claude Code credentials and must not need any.
+      - run: pnpm test
+      # `pnpm eval` is added by the corpus task. Wiring it before a corpus
+      # exists would give a green gate for scoring nothing.
