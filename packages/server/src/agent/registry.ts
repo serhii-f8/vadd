@@ -6,6 +6,7 @@ import { agentSessions } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
 import type { ExitInfo, PermissionDecision } from './acp-agent-port.js'
 import { AcpAgentPort } from './acp-agent-port.js'
+import { ensureAgentProfile } from './profile.js'
 
 type PortWithExit = AgentPort & { onExit?(cb: (e: ExitInfo) => void): () => void }
 
@@ -42,7 +43,15 @@ export class AgentRegistry {
   ) {
     this.factory =
       factory ??
-      (({ worktreePath, onPermission }) => new AcpAgentPort({ worktreePath, onPermission }))
+      (({ worktreePath, onPermission }) =>
+        new AcpAgentPort({
+          worktreePath,
+          onPermission,
+          // Isolation, not preference: with the user's global ~/.claude in
+          // scope, third-party skills load into VADD sessions and contaminate
+          // the eval corpus the M1 gate reads (vadd-spec-phase2.md §2).
+          env: { CLAUDE_CONFIG_DIR: ensureAgentProfile() },
+        }))
   }
 
   /**
