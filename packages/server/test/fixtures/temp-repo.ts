@@ -51,6 +51,8 @@ export type TestApp = {
   bus: EventBus
   agents: AgentRegistry
   objectiveId: string
+  /** The goal text the test objective was created with. */
+  goalText: string
   /** All events recorded for the test objective, oldest first. */
   events: () => VaddEvent[]
   /** Waits for a condition, polling instead of sleeping a guessed interval. */
@@ -91,11 +93,12 @@ export async function buildTestApp(opts: { fakeAcpMode?: string } = {}): Promise
       payload: { repoPath: makeTempRepo() },
     })
   ).json().id as string
+  const goalText = 'g'
   const objective = (
     await app.inject({
       method: 'POST',
       url: `/api/projects/${projectId}/objectives`,
-      payload: { title: 't', goalText: 'g' },
+      payload: { title: 't', goalText },
     })
   ).json() as { id: string }
 
@@ -105,6 +108,7 @@ export async function buildTestApp(opts: { fakeAcpMode?: string } = {}): Promise
     bus,
     agents,
     objectiveId: objective.id,
+    goalText,
     events: () => bus.since(objective.id, 0),
     until: (cond, timeoutMs) => until(cond, timeoutMs),
     cleanup: () => agents.stopAll(),

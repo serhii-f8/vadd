@@ -1,6 +1,20 @@
 import { useEffect, useState } from 'react'
 import { api, type Objective, type Project, type VaddEvent } from './api.js'
 
+// Mirrors packages/server/src/prompts/renderer.ts PROMPT_PHASES. The web
+// package has no dependency on the server package, so this list is
+// duplicated rather than imported; an unknown phase still fails loudly with
+// the server's 400, so drift here is a UI nuisance, not a correctness bug.
+const PROMPT_PHASES = [
+  'explore',
+  'clarify',
+  'propose',
+  'plan',
+  'execute-task',
+  'verify',
+  'review',
+] as const
+
 export function DebugPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [objective, setObjective] = useState<Objective | null>(null)
@@ -11,6 +25,7 @@ export function DebugPage() {
   const [title, setTitle] = useState('')
   const [goalText, setGoalText] = useState('')
   const [prompt, setPrompt] = useState('')
+  const [phase, setPhase] = useState<(typeof PROMPT_PHASES)[number]>(PROMPT_PHASES[0])
 
   useEffect(() => {
     api
@@ -136,7 +151,7 @@ export function DebugPage() {
             className="rounded bg-black px-3 py-1 text-white disabled:opacity-40"
             disabled={busy || !objective}
             onClick={run(async () => {
-              if (objective) await api.sendPrompt(objective.id, prompt)
+              if (objective) await api.sendPrompt(objective.id, { text: prompt })
             })}
           >
             Send
@@ -152,6 +167,29 @@ export function DebugPage() {
             })}
           >
             Discard
+          </button>
+        </div>
+        <div className="flex gap-2">
+          <select
+            className="rounded border px-2 py-1"
+            value={phase}
+            onChange={(e) => setPhase(e.target.value as (typeof PROMPT_PHASES)[number])}
+          >
+            {PROMPT_PHASES.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="rounded bg-black px-3 py-1 text-white disabled:opacity-40"
+            disabled={busy || !objective}
+            onClick={run(async () => {
+              if (objective) await api.sendPrompt(objective.id, { phase })
+            })}
+          >
+            Send phase
           </button>
         </div>
       </section>

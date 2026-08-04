@@ -13,11 +13,17 @@ export const CreateObjectiveBody = z.object({
 export type CreateObjectiveBody = z.infer<typeof CreateObjectiveBody>
 
 /**
- * Spec §7 defines many more commands. M0 implements exactly three;
- * everything else must be rejected so unimplemented paths fail loudly.
+ * Spec §7 defines many more commands. M1 phase 1 adds `phase` alongside the
+ * raw `text` form: exactly one of the two must be present, which
+ * `discriminatedUnion` cannot express (its members must be plain objects), so
+ * the route enforces it and returns a 400 with a specific message.
  */
 export const ObjectiveCommand = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('prompt'), text: z.string().min(1).max(20_000) }),
+  z.object({
+    type: z.literal('prompt'),
+    text: z.string().min(1).max(20_000).optional(),
+    phase: z.string().min(1).max(40).optional(),
+  }),
   z.object({ type: z.literal('cancel') }),
   z.object({ type: z.literal('integrate'), action: z.literal('discard') }),
 ])

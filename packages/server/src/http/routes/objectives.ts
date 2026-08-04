@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { CreateObjectiveBody, ObjectiveCommand } from '@vadd/core'
+import { type AgentEventType, CreateObjectiveBody, ObjectiveCommand } from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { AgentStoppedError } from '../../agent/acp-agent-port.js'
@@ -7,6 +7,7 @@ import type { AgentRegistry } from '../../agent/registry.js'
 import { agentSessions, objectives, projects } from '../../db/schema.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
+import { loadTemplate, type PromptTemplate, renderTemplate } from '../../prompts/renderer.js'
 import type { AppDeps } from '../app.js'
 
 /** ACP rejects with plain objects, so `String(err)` yields "[object Object]". */
@@ -152,7 +153,29 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     }
 
     // type === 'prompt'
-    const text = parsed.data.text
+    const { text: rawText, phase } = parsed.data
+    if ((rawText === undefined) === (phase === undefined)) {
+      return reply.code(400).send({ error: 'Provide exactly one of "text" or "phase"' })
+    }
+
+    let text = rawText ?? ''
+    let expect: AgentEventType[] = []
+    if (phase !== undefined) {
+      let template: PromptTemplate
+      try {
+        template = loadTemplate(phase)
+      } catch (err) {
+        return reply.code(400).send({ error: errorMessage(err) })
+      }
+      // The template's front-matter is the single source of truth for what the
+      // turn must produce: the machine will read the same field in phase 3.
+      expect = template.expects
+      text = renderTemplate(template, {
+        title: objective.title,
+        goalText: objective.goalText,
+      })
+    }
+
     let entry: Awaited<ReturnType<AgentRegistry['ensure']>>
     try {
       entry = await agents.ensure(objective)
@@ -171,9 +194,9 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     }
 
     const turnId = randomUUID()
-    entry.pipeline.beginTurn({ turnId })
+    entry.pipeline.beginTurn({ turnId, expect })
 
-    bus.emit({ objectiveId: objective.id, type: 'prompt_sent', payload: { text } })
+    bus.emit({ objectiveId: objective.id, type: 'prompt_sent', payload: { text, phase } })
 
     // Do not await the turn: it can run for minutes, and progress is observable
     // over SSE. The response only confirms the prompt was accepted.

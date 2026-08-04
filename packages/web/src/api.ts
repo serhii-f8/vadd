@@ -40,11 +40,11 @@ export const api = {
       body: JSON.stringify({ title, goalText }),
     }).then(json<Objective>),
 
-  sendPrompt: (objectiveId: string, text: string) =>
+  sendPrompt: (objectiveId: string, body: { text: string } | { phase: string }) =>
     fetch(`/api/objectives/${objectiveId}/events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'prompt', text }),
+      body: JSON.stringify({ type: 'prompt', ...body }),
     }).then(json<{ ok: boolean }>),
 
   discard: (objectiveId: string) =>
