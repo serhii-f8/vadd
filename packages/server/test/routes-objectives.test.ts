@@ -4,6 +4,7 @@ import { createDb } from '../src/db/client.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { listWorktrees } from '../src/git/git-manager.js'
 import { buildApp } from '../src/http/app.js'
+import { errorMessage } from '../src/http/routes/objectives.js'
 import { makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
 
 async function withProject() {
@@ -105,4 +106,13 @@ test('creation and discard both append events', async () => {
   const types = bus.since(null, 0).map((e) => e.type)
   expect(types).toContain('objective_created')
   expect(types).toContain('objective_discarded')
+})
+
+test('errorMessage recovers a message from an ACP-style plain-object rejection', () => {
+  // The ACP SDK rejects with plain objects, not Error instances. Without this
+  // helper, String(err) on such a rejection yields the literal "[object Object]",
+  // which is what a user sees on every agent-start failure.
+  const message = errorMessage({ code: -32603, message: 'boom' })
+  expect(message).toContain('boom')
+  expect(message).not.toContain('[object Object]')
 })

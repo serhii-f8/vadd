@@ -13,6 +13,24 @@ export function branchNameFor(objectiveId: string): string {
   return `vadd/${objectiveId.slice(0, 8)}`
 }
 
+/** ACP rejects with plain objects, so `String(err)` yields "[object Object]". */
+export function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'string') return err
+  if (err && typeof err === 'object') {
+    const o = err as { message?: unknown; code?: unknown; data?: unknown }
+    if (typeof o.message === 'string') {
+      return o.code === undefined ? o.message : `${o.message} (code ${String(o.code)})`
+    }
+    try {
+      return JSON.stringify(err)
+    } catch {
+      return 'Unknown error'
+    }
+  }
+  return String(err)
+}
+
 export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, bus } = deps
 
@@ -49,7 +67,7 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     try {
       await createWorktree(project.repoPath, path, branch)
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       db.delete(objectives).where(eq(objectives.id, id)).run()
       bus.emit({ type: 'objective_create_failed', payload: { id, message } })
       return reply.code(500).send({ error: `Failed to create worktree: ${message}` })
@@ -127,7 +145,7 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     try {
       entry = await agents.ensure(objective)
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = errorMessage(err)
       bus.emit({ objectiveId: objective.id, type: 'agent_start_failed', payload: { message } })
       return reply.code(500).send({ error: message })
     }
@@ -143,7 +161,7 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
         bus.emit({
           objectiveId: objective.id,
           type: 'prompt_failed',
-          payload: { message: err instanceof Error ? err.message : String(err) },
+          payload: { message: errorMessage(err) },
         }),
       )
 

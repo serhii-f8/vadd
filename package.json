@@ -12,7 +12,8 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "vitest run",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "transcript:export": "pnpm --filter @vadd/server exec tsx scripts/export-transcript.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
