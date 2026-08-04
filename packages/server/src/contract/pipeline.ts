@@ -1,4 +1,9 @@
-import { AgentEvent, type AgentEventType, type RawAgentUpdate } from '@vadd/core'
+import {
+  AgentEvent,
+  type AgentEventType,
+  agentEventJsonSchema,
+  type RawAgentUpdate,
+} from '@vadd/core'
 import { FenceScanner } from './fence-scanner.js'
 
 /** Filled in by Task 6. Injected so the pipeline itself stays I/O-free. */
@@ -136,9 +141,38 @@ export class ContractPipeline {
     }
   }
 
-  /** Spec §4 steps 2 and 3. Task 6 supplies the summarizer. */
+  /**
+   * Spec §4's fallback chain: fenced block → summarizer (flagged `extracted`)
+   * → a status event pointing at the raw view.
+   *
+   * A failure anywhere here degrades to step 3 rather than failing the turn: a
+   * missing key, a rate limit, or an unparseable reply must not lose the work
+   * the agent already did.
+   */
   async #fallback(missing: AgentEventType[]): Promise<void> {
     this.#violation('missing_expected', `expected ${missing.join(', ')}`)
+
+    if (this.#summarizer && this.#raw.trim().length > 0) {
+      try {
+        const reply = await this.#summarizer.extract(this.#raw, agentEventJsonSchema())
+        const events = (reply as { events?: unknown[] })?.events ?? []
+        let emitted = 0
+        for (const item of events) {
+          const result = AgentEvent.safeParse(item)
+          if (!result.success) {
+            this.#violation('schema', JSON.stringify(item), result.error.issues)
+            continue
+          }
+          this.#seen.add(result.data.type)
+          this.#emitEvent(result.data, true)
+          emitted += 1
+        }
+        if (emitted > 0) return
+      } catch (err) {
+        this.#violation('parse', err instanceof Error ? err.message : String(err))
+      }
+    }
+
     this.#emitEvent(
       { type: 'status', phase: 'executing', headline: 'Unstructured output — open raw view' },
       false,
