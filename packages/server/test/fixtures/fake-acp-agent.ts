@@ -4,6 +4,7 @@
  *
  * Behaviour is driven by the FAKE_ACP_MODE environment variable:
  *   'normal'          — handshake, one message chunk, end_turn
+ *   'contract'        — streams one vadd-event block split across three chunks
  *   'permission'      — requests permission for FAKE_ACP_PATH before finishing
  *   'crash-on-prompt' — exits with code 3 when a prompt arrives
  */
@@ -112,14 +113,38 @@ rl.on('line', async (line) => {
       })
     }
 
-    send({
-      jsonrpc: '2.0',
-      method: 'session/update',
-      params: {
-        sessionId,
-        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hello' } },
-      },
-    })
+    if (mode === 'contract') {
+      // Streams one vadd-event block split across three chunks, so the
+      // pipeline's cross-chunk fence handling is exercised, not just the
+      // single-chunk case.
+      const parts = [
+        'Working on it.\n```vadd-e',
+        'vent\n{"type":"status","phase":"exec',
+        'uting","headline":"Running the suite"}\n```\n',
+      ]
+      for (const text of parts) {
+        send({
+          jsonrpc: '2.0',
+          method: 'session/update',
+          params: {
+            sessionId,
+            update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } },
+          },
+        })
+      }
+    } else {
+      send({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'hello' },
+          },
+        },
+      })
+    }
 
     if (mode === 'odd-raw-output') {
       // The two rawOutput shapes claude-code-acp@0.16.2 really sends and the

@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentPort } from '@vadd/core'
 import { eq } from 'drizzle-orm'
+import { ContractPipeline } from '../contract/pipeline.js'
+import { summarizerFromSettings } from '../contract/summarizer.js'
 import type { Db } from '../db/client.js'
 import { agentSessions } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
@@ -22,7 +24,7 @@ export type PortFactory = (o: {
   onPermission: (d: PermissionDecision) => void
 }) => PortWithExit
 
-type Entry = { port: PortWithExit; sessionId: string; rowId: string }
+type Entry = { port: PortWithExit; sessionId: string; rowId: string; pipeline: ContractPipeline }
 
 export type ObjectiveRef = { id: string; worktreePath: string | null }
 
@@ -94,8 +96,25 @@ export class AgentRegistry {
         this.bus.emit({ objectiveId: objective.id, type: 'permission_decision', payload: d }),
     })
 
+    // One pipeline per objective. The summarizer is resolved at start time so a
+    // key added in settings takes effect on the next session rather than
+    // requiring a restart.
+    const pipeline = new ContractPipeline({
+      summarizer: summarizerFromSettings(this.db),
+      onEmit: (emission) => {
+        this.bus.emit({
+          objectiveId: objective.id,
+          type: emission.kind === 'event' ? 'agent_event' : 'contract_violation',
+          payload: emission,
+        })
+      },
+    })
+
     port.onUpdate((u) => {
-      this.bus.emit({ objectiveId: objective.id, type: 'agent_update', payload: u })
+      // Raw first: its row id is what the emission cites as its source, and the
+      // append-only log must record the update even if the pipeline throws.
+      const row = this.bus.emit({ objectiveId: objective.id, type: 'agent_update', payload: u })
+      pipeline.ingest(u, row.id)
     })
 
     port.onExit?.((info) => {
@@ -135,7 +154,7 @@ export class AgentRegistry {
       })
       .run()
 
-    const entry: Entry = { port, sessionId, rowId }
+    const entry: Entry = { port, sessionId, rowId, pipeline }
     this.#live.set(objective.id, entry)
     this.bus.emit({
       objectiveId: objective.id,

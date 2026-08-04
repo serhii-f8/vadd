@@ -162,14 +162,23 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       return reply.code(500).send({ error: message })
     }
 
+    const turnId = randomUUID()
+    entry.pipeline.beginTurn({ turnId })
+
     bus.emit({ objectiveId: objective.id, type: 'prompt_sent', payload: { text } })
 
     // Do not await the turn: it can run for minutes, and progress is observable
     // over SSE. The response only confirms the prompt was accepted.
     void entry.port
       .prompt(entry.sessionId, text)
-      .then((r) => bus.emit({ objectiveId: objective.id, type: 'prompt_finished', payload: r }))
-      .catch((err: unknown) =>
+      .then(async (r) => {
+        await entry.pipeline.endTurn(turnId)
+        bus.emit({ objectiveId: objective.id, type: 'prompt_finished', payload: r })
+      })
+      .catch(async (err: unknown) => {
+        // Flush before reporting: a turn that died mid-block still produced
+        // text, and an unterminated fence is a finding, not noise.
+        await entry.pipeline.endTurn(turnId)
         bus.emit({
           objectiveId: objective.id,
           // A turn we ended is not a turn the agent lost. Reporting a discard
@@ -177,8 +186,8 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
           // milestone exists to collect.
           type: err instanceof AgentStoppedError ? 'prompt_cancelled' : 'prompt_failed',
           payload: { message: errorMessage(err) },
-        }),
-      )
+        })
+      })
 
     return reply.code(202).send({ ok: true, sessionId: entry.sessionId })
   })
