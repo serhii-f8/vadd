@@ -36,7 +36,10 @@ export function loadTranscript(file: string): { name: string; turns: TranscriptT
 
   for (const [i, line] of lines.entries()) {
     const record = JSON.parse(line) as Partial<TranscriptRecord>
-    if (record.schemaVersion === undefined || record.schemaVersion < TRANSCRIPT_SCHEMA_VERSION) {
+    if (
+      typeof record.schemaVersion !== 'number' ||
+      record.schemaVersion < TRANSCRIPT_SCHEMA_VERSION
+    ) {
       throw new Error(
         `${file}:${i + 1} has schemaVersion ${String(record.schemaVersion)}; ` +
           `${TRANSCRIPT_SCHEMA_VERSION} is required. Re-export it with ` +

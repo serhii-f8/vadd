@@ -1,11 +1,10 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { asc, eq } from 'drizzle-orm'
 import { createDb } from '../src/db/client.js'
 import { events } from '../src/db/schema.js'
 import { TRANSCRIPT_SCHEMA_VERSION } from '../src/evals/transcript.js'
-import { dbPath, vaddHome } from '../src/paths.js'
+import { dbPath, repoRoot, vaddHome } from '../src/paths.js'
 
 const [objectiveId, nameArg] = process.argv.slice(2)
 if (!objectiveId) {
@@ -48,10 +47,10 @@ if (rows.length === 0) {
 }
 
 // `pnpm --filter` runs this with cwd=packages/server, so process.cwd() would
-// scatter transcripts into the package. Anchor to the repo root instead, which
-// is a fixed two levels above this script's own directory.
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-const outDir = join(repoRoot, 'evals', 'transcripts')
+// scatter transcripts into the package. Anchor to the repo root instead, found
+// by walking up for the pnpm-workspace.yaml marker (see paths.ts) rather than a
+// fixed `..` count, which only holds while this script runs unbuilt from src/.
+const outDir = join(repoRoot(), 'evals', 'transcripts')
 mkdirSync(outDir, { recursive: true })
 const outFile = join(outDir, `${nameArg ?? objectiveId}.jsonl`)
 // Stamped per record, not as a header line: every consumer reads this file line

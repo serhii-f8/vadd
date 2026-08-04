@@ -48,6 +48,13 @@ test('refuses the M0 spike shape', () => {
   expect(() => loadTranscript(file)).toThrow(/schemaVersion/)
 })
 
+test('refuses a non-numeric schemaVersion rather than letting it slip past the comparison', () => {
+  const file = write([
+    { id: 1, objectiveId: 'o1', type: 'agent_update', payload: chunk('a'), schemaVersion: 'two' },
+  ])
+  expect(() => loadTranscript(file)).toThrow(/schemaVersion/)
+})
+
 test('an unterminated final turn is still returned', () => {
   const file = write([row(1, 'prompt_sent', { text: 'go' }), row(2, 'agent_update', chunk('a'))])
   expect(loadTranscript(file).turns).toHaveLength(1)
