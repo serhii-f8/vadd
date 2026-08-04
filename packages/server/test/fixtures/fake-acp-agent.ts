@@ -58,6 +58,9 @@ rl.on('line', async (line) => {
 
   if (msg.method === 'session/prompt') {
     if (mode === 'crash-on-prompt') process.exit(3)
+    // Accept the turn and never answer it — a long-running turn, which is the
+    // normal case a discard or shutdown interrupts.
+    if (mode === 'hang-on-prompt') return
 
     const sessionId = (msg.params as { sessionId: string }).sessionId
 

@@ -51,6 +51,20 @@ function relaxNotificationSchema(): void {
 }
 
 export type PermissionDecision = { allowed: boolean; paths: string[]; reason?: string }
+
+/**
+ * Raised into an in-flight `prompt()` when the port is stopped on purpose.
+ *
+ * Distinct from a crash so callers can report a turn that *we* ended rather
+ * than one the agent lost — the difference matters to the flakiness signal
+ * this milestone exists to collect.
+ */
+export class AgentStoppedError extends Error {
+  constructor() {
+    super('Agent was stopped before the turn finished')
+    this.name = 'AgentStoppedError'
+  }
+}
 export type ExitInfo = { code: number | null; signal: NodeJS.Signals | null; stderr: string }
 
 export type AcpAgentPortOptions = {
@@ -74,7 +88,7 @@ export type AcpAgentPortOptions = {
  *
  * See docs/superpowers/notes/acp-handshake.md, "Deviation from the brief's script".
  */
-function resolveAdapterBin(): string {
+export function resolveAdapterBin(): string {
   const missing =
     'Cannot find the Claude Code ACP adapter. Install it with: pnpm add -Dw @zed-industries/claude-code-acp@0.16.2'
   let pkgPath: string
@@ -293,6 +307,15 @@ export class AcpAgentPort implements AgentPort {
   async stop(): Promise<void> {
     if (this.#stopped) return
     this.#stopped = true
+
+    // Settle any in-flight turn. The exit handler deliberately skips #fail()
+    // once #stopped is set, and the pinned SDK does not reject pending requests
+    // when the stream closes — so without this the prompt promise never
+    // settles at all: discarding mid-turn emitted no terminal event, the page
+    // showed the turn running forever, and the promise leaked with its closure.
+    this.#rejectPending?.(new AgentStoppedError())
+    this.#rejectPending = undefined
+
     const child = this.#child
     if (!child || child.exitCode !== null) return
     await new Promise<void>((resolve) => {

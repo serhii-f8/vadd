@@ -51,12 +51,16 @@ test('an invalid body is rejected by schema validation', async () => {
   expect(res.statusCode).toBe(400)
 })
 
-test('registering the same repo twice returns 409', async () => {
+test('registering the same repo twice returns 409 with a distinct message', async () => {
   const a = app()
   const repo = makeTempRepo()
   await a.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: repo } })
   const res = await a.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: repo } })
   expect(res.statusCode).toBe(409)
+  // The status code alone was asserted before, while the design's verification
+  // record claimed all three rejection paths produced *distinct messages*. The
+  // message existed but nothing pinned it.
+  expect(res.json().error).toMatch(/already registered/i)
 })
 
 test('registration appends a project_registered event', async () => {

@@ -3,6 +3,7 @@ import { createDb } from '../src/db/client.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { buildApp } from '../src/http/app.js'
 import { withTempHome } from './fixtures/temp-repo.js'
+import { until } from './fixtures/until.js'
 
 async function listening() {
   const home = withTempHome()
@@ -13,14 +14,6 @@ async function listening() {
   const addr = app.server.address()
   if (typeof addr === 'string' || addr === null) throw new Error('no port')
   return { app, bus, url: `http://127.0.0.1:${addr.port}` }
-}
-
-async function until(cond: () => boolean, timeoutMs = 3000): Promise<void> {
-  const deadline = Date.now() + timeoutMs
-  while (!cond()) {
-    if (Date.now() > deadline) throw new Error('condition not met within timeout')
-    await new Promise((r) => setTimeout(r, 5))
-  }
 }
 
 /** Reads SSE frames until `count` events arrive, then aborts. */

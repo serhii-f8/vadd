@@ -3,12 +3,13 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import { AcpAgentPort } from '../src/agent/acp-agent-port.js'
-import { AgentRegistry } from '../src/agent/registry.js'
+import { AgentRegistry, type PortFactory } from '../src/agent/registry.js'
 import { createDb } from '../src/db/client.js'
 import { agentSessions } from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { buildApp } from '../src/http/app.js'
 import { makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
+import { until } from './fixtures/until.js'
 
 const fake = fileURLToPath(new URL('./fixtures/fake-acp-agent.ts', import.meta.url))
 
@@ -141,13 +142,18 @@ test('permission decisions reach the event log with their reason', async () => {
 })
 
 test('discarding an objective stops its agent', async () => {
-  const { app, bus, agents, objective } = await withObjective()
+  const { app, db, bus, agents, objective } = await withObjective()
   await app.inject({
     method: 'POST',
     url: `/api/objectives/${objective.id}/events`,
     payload: { type: 'prompt', text: 'hi' },
   })
-  await new Promise((r) => setTimeout(r, 400))
+  await until(() => agents.get(objective.id) !== undefined)
+  // The agent is genuinely up before the discard, so what follows is a real
+  // teardown rather than a no-op against nothing.
+  const sessionRow = db.select().from(agentSessions).all()[0]
+  expect(sessionRow?.status).toBe('running')
+
   const res = await app.inject({
     method: 'POST',
     url: `/api/objectives/${objective.id}/events`,
@@ -155,9 +161,100 @@ test('discarding an objective stops its agent', async () => {
   })
   expect(res.statusCode).toBe(200)
 
+  // Assert the POSITIVE. The previous version checked only a 200 and an absence
+  // of agent_failed — and a live child emits no exit, so that assertion passed
+  // *harder* when the agent was never stopped at all. It could not fail, while
+  // being the only automated cover for "killing the server leaves no orphan".
+  expect(agents.get(objective.id)).toBeUndefined()
+
   // An intentional stop must not look like a crash. Without the guard in the
   // onExit handler this emits agent_failed and poisons the flakiness signal.
   const failures = bus.since(objective.id, 0).filter((e) => e.type === 'agent_failed')
   expect(failures).toHaveLength(0)
   await agents.stopAll()
+})
+
+test('discarding mid-turn reports a cancelled turn, not a failed one', async () => {
+  // The turn never settled at all before AgentStoppedError existed: no
+  // prompt_finished, no prompt_failed, nothing. The page showed it running
+  // forever.
+  const { app, bus, agents, objective } = await withObjective('hang-on-prompt')
+  await app.inject({
+    method: 'POST',
+    url: `/api/objectives/${objective.id}/events`,
+    payload: { type: 'prompt', text: 'a turn that never finishes' },
+  })
+  await until(() => agents.get(objective.id) !== undefined)
+
+  await app.inject({
+    method: 'POST',
+    url: `/api/objectives/${objective.id}/events`,
+    payload: { type: 'integrate', action: 'discard' },
+  })
+  await until(() => bus.since(objective.id, 0).some((e) => e.type === 'prompt_cancelled'))
+
+  const types = bus.since(objective.id, 0).map((e) => e.type)
+  expect(types).toContain('prompt_cancelled')
+  expect(types).not.toContain('prompt_failed')
+  await agents.stopAll()
+})
+
+test('an agent-start failure reports a usable message through the route', async () => {
+  // Regression cover for the routes, not just the helper. Reverting the three
+  // call sites to `String(err)` leaves the errorMessage unit test green while
+  // users see "[object Object]" again — ACP rejects with plain objects, so this
+  // is the common path, not the rare one.
+  const home = withTempHome()
+  const db = createDb(`${home}/vadd.db`)
+  const bus = new EventBus(db)
+  const agents = new AgentRegistry(db, bus, () => {
+    const port = {
+      async start() {
+        // Exactly the shape the SDK rejects with: a plain JSON-RPC error.
+        throw { code: -32603, message: 'boom' }
+      },
+      async newSession() {
+        return { sessionId: 's' }
+      },
+      async prompt() {
+        return { stopReason: 'end_turn' }
+      },
+      async cancel() {},
+      async stop() {},
+      onUpdate: () => () => {},
+      onExit: () => () => {},
+    }
+    return port as unknown as ReturnType<PortFactory>
+  })
+  const app = buildApp({ db, bus, agents })
+  const projectId = (
+    await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { repoPath: makeTempRepo() },
+    })
+  ).json().id as string
+  const objective = (
+    await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/objectives`,
+      payload: { title: 't', goalText: 'g' },
+    })
+  ).json()
+
+  const res = await app.inject({
+    method: 'POST',
+    url: `/api/objectives/${objective.id}/events`,
+    payload: { type: 'prompt', text: 'hi' },
+  })
+
+  expect(res.statusCode).toBe(500)
+  expect(res.json().error).toContain('boom')
+  expect(res.json().error).not.toContain('[object Object]')
+
+  const failed = bus.since(objective.id, 0).find((e) => e.type === 'agent_start_failed')
+  expect(failed).toBeDefined()
+  const message = (failed?.payload as { message?: string } | undefined)?.message ?? ''
+  expect(message).toContain('boom')
+  expect(message).not.toContain('[object Object]')
 })

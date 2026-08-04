@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { CreateObjectiveBody, ObjectiveCommand } from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
+import { AgentStoppedError } from '../../agent/acp-agent-port.js'
 import type { AgentRegistry } from '../../agent/registry.js'
 import { agentSessions, objectives, projects } from '../../db/schema.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
@@ -160,7 +161,10 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       .catch((err: unknown) =>
         bus.emit({
           objectiveId: objective.id,
-          type: 'prompt_failed',
+          // A turn we ended is not a turn the agent lost. Reporting a discard
+          // or a shutdown as a failure would corrupt the flakiness signal this
+          // milestone exists to collect.
+          type: err instanceof AgentStoppedError ? 'prompt_cancelled' : 'prompt_failed',
           payload: { message: errorMessage(err) },
         }),
       )

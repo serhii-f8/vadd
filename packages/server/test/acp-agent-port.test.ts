@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { RawAgentUpdate } from '@vadd/core'
 import { expect, test } from 'vitest'
-import { AcpAgentPort } from '../src/agent/acp-agent-port.js'
+import { AcpAgentPort, AgentStoppedError } from '../src/agent/acp-agent-port.js'
 
 const fake = fileURLToPath(new URL('./fixtures/fake-acp-agent.ts', import.meta.url))
 
@@ -86,6 +86,31 @@ test('updates the SDK schema rejects are still delivered, not dropped', async ()
   expect(failed.rawOutput).toContain('old_string')
 
   await port.stop()
+})
+
+test('an in-flight prompt settles when the agent is stopped intentionally', async () => {
+  // The exit handler skips #fail() when #stopped is set, and the pinned SDK
+  // does not reject pending requests when the stream closes. So an intentional
+  // stop left the turn's promise forever pending: discarding an objective
+  // mid-turn emitted neither prompt_finished nor prompt_failed, the debug page
+  // showed it running forever, and the promise and its closure leaked. Note a
+  // real crash rejects correctly — this was the opposite asymmetry.
+  const port = makePort({ mode: 'hang-on-prompt' })
+  await port.start()
+  const { sessionId } = await port.newSession({ cwd: process.cwd() })
+
+  const pending = port.prompt(sessionId, 'a turn that never finishes')
+  let settled = false
+  void pending
+    .catch(() => {})
+    .finally(() => {
+      settled = true
+    })
+  await new Promise((r) => setTimeout(r, 100))
+  expect(settled).toBe(false) // genuinely in flight before we stop it
+
+  await port.stop()
+  await expect(pending).rejects.toBeInstanceOf(AgentStoppedError)
 })
 
 test('permission is granted for a path inside the worktree', async () => {
