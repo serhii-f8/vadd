@@ -40,7 +40,10 @@ export const api = {
       body: JSON.stringify({ title, goalText }),
     }).then(json<Objective>),
 
-  sendPrompt: (objectiveId: string, body: { text: string } | { phase: string }) =>
+  sendPrompt: (
+    objectiveId: string,
+    body: { text: string } | { phase: string; vars?: Record<string, string> },
+  ) =>
     fetch(`/api/objectives/${objectiveId}/events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

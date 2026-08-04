@@ -7,7 +7,12 @@ import type { AgentRegistry } from '../../agent/registry.js'
 import { agentSessions, objectives, projects } from '../../db/schema.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
-import { loadTemplate, type PromptTemplate, renderTemplate } from '../../prompts/renderer.js'
+import {
+  loadTemplate,
+  type PromptTemplate,
+  placeholdersIn,
+  renderTemplate,
+} from '../../prompts/renderer.js'
 import type { AppDeps } from '../app.js'
 
 /** ACP rejects with plain objects, so `String(err)` yields "[object Object]". */
@@ -173,7 +178,25 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       text = renderTemplate(template, {
         title: objective.title,
         goalText: objective.goalText,
+        ...parsed.data.vars,
       })
+
+      // renderTemplate deliberately leaves an unknown placeholder in place — a
+      // visibly broken prompt is debuggable, a silently empty one is not — but
+      // "visible" only helps if someone looks. Sending it anyway is how
+      // `verify.md` came to ship the literal string `{{verificationCommands}}`
+      // to the agent. On the corpus run that would have measured the gate's
+      // kill-switch number against a systematically broken prompt, and the
+      // resulting low `evidence` recall would have been indistinguishable from
+      // a genuine failure of the product bet.
+      const unresolved = placeholdersIn(text)
+      if (unresolved.length > 0) {
+        return reply.code(400).send({
+          error:
+            `Prompt for phase "${phase}" still contains ` +
+            `${unresolved.map((n) => `{{${n}}}`).join(', ')}. Supply the value(s) in "vars".`,
+        })
+      }
     }
 
     let entry: Awaited<ReturnType<AgentRegistry['ensure']>>

@@ -6,10 +6,13 @@ import { afterEach, beforeEach, expect, test } from 'vitest'
 import { FenceScanner } from '../src/contract/fence-scanner.js'
 import { repoRoot } from '../src/paths.js'
 import {
+  AUTO_TEMPLATE_VARS,
   bundledPromptDir,
+  CALLER_TEMPLATE_VARS,
   loadTemplate,
   PROMPT_PHASES,
   parseTemplate,
+  placeholdersIn,
   renderTemplate,
   userPromptDir,
 } from '../src/prompts/renderer.js'
@@ -102,6 +105,45 @@ test('every example block in every bundled template is valid and within budget',
       // Spec §10: the bundled templates are where the reading budget is tested.
       expect(fitsReadingBudget(parsed.data), `${phase}: ${block.body}`).toEqual([])
     }
+  }
+})
+
+test('every placeholder in every bundled template has a declared source', () => {
+  // The check whose absence shipped `{{verificationCommands}}` and
+  // `{{taskTitle}}` / `{{taskDescription}}` to the agent as literal text. A new
+  // placeholder in any template is now a failing test until someone decides
+  // where its value comes from, rather than a silently broken prompt.
+  const known = new Set<string>([...AUTO_TEMPLATE_VARS, ...CALLER_TEMPLATE_VARS])
+  for (const phase of PROMPT_PHASES) {
+    for (const name of placeholdersIn(loadTemplate(phase).body)) {
+      expect(
+        known.has(name),
+        `${phase}.md uses {{${name}}}, which no caller supplies. Add it to ` +
+          'AUTO_TEMPLATE_VARS or CALLER_TEMPLATE_VARS in prompts/renderer.ts.',
+      ).toBe(true)
+    }
+  }
+})
+
+test('the objective-derived vars alone leave two templates unsatisfied', () => {
+  // Pins the fact the fix depends on: `verify` and `execute-task` genuinely
+  // cannot be rendered from an objective row, so the route must reject them
+  // without `vars` rather than treating the leftover braces as prose. If a
+  // later phase wires these up from the verification spec and plan_tasks, this
+  // test is the one to update — deliberately, not by accident.
+  const auto = Object.fromEntries(AUTO_TEMPLATE_VARS.map((v) => [v, 'x']))
+  const unsatisfied = PROMPT_PHASES.filter(
+    (p) => placeholdersIn(renderTemplate(loadTemplate(p), auto)).length > 0,
+  )
+  expect(unsatisfied.sort()).toEqual(['execute-task', 'verify'])
+})
+
+test('a fully supplied var set renders every template with no placeholder left', () => {
+  const all = Object.fromEntries(
+    [...AUTO_TEMPLATE_VARS, ...CALLER_TEMPLATE_VARS].map((v) => [v, 'x']),
+  )
+  for (const phase of PROMPT_PHASES) {
+    expect(placeholdersIn(renderTemplate(loadTemplate(phase), all)), phase).toEqual([])
   }
 })
 

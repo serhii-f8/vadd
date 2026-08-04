@@ -15,6 +15,21 @@ const PROMPT_PHASES = [
   'review',
 ] as const
 
+/**
+ * `name=value` per line. Only the first `=` splits, so a value may contain
+ * them; a line without one is ignored rather than guessed at, and the server's
+ * unsubstituted-placeholder 400 is what reports the omission.
+ */
+function parseVars(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const line of text.split('\n')) {
+    const at = line.indexOf('=')
+    if (at <= 0) continue
+    out[line.slice(0, at).trim()] = line.slice(at + 1).trim()
+  }
+  return out
+}
+
 export function DebugPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [objective, setObjective] = useState<Objective | null>(null)
@@ -26,6 +41,7 @@ export function DebugPage() {
   const [goalText, setGoalText] = useState('')
   const [prompt, setPrompt] = useState('')
   const [phase, setPhase] = useState<(typeof PROMPT_PHASES)[number]>(PROMPT_PHASES[0])
+  const [vars, setVars] = useState('')
 
   useEffect(() => {
     api
@@ -186,12 +202,23 @@ export function DebugPage() {
             className="rounded bg-black px-3 py-1 text-white disabled:opacity-40"
             disabled={busy || !objective}
             onClick={run(async () => {
-              if (objective) await api.sendPrompt(objective.id, { phase })
+              if (objective) await api.sendPrompt(objective.id, { phase, vars: parseVars(vars) })
             })}
           >
             Send phase
           </button>
         </div>
+        {/* `verify` and `execute-task` carry placeholders whose real sources —
+            the verification spec and plan_tasks — are milestone phases 3 and 4.
+            Until then the human driving corpus collection types them here; the
+            server refuses the prompt rather than sending `{{...}}` to the agent. */}
+        <textarea
+          className="w-full rounded border px-2 py-1 font-mono text-xs"
+          rows={3}
+          placeholder={'Template vars, one per line:\nverificationCommands=pnpm test'}
+          value={vars}
+          onChange={(e) => setVars(e.target.value)}
+        />
       </section>
 
       <section className="space-y-2 rounded border p-4">

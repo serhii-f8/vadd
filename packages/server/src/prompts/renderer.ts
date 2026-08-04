@@ -91,13 +91,44 @@ export function loadTemplate(phase: string): PromptTemplate {
   return parseTemplate(readFileSync(file, 'utf8'), file)
 }
 
+const PLACEHOLDER = /\{\{(\w+)\}\}/g
+
+/**
+ * Placeholders the server fills from the objective row itself.
+ */
+export const AUTO_TEMPLATE_VARS = ['title', 'goalText'] as const
+
+/**
+ * Placeholders with no source in this milestone phase, which the caller must
+ * supply as `vars`.
+ *
+ * `verificationCommands` comes from the verification spec and `taskTitle` /
+ * `taskDescription` from `plan_tasks` — phases 3 and 4. Until those exist, the
+ * human driving corpus collection types them in. Naming them here rather than
+ * leaving them implicit is the point: `verify.md` and `execute-task.md` are the
+ * only two templates that solicit `evidence`, one of the two gated types, and
+ * they shipped sending the literal string `{{verificationCommands}}` to the
+ * agent because nothing checked that any caller could satisfy them.
+ */
+export const CALLER_TEMPLATE_VARS = [
+  'verificationCommands',
+  'taskTitle',
+  'taskDescription',
+] as const
+
+/** Distinct `{{name}}` placeholders in a template body or a rendered prompt. */
+export function placeholdersIn(text: string): string[] {
+  return [...new Set([...text.matchAll(PLACEHOLDER)].map((m) => m[1] as string))]
+}
+
 /**
  * Replaces `{{name}}` with `vars.name`. An unknown placeholder is left in place
  * rather than blanked: a visibly broken prompt is debuggable, a silently empty
- * one is not.
+ * one is not. Callers are expected to run `placeholdersIn` over the result and
+ * refuse to send a prompt that still carries one.
  */
 export function renderTemplate(t: PromptTemplate, vars: Record<string, string>): string {
-  return t.body.replace(/\{\{(\w+)\}\}/g, (whole, name: string) =>
+  return t.body.replace(PLACEHOLDER, (whole, name: string) =>
     Object.hasOwn(vars, name) ? (vars[name] ?? whole) : whole,
   )
 }
