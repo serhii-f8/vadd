@@ -1,0 +1,90 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { AgentEvent, fitsReadingBudget } from '@vadd/core'
+import { afterEach, beforeEach, expect, test } from 'vitest'
+import { FenceScanner } from '../src/contract/fence-scanner.js'
+import {
+  loadTemplate,
+  PROMPT_PHASES,
+  parseTemplate,
+  renderTemplate,
+  userPromptDir,
+} from '../src/prompts/renderer.js'
+
+let home: string
+const prev = process.env.VADD_HOME
+beforeEach(() => {
+  home = mkdtempSync(join(tmpdir(), 'vadd-prompts-'))
+  process.env.VADD_HOME = home
+})
+afterEach(() => {
+  if (prev === undefined) delete process.env.VADD_HOME
+  else process.env.VADD_HOME = prev
+})
+
+test('parses front-matter including the expects list', () => {
+  const t = parseTemplate(
+    ['---', 'version: 1', 'phase: planning', 'expects: [plan]', '---', 'Body {{goalText}}'].join(
+      '\n',
+    ),
+    'test',
+  )
+  expect(t).toMatchObject({ version: 1, phase: 'planning', expects: ['plan'] })
+  expect(t.body.trim()).toBe('Body {{goalText}}')
+})
+
+test('rejects a template whose expects names an unknown event type', () => {
+  expect(() =>
+    parseTemplate(
+      ['---', 'version: 1', 'phase: x', 'expects: [invented]', '---', 'b'].join('\n'),
+      'test',
+    ),
+  ).toThrow(/invented/)
+})
+
+test('substitutes placeholders and leaves unknown ones visible', () => {
+  const t = parseTemplate(
+    ['---', 'version: 1', 'phase: p', 'expects: []', '---', 'A {{one}} B {{missing}}'].join('\n'),
+    'test',
+  )
+  expect(renderTemplate(t, { one: 'X' })).toContain('A X B {{missing}}')
+})
+
+test('every bundled phase loads', () => {
+  for (const phase of PROMPT_PHASES) {
+    const t = loadTemplate(phase)
+    expect(t.phase, phase).toBe(phase)
+    expect(t.body.length, phase).toBeGreaterThan(0)
+  }
+})
+
+test('a user override wins over the bundled template (D11)', () => {
+  mkdirSync(userPromptDir(), { recursive: true })
+  writeFileSync(
+    join(userPromptDir(), 'plan.md'),
+    ['---', 'version: 1', 'phase: plan', 'expects: [plan]', '---', 'MINE'].join('\n'),
+  )
+  expect(loadTemplate('plan').body.trim()).toBe('MINE')
+  // Overriding one phase must not fork the rest.
+  expect(loadTemplate('verify').body).not.toContain('MINE')
+})
+
+test('every example block in every bundled template is valid and within budget', () => {
+  for (const phase of PROMPT_PHASES) {
+    const scanner = new FenceScanner()
+    const blocks = [...scanner.push(loadTemplate(phase).body), ...scanner.flush().blocks]
+    for (const block of blocks) {
+      const parsed = AgentEvent.safeParse(JSON.parse(block.body))
+      expect(parsed.success, `${phase}: ${block.body}`).toBe(true)
+      if (!parsed.success) continue
+      // Spec §10: the bundled templates are where the reading budget is tested.
+      expect(fitsReadingBudget(parsed.data), `${phase}: ${block.body}`).toEqual([])
+    }
+  }
+})
+
+test('at least one template carries a worked example', () => {
+  const withExamples = PROMPT_PHASES.filter((p) => loadTemplate(p).body.includes('```vadd-event'))
+  expect(withExamples.length).toBeGreaterThan(0)
+})
