@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { asc, eq } from 'drizzle-orm'
 import { createDb } from '../src/db/client.js'
 import { events } from '../src/db/schema.js'
+import { TRANSCRIPT_SCHEMA_VERSION } from '../src/evals/transcript.js'
 import { dbPath, vaddHome } from '../src/paths.js'
 
 const [objectiveId, nameArg] = process.argv.slice(2)
@@ -53,7 +54,14 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '.
 const outDir = join(repoRoot, 'evals', 'transcripts')
 mkdirSync(outDir, { recursive: true })
 const outFile = join(outDir, `${nameArg ?? objectiveId}.jsonl`)
-writeFileSync(outFile, `${rows.map((r) => JSON.stringify(r)).join('\n')}\n`)
+// Stamped per record, not as a header line: every consumer reads this file line
+// by line, and a header would make each of them special-case line 1.
+writeFileSync(
+  outFile,
+  `${rows
+    .map((r) => JSON.stringify({ ...r, schemaVersion: TRANSCRIPT_SCHEMA_VERSION }))
+    .join('\n')}\n`,
+)
 
 const agentUpdates = rows.filter((r) => r.type === 'agent_update').length
 console.log(`Wrote ${rows.length} events (${agentUpdates} agent updates) to ${outFile}`)
