@@ -4,3 +4,4 @@ dist/
 *.log
 .serena/
 *.tsbuildinfo
+.superpowers/
