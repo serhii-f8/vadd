@@ -19,13 +19,37 @@ export type TypeScore = {
   recall: number
 }
 
+/** A label that should have surfaced and did not, named so it can be read. */
+export type EvalMiss = { transcript: string; key: string; turn: number; type: GatedType }
+
+/** A gated emission no label accounted for. */
+export type EvalFalsePositive = {
+  transcript: string
+  turn: number
+  type: GatedType
+  /** `headline` for `evidence`, `question` for `decision_needed`. */
+  headline?: string
+}
+
 export type EvalReport = {
   gate: { pass: boolean; threshold: number }
   byType: TypeScore[]
   tuning: TypeScore[]
   holdout: TypeScore[]
+  /**
+   * Per-label detail. Design §5.3 justifies `key` as existing "so a diff of
+   * eval output names which expectation moved"; without these two lists the
+   * only output is an aggregate percentage, and phase 2's entire activity is
+   * iterating against that number.
+   */
+  misses: EvalMiss[]
+  falsePositives: EvalFalsePositive[]
   extra: {
     transcripts: number
+    /** Transcripts whose label file says `holdout: false` / omits it. */
+    tuningTranscripts: number
+    /** Transcripts whose label file says `holdout: true` (design §5.6). */
+    holdoutTranscripts: number
     parseFailures: number
     contractViolations: number
     budgetViolations: number
@@ -94,6 +118,13 @@ function tally(rows: Row[]): TypeScore[] {
   })
 }
 
+/** Whatever the emission puts on screen, for a readable false-positive line. */
+function headlineOf(event: AgentEvent): string | undefined {
+  if ('headline' in event) return event.headline
+  if ('question' in event) return event.question
+  return undefined
+}
+
 export async function scoreCorpus(opts: {
   transcriptsDir: string
   labelsDir: string
@@ -101,8 +132,17 @@ export async function scoreCorpus(opts: {
   const files = readdirSync(opts.transcriptsDir)
     .filter((f) => f.endsWith('.jsonl'))
     .sort()
-  const all: (TypeScore & { holdout: boolean })[] = []
-  const extra = { transcripts: 0, parseFailures: 0, contractViolations: 0, budgetViolations: 0 }
+  const all: (Row & { holdout: boolean })[] = []
+  const misses: EvalMiss[] = []
+  const falsePositives: EvalFalsePositive[] = []
+  const extra = {
+    transcripts: 0,
+    tuningTranscripts: 0,
+    holdoutTranscripts: 0,
+    parseFailures: 0,
+    contractViolations: 0,
+    budgetViolations: 0,
+  }
 
   for (const file of files) {
     const name = file.replace(/\.jsonl$/, '')
@@ -115,9 +155,38 @@ export async function scoreCorpus(opts: {
     }
     const labels = loadLabelFile(labelFile)
     const { byTurn, emissions } = await replayTranscript(join(opts.transcriptsDir, file))
+
+    // Turn numbers are assigned by the loader and written by hand, so an
+    // off-by-one or a stale number after a re-export is a real possibility.
+    // Unchecked it is indistinguishable from the agent never emitting the
+    // block — a lie in the *fail* direction, which would kill the project on
+    // a labelling typo.
+    for (const label of labels.labels) {
+      if (label.turn < 1 || label.turn > byTurn.size) {
+        throw new Error(
+          `${labelFile}: label "${label.key}" points at turn ${label.turn}, but ` +
+            `"${name}" has ${byTurn.size} turn(s). Turns are 1-based; a label ` +
+            'outside that range can never match and would silently depress recall.',
+        )
+      }
+    }
+
     const result = matchEmissions(labels.labels, byTurn)
+    for (const label of result.missed) {
+      misses.push({ transcript: name, key: label.key, turn: label.turn, type: label.type })
+    }
+    for (const fp of result.falsePositives) {
+      falsePositives.push({
+        transcript: name,
+        turn: fp.turn,
+        type: fp.event.type as GatedType,
+        headline: headlineOf(fp.event),
+      })
+    }
 
     extra.transcripts += 1
+    if (labels.holdout) extra.holdoutTranscripts += 1
+    else extra.tuningTranscripts += 1
     for (const e of emissions) {
       if (e.kind === 'violation') {
         extra.contractViolations += 1
@@ -137,11 +206,28 @@ export async function scoreCorpus(opts: {
         matched,
         falsePositives: fp,
         emissions: matched + fp,
-        precision: 0,
-        recall: 0,
         holdout: labels.holdout,
       })
     }
+  }
+
+  // The mirror of the missing-label check above. Without it, deleting the
+  // transcript the agent did worst on and leaving its labels behind raises
+  // recall with no visible trace — the highest-leverage remaining way for the
+  // gate to report a number it has not earned.
+  const present = new Set(files.map((f) => f.replace(/\.jsonl$/, '')))
+  const orphans = existsSync(opts.labelsDir)
+    ? readdirSync(opts.labelsDir)
+        .filter((f) => f.endsWith('.labels.json'))
+        .filter((f) => !present.has(f.replace(/\.labels\.json$/, '')))
+        .sort()
+    : []
+  if (orphans.length > 0) {
+    throw new Error(
+      `No transcript for label file(s) ${orphans.join(', ')} in ${opts.transcriptsDir}. ` +
+        'Every label file must have its transcript; an orphan one means a transcript ' +
+        'was deleted, which would silently raise recall.',
+    )
   }
 
   const byType = tally(all)
@@ -151,14 +237,26 @@ export async function scoreCorpus(opts: {
   // transcripts, or a type with zero labels across every transcript) must not
   // silently read PASS. `extra.transcripts > 0` and `s.labels > 0` make both
   // holes explicit failures instead of vacuous successes.
+  //
+  // The tuning/holdout split carries the same vacuity one level down: with no
+  // transcript marked `holdout: true`, both subsets tally to recall 1 over zero
+  // labels, tuning.recall equals byType.recall, and the design §5.6 gap is
+  // arithmetically guaranteed to be ≤10 points whenever the gate passes. The
+  // overfitting alarm could therefore never fire in the case it exists for —
+  // the human forgot to mark the four holdout files. Requiring both subsets to
+  // be non-empty makes that a loud failure instead of a silent PASS.
   const pass =
     extra.transcripts > 0 &&
+    extra.tuningTranscripts > 0 &&
+    extra.holdoutTranscripts > 0 &&
     byType.every((s) => s.labels > 0 && s.precision >= GATE_THRESHOLD && s.recall >= GATE_THRESHOLD)
   return {
     gate: { pass, threshold: GATE_THRESHOLD },
     byType,
     tuning: tally(all.filter((r) => !r.holdout)),
     holdout: tally(all.filter((r) => r.holdout)),
+    misses,
+    falsePositives,
     extra,
   }
 }

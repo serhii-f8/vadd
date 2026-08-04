@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -6,6 +6,20 @@ import { expect, test, vi } from 'vitest'
 import { GATE_THRESHOLD, scoreCorpus } from '../src/evals/score.js'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'evals')
+
+/**
+ * A writable copy of the `tiny` corpus, so a test can delete a transcript or
+ * bend a label without editing the shared fixture.
+ */
+function corpusCopy(): { transcriptsDir: string; labelsDir: string } {
+  const root = mkdtempSync(join(tmpdir(), 'vadd-evals-copy-'))
+  const transcriptsDir = join(root, 'transcripts')
+  const labelsDir = join(root, 'labels')
+  for (const dir of [transcriptsDir, labelsDir]) mkdirSync(dir)
+  copyFileSync(join(fixtures, 'transcripts', 'tiny.jsonl'), join(transcriptsDir, 'tiny.jsonl'))
+  copyFileSync(join(fixtures, 'labels', 'tiny.labels.json'), join(labelsDir, 'tiny.labels.json'))
+  return { transcriptsDir, labelsDir }
+}
 
 test('scores recall and precision per gated type', async () => {
   const report = await scoreCorpus({
@@ -54,10 +68,12 @@ test('an unlabelled decision_needed emission is a false positive that drags prec
 })
 
 test('an empty transcripts directory fails the gate rather than passing vacuously', async () => {
-  const emptyTranscripts = mkdtempSync(join(tmpdir(), 'vadd-evals-empty-'))
+  // Both directories empty. Pointing an empty transcripts dir at a *populated*
+  // labels dir is a different situation — every transcript deleted — and the
+  // orphan-label check below is what must fire there.
   const report = await scoreCorpus({
-    transcriptsDir: emptyTranscripts,
-    labelsDir: join(fixtures, 'labels'),
+    transcriptsDir: mkdtempSync(join(tmpdir(), 'vadd-evals-empty-tx-')),
+    labelsDir: mkdtempSync(join(tmpdir(), 'vadd-evals-empty-lb-')),
   })
   expect(report.extra.transcripts).toBe(0)
   expect(report.gate.pass).toBe(false)
@@ -67,6 +83,103 @@ test('a transcript with no label file is an error, not a silent skip', async () 
   await expect(
     scoreCorpus({ transcriptsDir: join(fixtures, 'transcripts'), labelsDir: fixtures }),
   ).rejects.toThrow(/label/i)
+})
+
+test('an orphan label file is an error — deleting a bad transcript must not raise the score', async () => {
+  // The exact attack the check exists for: score the corpus, notice the agent
+  // did badly on one transcript, delete the transcript, leave its labels. Every
+  // count the gate reads is computed from the *transcript* listing, so recall
+  // rises and nothing in the output says a file went missing.
+  const { transcriptsDir, labelsDir } = corpusCopy()
+  copyFileSync(join(labelsDir, 'tiny.labels.json'), join(labelsDir, 'deleted-one.labels.json'))
+
+  await expect(scoreCorpus({ transcriptsDir, labelsDir })).rejects.toThrow(
+    /deleted-one\.labels\.json/,
+  )
+})
+
+test('a label pointing at a turn the transcript does not have is an error, not a miss', async () => {
+  // Turn numbers are 1-based and written by hand. An off-by-one, or a stale
+  // number after re-exporting, silently becomes a missed label — a lie in the
+  // *fail* direction, which would kill the project on a labelling typo.
+  const { transcriptsDir, labelsDir } = corpusCopy()
+  const file = join(labelsDir, 'tiny.labels.json')
+  const labels = JSON.parse(readFileSync(file, 'utf8')) as {
+    labels: { turn: number; key: string }[]
+  }
+  const target = labels.labels[0]
+  if (target) target.turn = 99
+  writeFileSync(file, JSON.stringify(labels))
+
+  await expect(scoreCorpus({ transcriptsDir, labelsDir })).rejects.toThrow(/turn 99/)
+  // Naming the label is the point: "some label is wrong" is not actionable
+  // against a hand-written corpus of twelve files.
+  await expect(scoreCorpus({ transcriptsDir, labelsDir })).rejects.toThrow(/phpunit/)
+})
+
+test('turn 0 is rejected too — the range is 1-based at both ends', async () => {
+  const { transcriptsDir, labelsDir } = corpusCopy()
+  const file = join(labelsDir, 'tiny.labels.json')
+  const labels = JSON.parse(readFileSync(file, 'utf8')) as { labels: { turn: number }[] }
+  // 0 is written past the schema, which also rejects it (turn is a positive
+  // int). Either layer may be the one that fires; what must not happen is a
+  // turn-0 label loading and scoring as an honest miss.
+  writeFileSync(file, JSON.stringify(labels).replace('"turn":1', '"turn":0'))
+  await expect(scoreCorpus({ transcriptsDir, labelsDir })).rejects.toThrow(/turn/i)
+})
+
+test('names every missed label and every unlabelled emission', async () => {
+  // Without these, `recall 50.0%` is the entire output and a human tuning the
+  // prompt has to write their own script to find out which expectation moved
+  // — which is exactly what design §5.3 says `key` exists to avoid.
+  const report = await scoreCorpus({
+    transcriptsDir: join(fixtures, 'transcripts'),
+    labelsDir: join(fixtures, 'labels'),
+  })
+  expect(report.misses).toEqual([
+    { transcript: 'tiny', key: 'queue-vs-sync', turn: 2, type: 'decision_needed' },
+  ])
+  expect(report.falsePositives).toHaveLength(1)
+  expect(report.falsePositives[0]).toMatchObject({ transcript: 'tiny', type: 'decision_needed' })
+  // The headline is what makes the line readable; decision_needed carries its
+  // text in `question`, not `headline`.
+  expect(report.falsePositives[0]?.headline).toBeTruthy()
+})
+
+test('counts the tuning and holdout subsets, and an empty holdout fails the gate', async () => {
+  // tally() scores an empty denominator as 1, so with no holdout both subsets
+  // report recall 1.0 and tuning.recall equals byType.recall — the design §5.6
+  // gap is then arithmetically incapable of exceeding 10 points whenever the
+  // gate passes. The alarm could never fire in the case it exists for.
+  const { transcriptsDir, labelsDir } = corpusCopy()
+  const report = await scoreCorpus({ transcriptsDir, labelsDir })
+  expect(report.extra).toMatchObject({
+    transcripts: 1,
+    tuningTranscripts: 1,
+    holdoutTranscripts: 0,
+  })
+  expect(report.holdout.every((s) => s.labels === 0 && s.recall === 1)).toBe(true)
+  expect(report.gate.pass).toBe(false)
+})
+
+test('a corpus that is all holdout also fails — the tuning subset must be real too', async () => {
+  const { transcriptsDir, labelsDir } = corpusCopy()
+  const file = join(labelsDir, 'tiny.labels.json')
+  writeFileSync(file, readFileSync(file, 'utf8').replace('"holdout": false', '"holdout": true'))
+  const report = await scoreCorpus({ transcriptsDir, labelsDir })
+  expect(report.extra).toMatchObject({ tuningTranscripts: 0, holdoutTranscripts: 1 })
+  expect(report.gate.pass).toBe(false)
+})
+
+test('a missing labels directory is not a crash', async () => {
+  // `evals/labels/` may not exist yet, and the orphan check lists it. An
+  // ENOENT stack trace instead of "no transcripts" would read as a broken tool.
+  const { transcriptsDir, labelsDir } = corpusCopy()
+  rmSync(join(transcriptsDir, 'tiny.jsonl'))
+  rmSync(labelsDir, { recursive: true })
+  const report = await scoreCorpus({ transcriptsDir, labelsDir })
+  expect(report.extra.transcripts).toBe(0)
+  expect(report.gate.pass).toBe(false)
 })
 
 test('runs offline — no summarizer is constructed', async () => {

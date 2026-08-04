@@ -1,5 +1,5 @@
 import type { AgentEvent } from '@vadd/core'
-import { compileRegex, GATED_TYPES, type Label } from './labels.js'
+import { compileRegex, EXACT_MATCH_VALUES, GATED_TYPES, type Label } from './labels.js'
 
 export type MatchResult = {
   matched: { label: Label; event: AgentEvent }[]
@@ -7,15 +7,13 @@ export type MatchResult = {
   falsePositives: { turn: number; event: AgentEvent }[]
 }
 
-const EXACT = new Set(['kind', 'status'])
-
 function satisfies(event: AgentEvent, label: Label): boolean {
   if (event.type !== label.type) return false
   const record = event as unknown as Record<string, unknown>
   for (const [field, pattern] of Object.entries(label.match)) {
     const value = record[field]
     if (typeof value !== 'string') return false
-    if (EXACT.has(field)) {
+    if (Object.hasOwn(EXACT_MATCH_VALUES, field)) {
       if (value !== pattern) return false
     } else if (!compileRegex(pattern).test(value)) {
       return false

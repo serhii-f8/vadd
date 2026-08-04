@@ -25,8 +25,12 @@ const acpPkgUrl = import.meta.resolve('@zed-industries/claude-code-acp/package.j
 const acpPkg = JSON.parse(await readFile(new URL(acpPkgUrl), 'utf8'))
 const acpBin = new URL(acpPkg.bin['claude-code-acp'], acpPkgUrl)
 
-const outFile = join('evals', 'transcripts', `spike-${Date.now()}.jsonl`)
-mkdirSync('evals/transcripts', { recursive: true })
+// `archive/`, not the top level: `evals/transcripts/*.jsonl` is the gate's
+// corpus listing, and a spike capture dropped there fails `pnpm eval` (or, if
+// someone labelled it, contaminates the kill-switch number).
+const outDir = join('evals', 'transcripts', 'archive')
+const outFile = join(outDir, `spike-${Date.now()}.jsonl`)
+mkdirSync(outDir, { recursive: true })
 
 function record(kind: string, data: unknown) {
   appendFileSync(outFile, `${JSON.stringify({ kind, at: new Date().toISOString(), data })}\n`)
