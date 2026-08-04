@@ -65,6 +65,15 @@ test('emits each element of an array payload separately', async () => {
   ])
 })
 
+test('records an empty array payload as a violation instead of vanishing', async () => {
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1' })
+  pipe.ingest(chunk('```vadd-event\n[]\n```\n'), 20)
+  await pipe.endTurn('t1')
+  expect(out).toHaveLength(1)
+  expect(out[0]).toMatchObject({ kind: 'violation', reason: 'schema', raw: '[]' })
+})
+
 test('records a parse failure instead of dropping it', async () => {
   const { out, pipe } = collect()
   pipe.beginTurn({ turnId: 't1' })

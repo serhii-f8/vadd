@@ -114,6 +114,17 @@ export class ContractPipeline {
       return
     }
     const items = Array.isArray(parsed) ? parsed : [parsed]
+    // An empty array is a degenerate payload, not a no-op: the array form
+    // exists so one turn can carry several events, and nothing in the
+    // contract documents "zero events" as a valid outcome of emitting a
+    // fence at all. Falling through an empty loop here would silently
+    // swallow a block that arrived — exactly what this pipeline exists to
+    // prevent — so treat it as a schema violation instead of simplifying
+    // this check back out.
+    if (items.length === 0) {
+      this.#violation('schema', body)
+      return
+    }
     for (const item of items) {
       const result = AgentEvent.safeParse(item)
       if (!result.success) {
