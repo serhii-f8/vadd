@@ -14,7 +14,8 @@
     "format": "biome check --write .",
     "test": "vitest run",
     "typecheck": "tsc -b",
-    "transcript:export": "pnpm --filter @vadd/server exec tsx scripts/export-transcript.ts"
+    "transcript:export": "pnpm --filter @vadd/server exec tsx scripts/export-transcript.ts",
+    "eval": "pnpm --filter @vadd/server exec tsx scripts/eval.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

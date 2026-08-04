@@ -1,0 +1,6 @@
+{"id":1,"objectiveId":"o1","type":"prompt_sent","payload":{"text":"go"},"createdAt":"2026-08-04T00:00:00.000Z","schemaVersion":2}
+{"id":2,"objectiveId":"o1","type":"agent_update","payload":{"sessionId":"s","receivedAt":"2026-08-04T00:00:00.000Z","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"```vadd-event\n{\"type\":\"evidence\",\"kind\":\"test\",\"status\":\"pass\",\"headline\":\"OK (12 tests)\",\"summary\":[]}\n```\n"}}},"createdAt":"2026-08-04T00:00:00.000Z","schemaVersion":2}
+{"id":3,"objectiveId":"o1","type":"prompt_finished","payload":{"stopReason":"end_turn"},"createdAt":"2026-08-04T00:00:00.000Z","schemaVersion":2}
+{"id":4,"objectiveId":"o1","type":"prompt_sent","payload":{"text":"and now?"},"createdAt":"2026-08-04T00:00:00.000Z","schemaVersion":2}
+{"id":5,"objectiveId":"o1","type":"agent_update","payload":{"sessionId":"s","receivedAt":"2026-08-04T00:00:00.000Z","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"I picked the queue approach without asking.\n"}}},"createdAt":"2026-08-04T00:00:00.000Z","schemaVersion":2}
+{"id":6,"objectiveId":"o1","type":"prompt_finished","payload":{"stopReason":"end_turn"},"createdAt":"2026-08-04T00:00:00.000Z","schemaVersion":2}
