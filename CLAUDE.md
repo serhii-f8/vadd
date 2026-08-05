@@ -4,17 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-**M0 (Skeleton) is complete; M1 (Contract + Machine + Gate) is designed and not yet started.**
+**M0 (Skeleton) is complete. M1 phases 1–2 (Output Contract pipeline + eval gate infrastructure) are merged.** Task 14 — record the corpus, label it, run the gate — is partially done: all 12 transcripts (10 gate + 2 floor) are recorded and committed. **Labelling `evals/labels/*.json` and the first real `pnpm eval` run are still open** — that result is what phases 3–6 wait on (build order is risk-first; see M1 scope below).
 
 Read before touching M1 work, in this order:
 
 - `vadd-spec-final.md` — the authoritative v1.0 spec, FINAL, plus amendments A1–A3 dated 2026-08-04
 - `docs/superpowers/specs/2026-08-04-m1-contract-machine-gate-design.md` — the approved M1 design
+- `docs/superpowers/notes/m1-phase12-known-gaps.md` — what phases 1–2 left open, what's since been resolved (profile credentials, the A3 command permission policy, an `execute-task.md` template gap), and what Task 14's real corpus run found
 - `docs/superpowers/notes/m0-known-gaps.md` — what M0 left open, and what M1 inherits by construction
 - `docs/superpowers/specs/2026-08-03-m0-skeleton-design.md` — M0's design, including the verification record in §7.1
 - `vadd-spec-phase2.md` — Phase 2, which starts only after v1's Definition of Done. One of its items (the managed agent profile) is pulled into M1 by the M1 design.
 
-The monorepo is real: `packages/core` (ports, Zod schemas), `packages/server` (Fastify, Drizzle, GitManager, AcpAgentPort, EventBus), `packages/web` (Vite + React debug page). Five tables are migrated; M1 adds the other four.
+The monorepo is real: `packages/core` (ports, Zod schemas, policies), `packages/server` (Fastify, Drizzle, GitManager, AcpAgentPort, EventBus), `packages/web` (Vite + React debug page). Five tables are migrated; M1 adds the other four.
 
 Verified on this machine 2026-08-03: Node v22.20.0, pnpm 11.9.0, git 2.43.0, `@zed-industries/claude-code-acp@0.16.2`, `@zed-industries/agent-client-protocol@0.4.5`. Both ACP packages are pinned exactly (spec §2) — do not bump them casually; M0 found two places where the SDK's types disagree with the adapter's real output.
 
@@ -34,7 +35,7 @@ The design fixes several boundaries; don't re-litigate these without reading it.
 - **The gate measures human-labelled ground truth** — what *should* have surfaced, not what the agent emitted — with the summarizer off, over ten contract transcripts (four held out). Two extra raw transcripts are a floor measurement and never part of the gate.
 - **The pipeline validates everything itself.** M0's SDK silently discarded ~a quarter of one session's updates. No code path may turn a parse or validation failure into silence; failures become persisted `contract_violation` events.
 - **`AgentPort`'s shape does not change.** M1 adds a transform over `onUpdate`, not new methods.
-- **Four additions beyond spec §9's M1 line**, each blocking the exit criterion: the managed agent profile (`CLAUDE_CONFIG_DIR`), the command permission policy, `setup` commands, and a skeleton Focus View.
+- **Four additions beyond spec §9's M1 line**, each blocking the exit criterion: the managed agent profile (`CLAUDE_CONFIG_DIR`) — done, `389673b`; the command permission policy (amendment A3) — done, `83aabd8`, ahead of its originally-planned phase 4 slot, once M0's fail-closed-on-Bash gap turned out to block Task 14 directly; `setup` commands and a skeleton Focus View — not started, still phase 4/5 work.
 
 Deferred to M2: shadcn/ui and Decision Card styling, Low Energy Mode, Fast Fix auto-approval (the machine guard ships in M1), daily summary, `npx` packaging, `react-diff-view`, `integrate` via `pr`/`merge`, Playwright.
 
@@ -70,12 +71,22 @@ Each of these cost a review finding or a wrong claim. They are not hypothetical.
 
 - **Never spawn `npx claude-code-acp`.** With `cwd` set to a worktree — which never has `node_modules` — npx falls back to the registry and silently runs an unrelated package. Resolve the pinned adapter's bin by path (`resolveAdapterBin()`).
 - **The SDK drops what it cannot parse.** `ClientSideConnection` validates `session/update` before dispatch and throws on failure, so the handler never sees it and only its own `console.error` records the loss. `relaxNotificationSchema()` works around this. Treat client-side validation on the receive path as a liability.
-- **The permission policy denies every path-less tool.** `Bash`, `BashOutput`, `KillShell` carry no `locations` and no path-bearing `rawInput`, so they hit the fail-closed branch. M1 amendment A3 adds the command predicate; do not try to reach commands by extending the path predicate.
+- **The permission policy denies every path-less tool.** `Bash`, `BashOutput`, `KillShell` carry no `locations` and no path-bearing `rawInput`, so they hit the fail-closed branch. Fixed by amendment A3's command predicate (`packages/core/src/policies/command-policy.ts`, wired into `AcpAgentPort.requestPermission` in `83aabd8`) — do not reach commands by extending the path predicate.
 - **`requestPermission.toolCall.locations` is often absent**, even when the earlier `tool_call` notification for the same `toolCallId` carried them. Paths come from three sources, and an empty path set must fail closed — `[].every()` returns `true`.
 - **An allow is granted once.** `allow_always` maps to `acceptEdits` in this adapter, which bypasses `requestPermission` for the rest of the session and would silently disable the policy.
 - **`pnpm dev` does not forward signals.** `Ctrl-C` signals the whole process group and is fine; `kill %1` orphans the server, Vite, and any adapter.
 - **Transcripts have two incompatible record shapes**, and anything exported before the dropped-update fix is lossy. See `evals/transcripts/README.md`; the M1 loader discriminates on `schemaVersion` and refuses pre-fix exports.
 - **No browser automation exists in this environment.** The debug page has never been rendered in a browser — M0's one unmet exit criterion. Verify React changes by hand and say so plainly.
+
+## Traps Task 14 paid for
+
+Found recording the real corpus, not hypothetical either.
+
+- **The managed profile had no way to authenticate.** `ensureAgentProfile()` isolates `CLAUDE_CONFIG_DIR` from the user's real one so third-party skills can't leak in, but that also hides the OAuth session — the very first real session under the profile failed with "Authentication required" before the isolation question was even reached. Fixed in `389673b` by copying `.credentials.json` into the profile on every regeneration; isolation is about skills/plugins, not identity.
+- **A Claude Code session's own env vars block its own adapter.** `claude-code-acp` refuses to start when `CLAUDECODE` is set. The server only spawns the adapter lazily, and the child inherits the *server process's* env, not the caller's — so `env -u CLAUDECODE -u CLAUDE_CODE_CHILD_SESSION -u AI_AGENT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CLAUDE_EFFORT -u CLAUDE_CODE_MAX_OUTPUT_TOKENS -u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_EXECPATH` in front of `pnpm dev` (or the E2E test) is enough — no separate terminal required.
+- **`execute-task.md` never showed a `task_result` example.** It showed `evidence`'s JSON shape but not `task_result`'s, so the agent reliably invented the wrong fields (`status`/`headline`/`summary` instead of `taskId`/`claim`/`evidenceRefs`) and hit a schema `contract_violation` on every real execute-task turn. Fixed in `77f13f1`; affected transcripts re-recorded in `2e7c91f`.
+- **A worktree's `docker compose exec` runs against the wrong checkout.** `flexpick.net`'s real test workflow bind-mounts the *main* checkout into Sail, not a VADD worktree — a worktree-scoped agent that reaches for `docker compose exec` is operating on code it didn't write. Worked around for corpus recording by symlinking `vendor`/`node_modules` and pointing a copied `.env` at the Sail containers' host-exposed ports directly (bypassing Docker entirely); `setup` commands (phase 4) are the real fix.
+- **Zod's length caps and thorough reasoning are in tension.** `decision_needed` options (`verification` ≤120 chars, `pros`/`cons` items ≤100 each) and `evidence.summary` items (≤100 chars) were exceeded routinely across the real corpus whenever the agent reasoned carefully. Left as-is — this is real signal for the gate, not a bug — but expect it to recur and possibly cap achievable recall.
 
 ## Commands
 
@@ -90,4 +101,4 @@ pnpm eval                          # eval harness: precision/recall vs. golden t
 npx vadd                           # packaged entry point → localhost web app (M2)
 ```
 
-Single Vitest file: `pnpm vitest run <path>`; single test: add `-t "<name>"`. The real-adapter integration test is skipped unless `VADD_E2E=1`. `pnpm eval` does not exist yet — it lands in M1 phase 2.
+Single Vitest file: `pnpm vitest run <path>`; single test: add `-t "<name>"`. The real-adapter integration test is skipped unless `VADD_E2E=1`. `pnpm eval` exists and the 12-transcript corpus is recorded (`evals/transcripts/`), but it fails until `evals/labels/*.json` exists — Task 14's labelling step, deliberately left to a human (design §5.6), is what's between here and the milestone's real go/no-go number.
