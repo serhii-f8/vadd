@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { vaddHome } from '../paths.js'
 import { bundledPromptDir, parseTemplate } from '../prompts/renderer.js'
@@ -30,6 +31,18 @@ export function ensureAgentProfile(): string {
   mkdirSync(join(dir, 'hooks'), { recursive: true })
   mkdirSync(join(dir, 'skills'), { recursive: true })
   writeFileSync(join(dir, 'settings.json'), '{}\n')
+
+  // Isolation targets skills/plugins, not identity: the profile has no OAuth
+  // session of its own, so without this the adapter can never authenticate.
+  // Copied fresh on every call, matching this function's own regenerate-always
+  // rule, so a refreshed token is picked up on the next server start too.
+  const credentialsSrc = join(
+    process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'),
+    '.credentials.json',
+  )
+  if (existsSync(credentialsSrc)) {
+    copyFileSync(credentialsSrc, join(dir, '.credentials.json'))
+  }
 
   const addendum = parseTemplate(
     readFileSync(join(bundledPromptDir(), 'system-addendum.md'), 'utf8'),
