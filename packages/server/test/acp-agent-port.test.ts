@@ -25,7 +25,13 @@ function makePort(opts: {
   mode: string
   worktreePath?: string
   permissionPath?: string
-  onPermission?: (d: { allowed: boolean; paths: string[]; reason?: string }) => void
+  permissionCommand?: string
+  onPermission?: (d: {
+    allowed: boolean
+    paths: string[]
+    command?: string
+    reason?: string
+  }) => void
 }) {
   const wt = opts.worktreePath ?? mkdtempSync(join(tmpdir(), 'vadd-wt-'))
   return new AcpAgentPort({
@@ -35,6 +41,7 @@ function makePort(opts: {
     env: {
       FAKE_ACP_MODE: opts.mode,
       ...(opts.permissionPath ? { FAKE_ACP_PATH: opts.permissionPath } : {}),
+      ...(opts.permissionCommand ? { FAKE_ACP_COMMAND: opts.permissionCommand } : {}),
     },
     onPermission: opts.onPermission ?? (() => {}),
   })
@@ -146,6 +153,41 @@ test('permission is refused for a path outside the worktree', async () => {
   expect(decisions[0]).toMatchObject({ allowed: false, paths: ['/etc/passwd'] })
   // The reason is the diagnostic a rejection is logged with — assert it exists.
   expect(decisions[0]?.reason).toMatch(/outside the objective worktree/i)
+  await port.stop()
+})
+
+test('permission is refused for a denylisted command', async () => {
+  const wt = mkdtempSync(join(tmpdir(), 'vadd-wt-'))
+  const decisions: { allowed: boolean; paths: string[]; command?: string; reason?: string }[] = []
+  const port = makePort({
+    mode: 'permission-command',
+    worktreePath: wt,
+    permissionCommand: 'sudo rm -rf /',
+    onPermission: (d) => decisions.push(d),
+  })
+  await port.start()
+  const { sessionId } = await port.newSession({ cwd: wt })
+  await port.prompt(sessionId, 'run a command')
+  expect(decisions).toHaveLength(1)
+  expect(decisions[0]).toMatchObject({ allowed: false, command: 'sudo rm -rf /' })
+  expect(decisions[0]?.reason).toMatch(/sudo/i)
+  await port.stop()
+})
+
+test('permission is granted for a command not on the denylist', async () => {
+  const wt = mkdtempSync(join(tmpdir(), 'vadd-wt-'))
+  const decisions: { allowed: boolean; paths: string[]; command?: string; reason?: string }[] = []
+  const port = makePort({
+    mode: 'permission-command',
+    worktreePath: wt,
+    permissionCommand: 'npm test',
+    onPermission: (d) => decisions.push(d),
+  })
+  await port.start()
+  const { sessionId } = await port.newSession({ cwd: wt })
+  await port.prompt(sessionId, 'run a command')
+  expect(decisions).toHaveLength(1)
+  expect(decisions[0]).toMatchObject({ allowed: true, command: 'npm test' })
   await port.stop()
 })
 

@@ -5,13 +5,16 @@
  * Behaviour is driven by the FAKE_ACP_MODE environment variable:
  *   'normal'          — handshake, one message chunk, end_turn
  *   'contract'        — streams one vadd-event block split across three chunks
- *   'permission'      — requests permission for FAKE_ACP_PATH before finishing
- *   'crash-on-prompt' — exits with code 3 when a prompt arrives
+ *   'permission'         — requests permission for FAKE_ACP_PATH before finishing
+ *   'permission-command' — requests permission for a command (FAKE_ACP_COMMAND)
+ *                          instead of a path, via toolCall.rawInput.command
+ *   'crash-on-prompt'    — exits with code 3 when a prompt arrives
  */
 import { createInterface } from 'node:readline'
 
 const mode = process.env.FAKE_ACP_MODE ?? 'normal'
 const permissionPath = process.env.FAKE_ACP_PATH ?? '/etc/passwd'
+const permissionCommand = process.env.FAKE_ACP_COMMAND ?? 'sudo rm -rf /'
 
 function send(msg: unknown) {
   process.stdout.write(`${JSON.stringify(msg)}\n`)
@@ -106,6 +109,20 @@ rl.on('line', async (line) => {
         // client's request schema — omitting it makes the client reject the
         // request at the transport layer before AcpAgentPort ever sees it.
         toolCall: { toolCallId: 'fake-tc-1', locations: [{ path: permissionPath }] },
+        options: [
+          { optionId: 'yes', name: 'Allow', kind: 'allow_once' },
+          { optionId: 'no', name: 'Reject', kind: 'reject_once' },
+        ],
+      })
+    }
+
+    if (mode === 'permission-command') {
+      await request('session/request_permission', {
+        sessionId,
+        toolCall: {
+          toolCallId: 'fake-tc-1',
+          rawInput: { command: permissionCommand },
+        },
         options: [
           { optionId: 'yes', name: 'Allow', kind: 'allow_once' },
           { optionId: 'no', name: 'Reject', kind: 'reject_once' },

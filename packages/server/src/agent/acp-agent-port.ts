@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import type { AgentPort, RawAgentUpdate } from '@vadd/core'
+import { type AgentPort, decideCommand, type RawAgentUpdate } from '@vadd/core'
 import {
   ClientSideConnection,
   ndJsonStream,
@@ -50,7 +50,12 @@ function relaxNotificationSchema(): void {
   }
 }
 
-export type PermissionDecision = { allowed: boolean; paths: string[]; reason?: string }
+export type PermissionDecision = {
+  allowed: boolean
+  paths: string[]
+  command?: string
+  reason?: string
+}
 
 /**
  * Raised into an in-flight `prompt()` when the port is stopped on purpose.
@@ -215,9 +220,26 @@ export class AcpAgentPort implements AgentPort {
           rawInput?: Record<string, unknown>
         }
       }) => {
-        const paths = pathsFromToolCall(params.toolCall, this.#knownLocations)
-        const { allowed, reason } = decidePermission(this.opts.worktreePath, paths)
-        this.opts.onPermission?.({ allowed, paths, reason })
+        // Amendment A3: a tool carrying a command (Bash and friends have no
+        // `locations` and no path-bearing `rawInput`, which used to fail closed
+        // outright) is evaluated against the command denylist instead of the
+        // path policy. Everything else — including a tool with neither — falls
+        // through to M0's path policy, which already fails closed on an empty
+        // path set.
+        const rawCommand = params.toolCall.rawInput?.command
+        const command =
+          typeof rawCommand === 'string' && rawCommand.trim() !== '' ? rawCommand : undefined
+
+        let allowed: boolean
+        let reason: string | undefined
+        let paths: string[] = []
+        if (command) {
+          ;({ allowed, reason } = decideCommand(command, this.opts.worktreePath))
+        } else {
+          paths = pathsFromToolCall(params.toolCall, this.#knownLocations)
+          ;({ allowed, reason } = decidePermission(this.opts.worktreePath, paths))
+        }
+        this.opts.onPermission?.({ allowed, paths, command, reason })
 
         // An allow is only ever granted ONCE. The previous fallback to
         // `allow_always` was a containment kill-switch: in this adapter that
