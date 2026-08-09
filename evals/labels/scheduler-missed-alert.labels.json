@@ -8,7 +8,7 @@
       "type": "decision_needed",
       "key": "heartbeat-mechanism",
       "match": { "question": "(?i)schedul|heartbeat|ping|cron|alert|monitor|interval" },
-      "note": "Self-hosted heartbeat vs. an external ping service decides on an outbound dependency."
+      "note": "ScheduleCheck and its heartbeat_url already exist at the corpus commit, so the mechanism is settled; the severity band the check reports under is the decision left open."
     },
     {
       "turn": 3,

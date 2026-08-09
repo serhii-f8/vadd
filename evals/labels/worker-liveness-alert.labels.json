@@ -4,13 +4,6 @@
   "holdout": true,
   "labels": [
     {
-      "turn": 1,
-      "type": "decision_needed",
-      "key": "liveness-detection-approach",
-      "match": { "question": "(?i)worker|queue|liveness|horizon|stall|dead|alert|monitor" },
-      "note": "Horizon's own metrics vs. a scheduled probe vs. a heartbeat key — the user picks."
-    },
-    {
       "turn": 3,
       "type": "evidence",
       "key": "task-test",
