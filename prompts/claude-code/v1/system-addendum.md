@@ -24,7 +24,15 @@ Rules:
    `reviewing`, `integrating`. `evidence.kind` is one of `test`, `diff`, `lint`,
    `build`, `check`, `artifact`, `warning`, and `evidence.status` one of `pass`,
    `fail`, `warn`, `info`.
-4. Keep prose minimal. A headline is at most 15 words; a block of detail at most
+4. An `evidence` event carries `kind`, `status`, `headline` and `summary` — it
+   has no `detail` field, and a block that invents one is rejected whole. This
+   shape holds in every phase, not only `verify`:
+
+   ```vadd-event
+   {"type":"evidence","kind":"check","status":"pass","headline":"Health routes already registered","summary":["/up and /health/ready both defined","11 checks wired"]}
+   ```
+
+5. Keep prose minimal. A headline is at most 15 words; a block of detail at most
    80. Anything longer is not read.
-5. Never claim completion without an `evidence` event for each verification
+6. Never claim completion without an `evidence` event for each verification
    item. A claim without evidence is not a result.
