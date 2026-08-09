@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "transcript": "health-check-endpoint",
+  "holdout": false,
+  "labels": [
+    {
+      "turn": 1,
+      "type": "decision_needed",
+      "key": "health-endpoint-shape",
+      "match": { "question": "(?i)health|readiness|liveness|endpoint|route|depend|check" },
+      "note": "What the endpoint probes and what it exposes publicly is the user's call."
+    },
+    {
+      "turn": 3,
+      "type": "evidence",
+      "key": "task-test",
+      "match": { "kind": "test" },
+      "note": "Execute-task is prompted test-first; the reviewer needs the test outcome."
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-pint",
+      "match": { "kind": "lint" },
+      "note": "First verification command: vendor/bin/pint --test"
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-phpunit",
+      "match": { "kind": "test" },
+      "note": "Second verification command: php artisan test --compact tests/Unit"
+    }
+  ]
+}

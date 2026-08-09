@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "transcript": "stripe-trial-email",
+  "holdout": true,
+  "labels": [
+    {
+      "turn": 1,
+      "type": "decision_needed",
+      "key": "trial-email-dispatch",
+      "match": { "question": "(?i)trial|email|mail|stripe|notif|queue|event|listener" },
+      "note": "Sending inside the webhook vs. dispatching an event/queued job is a user-facing tradeoff."
+    },
+    {
+      "turn": 3,
+      "type": "evidence",
+      "key": "task-test",
+      "match": { "kind": "test" },
+      "note": "Execute-task is prompted test-first; the reviewer needs the test outcome."
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-pint",
+      "match": { "kind": "lint" },
+      "note": "First verification command: vendor/bin/pint --test"
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-phpunit",
+      "match": { "kind": "test" },
+      "note": "Second verification command: php artisan test --compact tests/Unit"
+    }
+  ]
+}

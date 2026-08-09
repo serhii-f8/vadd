@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "transcript": "mail-render-failure-logging",
+  "holdout": false,
+  "labels": [
+    {
+      "turn": 1,
+      "type": "decision_needed",
+      "key": "render-failure-handling",
+      "match": { "question": "(?i)mail|render|log|fail|swallow|catch|exception" },
+      "note": "Whether a render failure is logged-and-swallowed or rethrown changes delivery behaviour."
+    },
+    {
+      "turn": 3,
+      "type": "evidence",
+      "key": "task-test",
+      "match": { "kind": "test" },
+      "note": "Execute-task is prompted test-first; the reviewer needs the test outcome."
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-pint",
+      "match": { "kind": "lint" },
+      "note": "First verification command: vendor/bin/pint --test"
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-phpunit",
+      "match": { "kind": "test" },
+      "note": "Second verification command: php artisan test --compact tests/Unit"
+    }
+  ]
+}

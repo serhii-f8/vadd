@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "transcript": "discount-action-type",
+  "holdout": false,
+  "labels": [
+    {
+      "turn": 1,
+      "type": "decision_needed",
+      "key": "action-type-source",
+      "match": { "question": "(?i)action.?type|discount|select|enum|constant" },
+      "note": "Which existing enum/constant set backs the field is a user-visible modelling choice."
+    },
+    {
+      "turn": 3,
+      "type": "evidence",
+      "key": "task-test",
+      "match": { "kind": "test" },
+      "note": "Execute-task is prompted test-first; the reviewer needs the test outcome."
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-pint",
+      "match": { "kind": "lint" },
+      "note": "First verification command: vendor/bin/pint --test"
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-phpunit",
+      "match": { "kind": "test" },
+      "note": "Second verification command: php artisan test --compact tests/Unit"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "transcript": "worker-liveness-alert",
+  "holdout": true,
+  "labels": [
+    {
+      "turn": 1,
+      "type": "decision_needed",
+      "key": "liveness-detection-approach",
+      "match": { "question": "(?i)worker|queue|liveness|horizon|stall|dead|alert|monitor" },
+      "note": "Horizon's own metrics vs. a scheduled probe vs. a heartbeat key — the user picks."
+    },
+    {
+      "turn": 3,
+      "type": "evidence",
+      "key": "task-test",
+      "match": { "kind": "test" },
+      "note": "Execute-task is prompted test-first; the reviewer needs the test outcome."
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-pint",
+      "match": { "kind": "lint" },
+      "note": "First verification command: vendor/bin/pint --test"
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-phpunit",
+      "match": { "kind": "test" },
+      "note": "Second verification command: php artisan test --compact tests/Unit"
+    }
+  ]
+}

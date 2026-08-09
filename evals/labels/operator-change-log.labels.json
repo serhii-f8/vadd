@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "transcript": "operator-change-log",
+  "holdout": false,
+  "labels": [
+    {
+      "turn": 1,
+      "type": "decision_needed",
+      "key": "audit-trail-mechanism",
+      "match": { "question": "(?i)operator|audit|change ?log|trail|who|record|track|filament" },
+      "note": "A new audit table vs. an existing package vs. model events — a real architecture choice."
+    },
+    {
+      "turn": 3,
+      "type": "evidence",
+      "key": "task-test",
+      "match": { "kind": "test" },
+      "note": "Execute-task is prompted test-first; the reviewer needs the test outcome."
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-pint",
+      "match": { "kind": "lint" },
+      "note": "First verification command: vendor/bin/pint --test"
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-phpunit",
+      "match": { "kind": "test" },
+      "note": "Second verification command: php artisan test --compact tests/Unit"
+    }
+  ]
+}

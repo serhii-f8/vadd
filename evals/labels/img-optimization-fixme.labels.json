@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "transcript": "img-optimization-fixme",
+  "holdout": true,
+  "labels": [
+    {
+      "turn": 1,
+      "type": "decision_needed",
+      "key": "sizes-selection-strategy",
+      "match": { "question": "(?i)image ?sizes|device ?sizes|width|breakpoint|fixme|optimi[sz]" },
+      "note": "How narrow images pick a sizes array changes rendered output; the user decides."
+    },
+    {
+      "turn": 3,
+      "type": "evidence",
+      "key": "task-test",
+      "match": { "kind": "test" },
+      "note": "Execute-task is prompted test-first; the reviewer needs the test outcome."
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-eslint",
+      "match": { "kind": "lint" },
+      "note": "First verification command: npx eslint ."
+    },
+    {
+      "turn": 4,
+      "type": "evidence",
+      "key": "verify-prettier",
+      "match": { "kind": "lint" },
+      "note": "Second verification command: npx prettier --check ."
+    }
+  ]
+}
