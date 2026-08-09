@@ -22,5 +22,8 @@ emit more than one `task_result` for the same task). `evidenceRefs` lists the
 {"type":"task_result","taskId":"empty-backspace-fix","claim":"Empty backspace no longer throws","evidenceRefs":["OK (12 tests, 30 assertions)"]}
 ```
 
+`summary` holds at most 6 items, each at most 100 characters. A longer item is
+rejected and the evidence is lost, so keep each one to a single short clause.
+
 If you cannot finish, emit a `failure` event with the probable cause instead of
 a partial `task_result`.

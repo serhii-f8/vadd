@@ -15,3 +15,6 @@ Emit one `evidence` event per command, with the real headline from its output:
 
 Report failures as failures. A green claim without a matching command output is
 not evidence, and the workflow will not accept it.
+
+`summary` holds at most 6 items, each at most 100 characters. A longer item is
+rejected and the evidence is lost, so keep each one to a single short clause.
