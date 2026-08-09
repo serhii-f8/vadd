@@ -45,7 +45,7 @@ test('a summarizer rescues a turn that emitted no block', async () => {
       }),
     },
   })
-  pipe.beginTurn({ turnId: 't1', expect: ['plan'] })
+  pipe.beginTurn({ turnId: 't1', expect: [['plan']] })
   pipe.ingest(chunk('Here is my plan, in prose: first add a test, then fix the bug.\n'), 1)
   await pipe.endTurn('t1')
 
@@ -64,7 +64,7 @@ test('a summarizer returning junk falls through to the raw-view status', async (
     onEmit: (e) => out.push(e),
     summarizer: { extract: async () => ({ events: [{ type: 'nonsense' }] }) },
   })
-  pipe.beginTurn({ turnId: 't1', expect: ['plan'] })
+  pipe.beginTurn({ turnId: 't1', expect: [['plan']] })
   pipe.ingest(chunk('prose only\n'), 1)
   await pipe.endTurn('t1')
   expect(out.at(-1)).toMatchObject({
@@ -83,7 +83,7 @@ test('a summarizer that throws does not break the turn', async () => {
       },
     },
   })
-  pipe.beginTurn({ turnId: 't1', expect: ['plan'] })
+  pipe.beginTurn({ turnId: 't1', expect: [['plan']] })
   pipe.ingest(chunk('prose only\n'), 1)
   await expect(pipe.endTurn('t1')).resolves.toBeUndefined()
   expect(out.at(-1)).toMatchObject({ kind: 'event', event: { type: 'status' } })
@@ -92,7 +92,7 @@ test('a summarizer that throws does not break the turn', async () => {
 test('makes zero network calls with no summarizer configured', async () => {
   const fetchSpy = vi.spyOn(globalThis, 'fetch')
   const pipe = new ContractPipeline({ onEmit: () => undefined })
-  pipe.beginTurn({ turnId: 't1', expect: ['plan', 'evidence'] })
+  pipe.beginTurn({ turnId: 't1', expect: [['plan'], ['evidence']] })
   pipe.ingest(chunk('nothing structured here at all\n'), 1)
   await pipe.endTurn('t1')
   expect(fetchSpy).not.toHaveBeenCalled()

@@ -62,7 +62,7 @@ export class ContractPipeline {
   readonly #summarizer?: Summarizer
 
   #turnId: string | null = null
-  #expect: AgentEventType[] = []
+  #expect: AgentEventType[][] = []
   #seen = new Set<AgentEventType>()
   #sources: number[] = []
   /** Full turn text, kept for the summarizer fallback and violation records. */
@@ -77,8 +77,13 @@ export class ContractPipeline {
    * `expect` is how spec §4's "missing block for an expected phase" becomes
    * concrete: the caller declares what this turn must produce. It comes from
    * the prompt template's `expects` front-matter (design §4.1).
+   *
+   * Each entry is an alternation group, satisfied by any one of its members.
+   * `failure` is the documented alternative to a phase's success event, so a
+   * flat AND over the same list made a successful turn permanently unable to
+   * satisfy its own contract.
    */
-  beginTurn(t: { turnId: string; expect?: AgentEventType[] }): void {
+  beginTurn(t: { turnId: string; expect?: AgentEventType[][] }): void {
     this.#scanner.flush()
     this.#turnId = t.turnId
     this.#expect = t.expect ?? []
@@ -102,7 +107,7 @@ export class ContractPipeline {
     for (const block of blocks) this.#handleBlock(block.body)
     if (unterminated !== null) this.#violation('unterminated', unterminated)
 
-    const missing = this.#expect.filter((t) => !this.#seen.has(t))
+    const missing = this.#expect.filter((group) => !group.some((t) => this.#seen.has(t)))
     if (missing.length > 0) await this.#fallback(missing)
 
     this.#turnId = null
@@ -149,8 +154,9 @@ export class ContractPipeline {
    * missing key, a rate limit, or an unparseable reply must not lose the work
    * the agent already did.
    */
-  async #fallback(missing: AgentEventType[]): Promise<void> {
-    this.#violation('missing_expected', `expected ${missing.join(', ')}`)
+  async #fallback(missing: AgentEventType[][]): Promise<void> {
+    const unmet = missing.map((group) => group.join(' or ')).join(', ')
+    this.#violation('missing_expected', `expected ${unmet}`)
 
     if (this.#summarizer && this.#raw.trim().length > 0) {
       try {

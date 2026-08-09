@@ -1,7 +1,7 @@
 ---
 version: 1
 phase: execute-task
-expects: [task_result, evidence, failure]
+expects: [task_result|failure, evidence|failure]
 ---
 Implement this task and nothing else.
 

@@ -1,7 +1,7 @@
 ---
 version: 1
 phase: review
-expects: [status, failure]
+expects: [status|failure]
 ---
 Review the diff on this branch against the objective. Change nothing.
 

@@ -112,7 +112,7 @@ test('records an unterminated fence at end of turn', async () => {
 
 test('falls back to a status event when an expected type never arrives', async () => {
   const { out, pipe } = collect()
-  pipe.beginTurn({ turnId: 't1', expect: ['plan'] })
+  pipe.beginTurn({ turnId: 't1', expect: [['plan']] })
   pipe.ingest(chunk('I thought about it but never emitted a block.\n'), 6)
   await pipe.endTurn('t1')
   expect(out).toHaveLength(2)
@@ -125,7 +125,7 @@ test('falls back to a status event when an expected type never arrives', async (
 
 test('does not fall back when the expected type did arrive', async () => {
   const { out, pipe } = collect()
-  pipe.beginTurn({ turnId: 't1', expect: ['status'] })
+  pipe.beginTurn({ turnId: 't1', expect: [['status']] })
   pipe.ingest(chunk(STATUS), 8)
   await pipe.endTurn('t1')
   expect(out).toHaveLength(1)
@@ -150,4 +150,51 @@ test('ingest outside a turn is dropped rather than throwing', async () => {
   const { out, pipe } = collect()
   pipe.ingest(chunk(STATUS), 11)
   expect(out).toEqual([])
+})
+
+// `expects` entries are alternation groups: a group is satisfied when ANY of
+// its members arrives. The flat AND reading fired `missing_expected` on every
+// successful `execute-task` turn, because that template lists `failure` — the
+// alternative to `task_result`, which a successful turn correctly never emits.
+// The turn was then told "Unstructured output — open raw view" despite being
+// fully structured, which is thesis 1 inverted.
+const TASK_RESULT =
+  '```vadd-event\n{"type":"task_result","taskId":"t","claim":"Done","evidenceRefs":["OK"]}\n```\n'
+const EVIDENCE =
+  '```vadd-event\n{"type":"evidence","kind":"diff","status":"pass","headline":"One line removed","summary":["ok"]}\n```\n'
+const FAILURE =
+  '```vadd-event\n{"type":"failure","headline":"Could not build","probableCause":"No lockfile","suggestedActions":["Run install"]}\n```\n'
+const EXECUTE_TASK_EXPECT = [
+  ['task_result', 'failure'],
+  ['evidence', 'failure'],
+] as const
+
+test('a successful execute-task turn satisfies every alternation group', async () => {
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: EXECUTE_TASK_EXPECT.map((g) => [...g]) })
+  pipe.ingest(chunk(EVIDENCE), 20)
+  pipe.ingest(chunk(TASK_RESULT), 21)
+  await pipe.endTurn('t1')
+  expect(out.filter((e) => e.kind === 'violation')).toEqual([])
+})
+
+test('a failure-only execute-task turn satisfies every alternation group', async () => {
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: EXECUTE_TASK_EXPECT.map((g) => [...g]) })
+  pipe.ingest(chunk(FAILURE), 22)
+  await pipe.endTurn('t1')
+  expect(out.filter((e) => e.kind === 'violation')).toEqual([])
+})
+
+test('an execute-task turn emitting only evidence still reports the unmet group', async () => {
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: EXECUTE_TASK_EXPECT.map((g) => [...g]) })
+  pipe.ingest(chunk(EVIDENCE), 23)
+  await pipe.endTurn('t1')
+  const violations = out.filter((e) => e.kind === 'violation')
+  expect(violations).toHaveLength(1)
+  expect(violations[0]).toMatchObject({
+    reason: 'missing_expected',
+    raw: 'expected task_result or failure',
+  })
 })

@@ -17,8 +17,18 @@ export type PromptPhase = (typeof PROMPT_PHASES)[number]
 export type PromptTemplate = {
   version: number
   phase: string
-  /** What this turn must produce. Fed straight to `pipeline.beginTurn`. */
-  expects: AgentEventType[]
+  /**
+   * What this turn must produce, as alternation groups: every group must be
+   * satisfied, and a group is satisfied by any one of its members. Written
+   * `expects: [task_result|failure, evidence|failure]`.
+   *
+   * The flat list this replaced could only mean AND, which made a successful
+   * `execute-task` turn structurally unable to satisfy its own contract: the
+   * template offers `failure` as the alternative to `task_result`, so a turn
+   * that succeeded was reported as missing a block and handed the user
+   * "Unstructured output — open raw view" for fully structured output.
+   */
+  expects: AgentEventType[][]
   body: string
   /** Absolute path the template was read from, for error messages. */
   source: string
@@ -60,10 +70,17 @@ export function parseTemplate(raw: string, source: string): PromptTemplate {
           .map((s) => s.trim())
           .filter((s) => s.length > 0)
 
-  const expects = list(fields.expects)
-  for (const e of expects) {
-    if (!(AGENT_EVENT_TYPES as readonly string[]).includes(e)) {
-      throw new Error(`Template ${source} expects unknown event type "${e}"`)
+  const expects = list(fields.expects).map((entry) =>
+    entry
+      .split('|')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0),
+  )
+  for (const group of expects) {
+    for (const e of group) {
+      if (!(AGENT_EVENT_TYPES as readonly string[]).includes(e)) {
+        throw new Error(`Template ${source} expects unknown event type "${e}"`)
+      }
     }
   }
 
@@ -74,7 +91,7 @@ export function parseTemplate(raw: string, source: string): PromptTemplate {
   return {
     version,
     phase: fields.phase,
-    expects: expects as AgentEventType[],
+    expects: expects as AgentEventType[][],
     body: raw.slice(match[0].length),
     source,
   }

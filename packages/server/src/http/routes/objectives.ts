@@ -186,7 +186,7 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     }
 
     let text = rawText ?? ''
-    let expect: AgentEventType[] = []
+    let expect: AgentEventType[][] = []
     if (phase !== undefined) {
       let template: PromptTemplate
       try {

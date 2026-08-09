@@ -35,7 +35,7 @@ test('parses front-matter including the expects list', () => {
     ),
     'test',
   )
-  expect(t).toMatchObject({ version: 1, phase: 'planning', expects: ['plan'] })
+  expect(t).toMatchObject({ version: 1, phase: 'planning', expects: [['plan']] })
   expect(t.body.trim()).toBe('Body {{goalText}}')
 })
 
@@ -150,4 +150,41 @@ test('a fully supplied var set renders every template with no placeholder left',
 test('at least one template carries a worked example', () => {
   const withExamples = PROMPT_PHASES.filter((p) => loadTemplate(p).body.includes('```vadd-event'))
   expect(withExamples.length).toBeGreaterThan(0)
+})
+
+test('parses an alternation group in expects', () => {
+  const t = parseTemplate(
+    [
+      '---',
+      'version: 1',
+      'phase: execute-task',
+      'expects: [task_result|failure, evidence]',
+      '---',
+      'b',
+    ].join('\n'),
+    'test',
+  )
+  expect(t.expects).toEqual([['task_result', 'failure'], ['evidence']])
+})
+
+test('rejects an unknown event type inside an alternation group', () => {
+  expect(() =>
+    parseTemplate(
+      ['---', 'version: 1', 'phase: x', 'expects: [task_result|invented]', '---', 'b'].join('\n'),
+      'test',
+    ),
+  ).toThrow(/invented/)
+})
+
+test('no bundled template requires an event that contradicts another it expects', () => {
+  // `failure` is the documented alternative to a success event, never a
+  // co-requirement: any template listing both must offer them as one group.
+  for (const phase of PROMPT_PHASES) {
+    for (const group of loadTemplate(phase).expects) {
+      expect(
+        group.length,
+        `${phase}: bare "failure" is required, not offered as an alternative`,
+      ).toBeGreaterThan(group.includes('failure') ? 1 : 0)
+    }
+  }
 })

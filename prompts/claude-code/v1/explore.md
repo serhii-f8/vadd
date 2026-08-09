@@ -1,7 +1,7 @@
 ---
 version: 1
 phase: explore
-expects: [status, clarification]
+expects: [status|clarification]
 ---
 Read enough of this repository to understand the goal below. Do not change any
 file yet.
