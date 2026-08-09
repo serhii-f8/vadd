@@ -49,3 +49,29 @@ test('resets cleanly so one scanner can serve consecutive turns', () => {
   s.flush()
   expect(s.push('```vadd-event\nfresh\n```\n')).toEqual([{ body: 'fresh' }])
 })
+
+// Observed live on 2026-08-09, and the likely cause of the corpus's five
+// `unterminated` violations. The adapter concatenates separate assistant
+// messages with no separator, so a closing fence arrives welded to the prose
+// that followed it ("```Dependencies aren't installed."). Requiring a closing
+// fence to be alone on its line then swallowed the rest of the turn — including
+// a complete, valid `evidence` block — into one unparseable body.
+test('closes a block whose closing fence is welded to the following prose', () => {
+  const s = new FenceScanner()
+  const blocks = s.push(
+    '```vadd-event\n{"type":"status"}\n```Dependencies are missing. Installing them.\n',
+  )
+  expect(blocks).toEqual([{ body: '{"type":"status"}' }])
+})
+
+test('still finds a later block after a welded closing fence', () => {
+  const s = new FenceScanner()
+  const blocks = s.push('```vadd-event\n{"a":1}\n```Prose ran on.\n\n```vadd-event\n{"b":2}\n```\n')
+  expect(blocks).toEqual([{ body: '{"a":1}' }, { body: '{"b":2}' }])
+})
+
+test('leaves no block open after a welded closing fence', () => {
+  const s = new FenceScanner()
+  s.push('```vadd-event\n{"type":"status"}\n```and then prose\n')
+  expect(s.flush().unterminated).toBeNull()
+})

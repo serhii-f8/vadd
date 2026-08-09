@@ -10,10 +10,15 @@ export type FenceBlock = { body: string }
  * arbitrary boundaries — sometimes mid-word. The scanner buffers whatever does
  * not yet end in a newline and only decides on complete lines.
  *
- * Deliberate limitation: a closing fence is a line whose trimmed content is
- * exactly ```` ``` ````, so a ```` ``` ```` sequence alone on a line inside a
- * JSON string would end the block early. The eval corpus decides whether that
- * ever happens before anything cleverer is built (design §3.3).
+ * A closing fence is a line whose trimmed content **starts with** ```` ``` ````;
+ * anything after it on the same line is re-read as ordinary outside text. The
+ * stricter "exactly ```` ``` ````" rule this replaced lost whole turns, because
+ * the adapter welds a closing fence to the prose of the next assistant message.
+ *
+ * Deliberate limitation, unchanged: a ```` ``` ```` at the start of a line
+ * inside a JSON string still ends the block early. An *opening* fence welded to
+ * preceding text is likewise still missed — the same transport quirk could
+ * produce it, but nothing in the corpus has.
  *
  * The buffer is turn-scoped — `flush()` clears it — so it is bounded by one
  * turn's output rather than the session's.
@@ -66,6 +71,20 @@ export class FenceScanner {
       this.#inside = false
       blocks.push({ body: this.#body.join('\n') })
       this.#body = []
+      return
+    }
+    // A closing fence welded to the text that followed it. The adapter
+    // concatenates separate assistant messages with no separator, so the line
+    // arrives as "```Dependencies are missing." Treating that as body content
+    // left the block open and swallowed the rest of the turn — including whole
+    // valid blocks — into one unparseable body. Close here and re-read the
+    // remainder as ordinary outside text, which is where a later opening fence
+    // is found.
+    if (trimmed.startsWith('```')) {
+      this.#inside = false
+      blocks.push({ body: this.#body.join('\n') })
+      this.#body = []
+      this.#consume(trimmed.slice(3), blocks)
       return
     }
     this.#body.push(line)
