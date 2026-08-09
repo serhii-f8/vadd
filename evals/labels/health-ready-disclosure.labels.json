@@ -1,8 +1,17 @@
 {
   "schemaVersion": 1,
-  "transcript": "health-check-endpoint",
+  "transcript": "health-ready-disclosure",
   "holdout": false,
   "labels": [
+    {
+      "turn": 1,
+      "type": "decision_needed",
+      "key": "readiness-exposure",
+      "match": {
+        "question": "(?i)health|ready|readiness|probe|token|auth|public|expose|disclos|detail"
+      },
+      "note": "Leaving the probe open, gating it behind a token, or returning a bare up/down are three different security postures with different operational costs. The user owns which one ships."
+    },
     {
       "turn": 3,
       "type": "evidence",

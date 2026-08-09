@@ -1,8 +1,15 @@
 {
   "schemaVersion": 1,
-  "transcript": "worker-liveness-alert",
+  "transcript": "mail-failure-bounced",
   "holdout": true,
   "labels": [
+    {
+      "turn": 1,
+      "type": "decision_needed",
+      "key": "bounce-counting",
+      "match": { "question": "(?i)bounce|fail|mail|deliver|rate|threshold|check|status|count" },
+      "note": "Folding bounces into the existing rate, giving them their own threshold, or leaving them out all change when operators get paged. A user-owned alerting-semantics call, not a refactor."
+    },
     {
       "turn": 3,
       "type": "evidence",
