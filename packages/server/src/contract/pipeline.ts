@@ -17,6 +17,7 @@ export type ViolationReason =
   | 'unterminated'
   | 'missing_expected'
   | 'fence_drift'
+  | 'dangling_evidence_ref'
 
 export type ContractEmission =
   | {
@@ -69,6 +70,8 @@ export class ContractPipeline {
   #turnId: string | null = null
   #expect: AgentEventType[][] = []
   #seen = new Set<AgentEventType>()
+  #evidenceHeadlines = new Set<string>()
+  #claimedEvidenceRefs = new Set<string>()
   #sources: number[] = []
   /** Full turn text, kept for the summarizer fallback and violation records. */
   #raw = ''
@@ -93,6 +96,8 @@ export class ContractPipeline {
     this.#turnId = t.turnId
     this.#expect = t.expect ?? []
     this.#seen = new Set()
+    this.#evidenceHeadlines = new Set()
+    this.#claimedEvidenceRefs = new Set()
     this.#sources = []
     this.#raw = ''
   }
@@ -111,6 +116,9 @@ export class ContractPipeline {
     const { blocks, unterminated } = this.#scanner.flush()
     for (const block of blocks) this.#handleBlock(block)
     if (unterminated !== null) this.#violation('unterminated', unterminated)
+
+    const dangling = this.danglingEvidenceRefs()
+    if (dangling.length > 0) this.#violation('dangling_evidence_ref', dangling.join(', '))
 
     const missing = this.unmetExpectations()
     if (missing.length > 0) await this.#fallback(missing)
@@ -151,6 +159,7 @@ export class ContractPipeline {
         continue
       }
       this.#seen.add(result.data.type)
+      this.#trackClaims(result.data)
       this.#emitEvent(result.data, false)
     }
   }
@@ -179,6 +188,7 @@ export class ContractPipeline {
             continue
           }
           this.#seen.add(result.data.type)
+          this.#trackClaims(result.data)
           this.#emitEvent(result.data, true)
           emitted += 1
         }
@@ -192,6 +202,13 @@ export class ContractPipeline {
       { type: 'status', phase: 'executing', headline: 'Unstructured output — open raw view' },
       false,
     )
+  }
+
+  #trackClaims(event: AgentEvent): void {
+    if (event.type === 'evidence') this.#evidenceHeadlines.add(event.headline)
+    if (event.type === 'task_result') {
+      for (const ref of event.evidenceRefs) this.#claimedEvidenceRefs.add(ref)
+    }
   }
 
   #emitEvent(event: AgentEvent, extracted: boolean): void {
@@ -246,5 +263,17 @@ export class ContractPipeline {
   unmetExpectations(): AgentEventType[][] {
     if (this.#turnId === null) return []
     return this.#expect.filter((group) => !group.some((t) => this.#seen.has(t)))
+  }
+
+  /**
+   * Claimed evidenceRefs with no matching evidence headline in this turn —
+   * the referential check unmetExpectations() cannot make, because a
+   * task_result and an unrelated evidence event both existing already
+   * satisfies that check's type-level groups. Pure, like
+   * unmetExpectations(): empty once the turn is closed.
+   */
+  danglingEvidenceRefs(): string[] {
+    if (this.#turnId === null) return []
+    return [...this.#claimedEvidenceRefs].filter((ref) => !this.#evidenceHeadlines.has(ref))
   }
 }

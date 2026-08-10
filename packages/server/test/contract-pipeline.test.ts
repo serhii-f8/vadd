@@ -159,7 +159,7 @@ test('ingest outside a turn is dropped rather than throwing', async () => {
 // The turn was then told "Unstructured output — open raw view" despite being
 // fully structured, which is thesis 1 inverted.
 const TASK_RESULT =
-  '```vadd-event\n{"type":"task_result","taskId":"t","claim":"Done","evidenceRefs":["OK"]}\n```\n'
+  '```vadd-event\n{"type":"task_result","taskId":"t","claim":"Done","evidenceRefs":["One line removed"]}\n```\n'
 const EVIDENCE =
   '```vadd-event\n{"type":"evidence","kind":"diff","status":"pass","headline":"One line removed","summary":["ok"]}\n```\n'
 const FAILURE =
@@ -250,4 +250,58 @@ test('a drift close emits the block AND a fence_drift violation', async () => {
   expect(events).toHaveLength(1)
   expect(drift).toHaveLength(1)
   expect(drift[0]).toMatchObject({ raw: 'and then I checked the config' })
+})
+
+const LINT_EVIDENCE =
+  '```vadd-event\n{"type":"evidence","kind":"lint","status":"pass","headline":"Pint passed","summary":[]}\n```\n'
+const TASK_RESULT_DANGLING =
+  '```vadd-event\n{"type":"task_result","taskId":"t","claim":"done","evidenceRefs":["OK (1 test)"]}\n```\n'
+const TASK_RESULT_RESOLVED =
+  '```vadd-event\n{"type":"task_result","taskId":"t","claim":"done","evidenceRefs":["Pint passed"]}\n```\n'
+
+test('danglingEvidenceRefs reports a claim naming evidence that was never emitted', async () => {
+  const { pipe } = collect()
+  pipe.beginTurn({ turnId: 't1' })
+  pipe.ingest(chunk(LINT_EVIDENCE), 1)
+  pipe.ingest(chunk(TASK_RESULT_DANGLING), 2)
+  expect(pipe.danglingEvidenceRefs()).toEqual(['OK (1 test)'])
+})
+
+test('danglingEvidenceRefs is empty when every claimed ref resolves', async () => {
+  const { pipe } = collect()
+  pipe.beginTurn({ turnId: 't1' })
+  pipe.ingest(chunk(LINT_EVIDENCE), 1)
+  pipe.ingest(chunk(TASK_RESULT_RESOLVED), 2)
+  expect(pipe.danglingEvidenceRefs()).toEqual([])
+})
+
+test('danglingEvidenceRefs is empty outside a turn', () => {
+  const { pipe } = collect()
+  expect(pipe.danglingEvidenceRefs()).toEqual([])
+})
+
+test('a still-dangling ref becomes a violation at endTurn, alongside the events', async () => {
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1' })
+  pipe.ingest(chunk(LINT_EVIDENCE), 1)
+  pipe.ingest(chunk(TASK_RESULT_DANGLING), 2)
+  await pipe.endTurn('t1')
+  const violations = out.filter((e) => e.kind === 'violation')
+  expect(violations).toHaveLength(1)
+  expect(violations[0]).toMatchObject({
+    reason: 'dangling_evidence_ref',
+    raw: 'OK (1 test)',
+  })
+  // The events themselves still emitted — this is a reported violation
+  // alongside real output, not a replacement for it (matches fence_drift).
+  expect(out.filter((e) => e.kind === 'event')).toHaveLength(2)
+})
+
+test('a resolved ref raises no violation at endTurn', async () => {
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1' })
+  pipe.ingest(chunk(LINT_EVIDENCE), 1)
+  pipe.ingest(chunk(TASK_RESULT_RESOLVED), 2)
+  await pipe.endTurn('t1')
+  expect(out.filter((e) => e.kind === 'violation')).toEqual([])
 })
