@@ -12,6 +12,10 @@
  *   'repair-succeeds'    — first turn owes evidence; the repair prompt supplies it
  *   'repair-fails'       — first turn owes evidence; the repair prompt does not
  *   'satisfied'          — one turn emitting both evidence and task_result, owing nothing
+ *   'dangling-ref'          — first turn's task_result cites evidence it never
+ *                             emitted; the repair prompt does not resolve it
+ *   'dangling-ref-repaired' — same first turn; the repair prompt supplies the
+ *                             cited evidence
  */
 import { createInterface } from 'node:readline'
 
@@ -81,6 +85,30 @@ rl.on('line', async (line) => {
         '```vadd-event\n{"type":"task_result","taskId":"t","claim":"done","evidenceRefs":[]}\n```\n'
       const second =
         mode === 'repair-succeeds'
+          ? '```vadd-event\n{"type":"evidence","kind":"test","status":"pass","headline":"OK (1 test)","summary":[]}\n```\n'
+          : 'still nothing to show\n'
+      send({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: promptCount === 1 ? first : second },
+          },
+        },
+      })
+      send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      return
+    }
+
+    if (mode === 'dangling-ref' || mode === 'dangling-ref-repaired') {
+      promptCount += 1
+      const first =
+        '```vadd-event\n{"type":"evidence","kind":"lint","status":"pass","headline":"Pint passed","summary":[]}\n```\n' +
+        '```vadd-event\n{"type":"task_result","taskId":"t","claim":"done","evidenceRefs":["OK (1 test)"]}\n```\n'
+      const second =
+        mode === 'dangling-ref-repaired'
           ? '```vadd-event\n{"type":"evidence","kind":"test","status":"pass","headline":"OK (1 test)","summary":[]}\n```\n'
           : 'still nothing to show\n'
       send({

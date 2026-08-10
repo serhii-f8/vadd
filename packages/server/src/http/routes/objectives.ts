@@ -257,8 +257,13 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
         // a second turn here would shift every later turn and invalidate all 40
         // turn-indexed labels in the eval corpus (design §5.2).
         const unmet = entry.pipeline.unmetExpectations()
-        if (unmet.length > 0) {
-          const missing = unmet.map((group) => group.join(' or ')).join(', ')
+        const dangling = entry.pipeline.danglingEvidenceRefs()
+        if (unmet.length > 0 || dangling.length > 0) {
+          const parts = [
+            ...unmet.map((group) => group.join(' or ')),
+            ...dangling.map((ref) => `evidence matching "${ref}"`),
+          ]
+          const missing = parts.join(', ')
           try {
             const repair = renderTemplate(loadTemplate('repair'), { missing })
             bus.emit({

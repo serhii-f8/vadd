@@ -68,3 +68,40 @@ test('a repair that also fails does not recurse', async () => {
     ),
   ).toBe(true)
 })
+
+test('a dangling evidenceRef gets exactly one repair, inside the same turn', async () => {
+  harness = await buildTestApp({ fakeAcpMode: 'dangling-ref-repaired' })
+  const { app, objectiveId, events, until } = harness
+
+  await app.inject(executeTask(objectiveId))
+  await until(() => events().some((e) => e.type === 'prompt_finished'))
+
+  const types = events().map((e) => e.type)
+  expect(types.filter((t) => t === 'repair_prompt_sent')).toHaveLength(1)
+  expect(types.filter((t) => t === 'prompt_sent')).toHaveLength(1)
+  expect(
+    events().some(
+      (e) =>
+        e.type === 'contract_violation' &&
+        (e.payload as { reason?: string }).reason === 'dangling_evidence_ref',
+    ),
+  ).toBe(false)
+})
+
+test('a dangling evidenceRef that is not repaired still reports the violation', async () => {
+  harness = await buildTestApp({ fakeAcpMode: 'dangling-ref' })
+  const { app, objectiveId, events, until } = harness
+
+  await app.inject(executeTask(objectiveId))
+  await until(() => events().some((e) => e.type === 'prompt_finished'))
+
+  const types = events().map((e) => e.type)
+  expect(types.filter((t) => t === 'repair_prompt_sent')).toHaveLength(1)
+  expect(
+    events().some(
+      (e) =>
+        e.type === 'contract_violation' &&
+        (e.payload as { reason?: string }).reason === 'dangling_evidence_ref',
+    ),
+  ).toBe(true)
+})
