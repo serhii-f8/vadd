@@ -31,7 +31,7 @@ export type TranscriptRecord = {
 }
 
 /** One prompt turn: `index` is 1-based, matching the label files. */
-export type TranscriptTurn = { index: number; updates: RawAgentUpdate[] }
+export type TranscriptTurn = { index: number; updates: RawAgentUpdate[]; repaired: boolean }
 
 /**
  * Records that close a turn, i.e. the points at which the live pipeline's
@@ -80,12 +80,16 @@ export function loadTranscript(file: string): {
     }
     if (typeof record.recordedUnder === 'string') stamps.add(record.recordedUnder)
     if (record.type === 'prompt_sent') {
-      current = { index: turns.length + 1, updates: [] }
+      current = { index: turns.length + 1, updates: [], repaired: false }
       turns.push(current)
       continue
     }
     if (record.type === 'agent_update' && current) {
       current.updates.push(record.payload as RawAgentUpdate)
+      continue
+    }
+    if (record.type === 'repair_prompt_sent' && current) {
+      current.repaired = true
       continue
     }
     if (record.type && TURN_CLOSING.has(record.type)) current = null

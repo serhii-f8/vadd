@@ -9,12 +9,16 @@
  *   'permission-command' — requests permission for a command (FAKE_ACP_COMMAND)
  *                          instead of a path, via toolCall.rawInput.command
  *   'crash-on-prompt'    — exits with code 3 when a prompt arrives
+ *   'repair-succeeds'    — first turn owes evidence; the repair prompt supplies it
+ *   'repair-fails'       — first turn owes evidence; the repair prompt does not
+ *   'satisfied'          — one turn emitting both evidence and task_result, owing nothing
  */
 import { createInterface } from 'node:readline'
 
 const mode = process.env.FAKE_ACP_MODE ?? 'normal'
 const permissionPath = process.env.FAKE_ACP_PATH ?? '/etc/passwd'
 const permissionCommand = process.env.FAKE_ACP_COMMAND ?? 'sudo rm -rf /'
+let promptCount = 0
 
 function send(msg: unknown) {
   process.stdout.write(`${JSON.stringify(msg)}\n`)
@@ -67,6 +71,53 @@ rl.on('line', async (line) => {
     if (mode === 'hang-on-prompt') return
 
     const sessionId = (msg.params as { sessionId: string }).sessionId
+
+    // Repair modes: the first answer owes an `evidence` event, the second is
+    // the repair's answer. `repair-succeeds` supplies it; `repair-fails` does
+    // not, which is how the no-recursion case is exercised.
+    if (mode === 'repair-succeeds' || mode === 'repair-fails') {
+      promptCount += 1
+      const first =
+        '```vadd-event\n{"type":"task_result","taskId":"t","claim":"done","evidenceRefs":[]}\n```\n'
+      const second =
+        mode === 'repair-succeeds'
+          ? '```vadd-event\n{"type":"evidence","kind":"test","status":"pass","headline":"OK (1 test)","summary":[]}\n```\n'
+          : 'still nothing to show\n'
+      send({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: promptCount === 1 ? first : second },
+          },
+        },
+      })
+      send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      return
+    }
+
+    if (mode === 'satisfied') {
+      send({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: {
+              type: 'text',
+              text:
+                '```vadd-event\n{"type":"evidence","kind":"test","status":"pass","headline":"OK (1 test)","summary":[]}\n```\n' +
+                '```vadd-event\n{"type":"task_result","taskId":"t","claim":"done","evidenceRefs":["OK (1 test)"]}\n```\n',
+            },
+          },
+        },
+      })
+      send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      return
+    }
 
     if (mode === 'fs-write-outside') {
       // Exercises the client's fs/write_text_file callback, which enforces

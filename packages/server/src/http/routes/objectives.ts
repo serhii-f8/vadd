@@ -251,6 +251,32 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     void entry.port
       .prompt(entry.sessionId, text)
       .then(async (r) => {
+        // The repair runs before endTurn, while the turn is still open and its
+        // expectations are still repairable. It is sent as repair_prompt_sent,
+        // NOT prompt_sent: loadTranscript opens a turn on prompt_sent alone, and
+        // a second turn here would shift every later turn and invalidate all 40
+        // turn-indexed labels in the eval corpus (design §5.2).
+        const unmet = entry.pipeline.unmetExpectations()
+        if (unmet.length > 0) {
+          const missing = unmet.map((group) => group.join(' or ')).join(', ')
+          try {
+            const repair = renderTemplate(loadTemplate('repair'), { missing })
+            bus.emit({
+              objectiveId: objective.id,
+              type: 'repair_prompt_sent',
+              payload: { missing },
+            })
+            await entry.port.prompt(entry.sessionId, repair)
+          } catch (err) {
+            // A failed repair must not lose the turn's real work: fall through
+            // to endTurn, which reports missing_expected exactly as before.
+            bus.emit({
+              objectiveId: objective.id,
+              type: 'repair_failed',
+              payload: { message: errorMessage(err) },
+            })
+          }
+        }
         if (entry.turnId === turnId) entry.turnId = null
         await entry.pipeline.endTurn(turnId)
         bus.emit({ objectiveId: objective.id, type: 'prompt_finished', payload: r })

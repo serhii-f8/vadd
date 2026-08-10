@@ -110,3 +110,21 @@ test('a transcript exported before provenance reports no stamps', () => {
   const file = write([row(1, 'prompt_sent', { text: 'go' })])
   expect(loadTranscript(file).recordedUnder).toEqual([])
 })
+
+test('repair_prompt_sent does not open a turn, and marks the turn repaired', () => {
+  const file = write([
+    row(1, 'prompt_sent', {}),
+    row(2, 'agent_update', chunk('a')),
+    row(3, 'repair_prompt_sent', { missing: 'evidence' }),
+    row(4, 'agent_update', chunk('b')),
+    row(5, 'prompt_finished', {}),
+  ])
+
+  const { turns } = loadTranscript(file)
+  // One turn, not two — 40 labels are indexed on this.
+  expect(turns).toHaveLength(1)
+  expect(turns[0]?.index).toBe(1)
+  // Updates from both halves of the turn are kept.
+  expect(turns[0]?.updates).toHaveLength(2)
+  expect(turns[0]?.repaired).toBe(true)
+})
