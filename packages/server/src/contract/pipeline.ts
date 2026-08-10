@@ -112,7 +112,7 @@ export class ContractPipeline {
     for (const block of blocks) this.#handleBlock(block)
     if (unterminated !== null) this.#violation('unterminated', unterminated)
 
-    const missing = this.#expect.filter((group) => !group.some((t) => this.#seen.has(t)))
+    const missing = this.unmetExpectations()
     if (missing.length > 0) await this.#fallback(missing)
 
     this.#turnId = null
@@ -233,5 +233,18 @@ export class ContractPipeline {
    */
   get turnActive(): boolean {
     return this.#turnId !== null
+  }
+
+  /**
+   * The `expect` groups no emitted event has satisfied yet — what this turn
+   * still owes. Pure: it neither records a violation nor runs the fallback, so
+   * the caller can decide to repair before `endTurn` commits to failure.
+   *
+   * Empty once the turn is closed, so a caller that races `endTurn` repairs
+   * nothing rather than prompting into a turn that has already reported.
+   */
+  unmetExpectations(): AgentEventType[][] {
+    if (this.#turnId === null) return []
+    return this.#expect.filter((group) => !group.some((t) => this.#seen.has(t)))
   }
 }

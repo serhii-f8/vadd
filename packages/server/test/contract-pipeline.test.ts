@@ -199,6 +199,37 @@ test('an execute-task turn emitting only evidence still reports the unmet group'
   })
 })
 
+test('unmetExpectations reports groups nothing satisfied, without side effects', async () => {
+  const emitted: ContractEmission[] = []
+  const pipe = new ContractPipeline({ onEmit: (e) => emitted.push(e) })
+  pipe.beginTurn({
+    turnId: 't1',
+    expect: [
+      ['evidence', 'failure'],
+      ['task_result', 'failure'],
+    ],
+  })
+  pipe.ingest({
+    update: {
+      sessionUpdate: 'agent_message_chunk',
+      content: {
+        type: 'text',
+        text: '```vadd-event\n{"type":"task_result","taskId":"t","claim":"done","evidenceRefs":[]}\n```\n',
+      },
+    },
+  } as never)
+
+  expect(pipe.unmetExpectations()).toEqual([['evidence', 'failure']])
+  // Asking is not answering: no violation, no fallback, turn still open.
+  expect(emitted.filter((e) => e.kind === 'violation')).toHaveLength(0)
+  expect(pipe.turnActive).toBe(true)
+  // Idempotent.
+  expect(pipe.unmetExpectations()).toEqual([['evidence', 'failure']])
+
+  await pipe.endTurn('t1')
+  expect(pipe.unmetExpectations()).toEqual([])
+})
+
 test('a drift close emits the block AND a fence_drift violation', async () => {
   const emitted: ContractEmission[] = []
   const pipe = new ContractPipeline({ onEmit: (e) => emitted.push(e) })
