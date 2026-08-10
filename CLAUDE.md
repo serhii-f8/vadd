@@ -4,16 +4,66 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-**M0 (Skeleton) is complete. M1 phases 1–2 (Output Contract pipeline + eval gate infrastructure) are merged.** Task 14 — record the corpus, label it, run the gate — is partially done: all 12 transcripts (10 gate + 2 floor) are recorded and committed. **Labelling `evals/labels/*.json` and the first real `pnpm eval` run are still open** — that result is what phases 3–6 wait on (build order is risk-first; see M1 scope below).
+*Last updated 2026-08-10 at `0239c98`. Keep this section and the ledger below current — see "Keeping status current".*
+
+**M0 (Skeleton) is complete. M1 phases 1–2 (Output Contract pipeline + eval gate infrastructure) are merged. Task 14 is complete**: 12 transcripts recorded (10 gate + 2 floor), all 10 gate transcripts labelled with a 4-transcript holdout marked, and the gate has run for real three times.
+
+**The gate does not clear, and phases 3–6 are therefore still closed.** Latest `pnpm eval` at `02e735e`, summarizer off:
+
+| type | labels | matched | precision | recall |
+|---|---|---|---|---|
+| `decision_needed` | 10 | 7 | 87.5% | 70.0% |
+| `evidence` | 30 | 20 | 80.0% | 66.7% |
+
+Gate (≥90% on both) **FAIL**; tuning-vs-holdout recall gap 33.3% (over 10 points means the corpus is too small, not that the gate passed). Thirteen missed labels, six unlabelled emissions. This table is stale — it still measures the pre-repair corpus, because phase 2b's re-record (task 7, below) has not run.
+
+**M1 phase 2b's code (tasks 1–6) is implemented and merged at `0239c98`**: fence-drift is now a reported `contract_violation` instead of a silent rescue, exported transcripts carry a `recordedUnder` provenance stamp, `ContractPipeline.unmetExpectations()` exposes what a turn still owes without side effects, and a turn that closes owing an event now gets exactly one repair prompt (`repair_prompt_sent`, amendment A4) before `endTurn` reports failure. `pnpm eval` now prints repair rate and a provenance line, reported, not gated.
+
+Re-scoring the *old* corpus under this code (which cannot exercise repair — those transcripts were recorded before the repair turn existed) changed only the reported-not-gated counts, not the table above: contract violations 2→10 and 8 of those are now correctly labelled `fence_drift` rather than silently absorbed; 0/40 turns repaired, as expected against transcripts with no open turn left to repair; provenance reports "no stamp," since these transcripts predate task 2. The precision/recall table is unchanged because it is still the same stale corpus.
+
+**Task 7 — re-record all ten objectives against `flexpick-corpus-base` and score once — is the only step left in phase 2b**, and the only one that can tell whether the repair turn actually recovers the eight missed labels it targets. It is real-time work against live `flexpick.net`/Sail infrastructure and was deliberately deferred out of the implementing session. The package still ends there whatever the number says — a second re-record inside it was ruled out when its exit condition was set. If the gate still fails after that one run, spec §9's timebox conversation happens on three data points rather than on hope.
 
 Read before touching M1 work, in this order:
 
-- `vadd-spec-final.md` — the authoritative v1.0 spec, FINAL, plus amendments A1–A3 dated 2026-08-04
+- `vadd-spec-final.md` — the authoritative v1.0 spec, FINAL, plus amendments A1–A3 (2026-08-04) and A4 (2026-08-09)
 - `docs/superpowers/specs/2026-08-04-m1-contract-machine-gate-design.md` — the approved M1 design
-- `docs/superpowers/notes/m1-phase12-known-gaps.md` — what phases 1–2 left open, what's since been resolved (profile credentials, the A3 command permission policy, an `execute-task.md` template gap), and what Task 14's real corpus run found
+- `docs/superpowers/specs/2026-08-09-m1-phase2b-provenance-repair-design.md` — the approved phase 2b design, with the failure taxonomy behind it
+- `docs/superpowers/plans/2026-08-09-m1-phase2b-provenance-repair.md` — the 7-task implementation plan for phase 2b, TDD throughout; tasks 1–6 done, **task 7 (re-record + score) is the next thing to execute**
+- `docs/superpowers/notes/m1-phase12-known-gaps.md` — what phases 1–2 left open, what's since been resolved (profile credentials, the A3 command permission policy, an `execute-task.md` template gap), and what Task 14's real corpus runs found
 - `docs/superpowers/notes/m0-known-gaps.md` — what M0 left open, and what M1 inherits by construction
 - `docs/superpowers/specs/2026-08-03-m0-skeleton-design.md` — M0's design, including the verification record in §7.1
 - `vadd-spec-phase2.md` — Phase 2, which starts only after v1's Definition of Done. One of its items (the managed agent profile) is pulled into M1 by the M1 design.
+
+## Status ledger
+
+Where we are, what's next. Phases are the M1 design's §1.4 build order; 2b is the unplanned insert that the gate's first two real runs forced.
+
+| Phase | Work | State | Evidence |
+|---|---|---|---|
+| M0 | Skeleton: ACP spike, ports, five tables, debug page | ✅ done | design §7.1; one criterion unmet (no browser render) |
+| 1 — Foundation | Agent profile isolation; `AgentEvent` union; fence scanner + validator; prompt contracts; contract events persisted | ✅ done | merged `1f0ac6d` |
+| 2 — Corpus + gate | Record + label 12 transcripts; eval harness; iterate prompt and pipeline. **Kill-switch checkpoint** | ⚠️ ran, does not clear | `8e8b385`; latest score above |
+| 2b — Provenance + repair | Fence-drift violations; `recordedUnder` stamp; A4 repair turn; re-record and score once | ⚠️ code done, corpus not re-recorded | `283a1a8`..`0239c98`, tasks 1–6/7; task 7 (re-record+score) pending |
+| 3 — Machine | Four remaining migrations; XState machine; snapshot persistence; boot rehydration | ⛔ blocked on the gate | — |
+| 4 — Verification | Spec resolution + detection; `setup` commands; EvidenceCollector; command permissions | ⛔ blocked (A3's policy already landed, `83aabd8`) | — |
+| 5 — Surfaces | Skeleton Focus View; Evidence Panel; `integrate` commit/keep/discard | ⛔ blocked | — |
+| 6 — Exit run | One real `flexpick.net` bugfix driven to `done` through green evidence | ⛔ blocked | — |
+
+### Next steps
+
+1. Task 7 (operational, the only step left in the phase 2b plan): re-record all ten objectives against the pinned `flexpick-corpus-base` at `f4251ea`, serializing turns 3–4, then `pnpm eval` once and write `docs/superpowers/notes/m1-gate-result.md`.
+2. **Decision point.** ≥90% precision *and* recall on both types, holdout within 10 points → open phase 3 in the design's order. Otherwise → spec §9 timebox conversation; do not silently start phase 3.
+
+### Keeping status current
+
+At the end of every phase (and after any run that moves the gate number), update in the same commit as the work:
+
+- the **Current state** header date + commit, and the gate table if `pnpm eval` was re-run;
+- the phase's row in the **Status ledger**, plus the evidence column (a commit sha, not a claim);
+- **Next steps** — delete what's done, promote what's now next;
+- the matching plan doc's checkboxes, and `docs/superpowers/notes/m1-phase12-known-gaps.md` if the phase opened or closed a gap.
+
+Never mark a row ✅ from intent. A row is done when a command was run and its output seen — the gate row says "ran, does not clear" for exactly that reason.
 
 The monorepo is real: `packages/core` (ports, Zod schemas, policies), `packages/server` (Fastify, Drizzle, GitManager, AcpAgentPort, EventBus), `packages/web` (Vite + React debug page). Five tables are migrated; M1 adds the other four.
 
@@ -86,6 +136,8 @@ Found recording the real corpus, not hypothetical either.
 - **A Claude Code session's own env vars block its own adapter.** `claude-code-acp` refuses to start when `CLAUDECODE` is set. The server only spawns the adapter lazily, and the child inherits the *server process's* env, not the caller's — so `env -u CLAUDECODE -u CLAUDE_CODE_CHILD_SESSION -u AI_AGENT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CLAUDE_EFFORT -u CLAUDE_CODE_MAX_OUTPUT_TOKENS -u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_EXECPATH` in front of `pnpm dev` (or the E2E test) is enough — no separate terminal required.
 - **`execute-task.md` never showed a `task_result` example.** It showed `evidence`'s JSON shape but not `task_result`'s, so the agent reliably invented the wrong fields (`status`/`headline`/`summary` instead of `taskId`/`claim`/`evidenceRefs`) and hit a schema `contract_violation` on every real execute-task turn. Fixed in `77f13f1`; affected transcripts re-recorded in `2e7c91f`.
 - **A worktree's `docker compose exec` runs against the wrong checkout.** `flexpick.net`'s real test workflow bind-mounts the *main* checkout into Sail, not a VADD worktree — a worktree-scoped agent that reaches for `docker compose exec` is operating on code it didn't write. Worked around for corpus recording by symlinking `vendor`/`node_modules` and pointing a copied `.env` at the Sail containers' host-exposed ports directly (bypassing Docker entirely); `setup` commands (phase 4) are the real fix.
+- **The eval corpus is turn-indexed, so anything turn-opening invalidates all 40 labels.** `loadTranscript` opens a turn on `prompt_sent` alone; a `prompt_cancelled` is turn-closing. That is why A4's repair is emitted as `repair_prompt_sent` inside the open turn, and why a cancelled turn means discarding and re-recording that whole objective rather than re-prompting it.
+- **A corpus recorded across a pipeline change measures neither version.** Two contract fixes landed mid-recording from a concurrent session (`11e35d4`, `0180334`), and the resulting replay-vs-live divergence cost hours to diagnose because transcripts recorded what the agent said and not what parsed it. Confirm a clean tree and note HEAD before recording; phase 2b's `recordedUnder` stamp makes it visible afterwards.
 - **Zod's length caps and thorough reasoning are in tension.** `decision_needed` options (`verification` ≤120 chars, `pros`/`cons` items ≤100 each) and `evidence.summary` items (≤100 chars) were exceeded routinely across the real corpus whenever the agent reasoned carefully. Left as-is — this is real signal for the gate, not a bug — but expect it to recur and possibly cap achievable recall.
 
 ## Commands
@@ -101,4 +153,6 @@ pnpm eval                          # eval harness: precision/recall vs. golden t
 npx vadd                           # packaged entry point → localhost web app (M2)
 ```
 
-Single Vitest file: `pnpm vitest run <path>`; single test: add `-t "<name>"`. The real-adapter integration test is skipped unless `VADD_E2E=1`. `pnpm eval` exists and the 12-transcript corpus is recorded (`evals/transcripts/`), but it fails until `evals/labels/*.json` exists — Task 14's labelling step, deliberately left to a human (design §5.6), is what's between here and the milestone's real go/no-go number.
+Single Vitest file: `pnpm vitest run <path>`; single test: add `-t "<name>"`. The real-adapter integration test is skipped unless `VADD_E2E=1`. `pnpm eval` runs against the recorded corpus and its labels and **currently exits non-zero** — the gate genuinely fails (see Current state), which is the harness working, not a setup problem. It exits non-zero on an unlabelled transcript or an orphan label too, so keep `evals/transcripts/*.jsonl` and `evals/labels/*.labels.json` in exact name correspondence.
+
+For a corpus re-record, run the server as `npx tsx src/index.ts` under the `env -u` list below — **not** `pnpm dev`, whose `tsx watch` reloads on any file touch into an `EADDRINUSE` race that has already killed one run mid-turn.
