@@ -3,7 +3,7 @@ version: 1
 phase: repair
 expects: []
 ---
-That turn's evidence doesn't back its claim: {{missing}}.
+That turn owes {{missing}}.
 
 Emit one now for work you actually did — a real command you ran and its real
 output. Do not invent a result, and do not repeat the whole turn.
