@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { asc, eq } from 'drizzle-orm'
@@ -53,12 +54,33 @@ if (rows.length === 0) {
 const outDir = join(repoRoot(), 'evals', 'transcripts')
 mkdirSync(outDir, { recursive: true })
 const outFile = join(outDir, `${nameArg ?? objectiveId}.jsonl`)
+
+// Approximate provenance: HEAD at export time. Exact when a transcript is
+// exported promptly after recording, wrong if a corpus is re-exported later.
+// The eval reports it and never gates on it, so an unavailable value degrades
+// to "unstamped" rather than to a failed export.
+let recordedUnder: string | undefined
+try {
+  recordedUnder = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+    cwd: repoRoot(),
+    encoding: 'utf8',
+  }).trim()
+} catch {
+  recordedUnder = undefined
+}
+
 // Stamped per record, not as a header line: every consumer reads this file line
 // by line, and a header would make each of them special-case line 1.
 writeFileSync(
   outFile,
   `${rows
-    .map((r) => JSON.stringify({ ...r, schemaVersion: TRANSCRIPT_SCHEMA_VERSION }))
+    .map((r) =>
+      JSON.stringify({
+        ...r,
+        schemaVersion: TRANSCRIPT_SCHEMA_VERSION,
+        ...(recordedUnder === undefined ? {} : { recordedUnder }),
+      }),
+    )
     .join('\n')}\n`,
 )
 

@@ -64,3 +64,16 @@ why both files now in `archive/` are there:
   required" error rather than crashing on its shape. Anything consuming this
   directory programmatically should call `loadTranscript` and let it do that
   filtering rather than hand-rolling a shape check.
+
+## Provenance
+
+Every record also carries `recordedUnder`, the repository HEAD at **export**
+time. It approximates the code that produced the transcript: exact when a
+transcript is exported promptly after recording, wrong if a corpus is
+re-exported later from the same database, and unable to express a corpus
+recorded *across* a pipeline change — which the 2026-08-09 corpus was, because
+two contract fixes landed mid-recording.
+
+`pnpm eval` prints the scoring commit and any mismatch. It never gates on it. A
+transcript recorded under older code disagreeing with its own replay is the
+expected outcome of a pipeline fix, and the whole point of replaying.

@@ -97,3 +97,16 @@ test('an unterminated final turn is still returned', () => {
   const file = write([row(1, 'prompt_sent', { text: 'go' }), row(2, 'agent_update', chunk('a'))])
   expect(loadTranscript(file).turns).toHaveLength(1)
 })
+
+test('loadTranscript surfaces the distinct recordedUnder stamps', () => {
+  const file = write([
+    { ...row(1, 'prompt_sent', { text: 'go' }), recordedUnder: 'abc1234' },
+    { ...row(2, 'prompt_finished', { stopReason: 'end_turn' }), recordedUnder: 'abc1234' },
+  ])
+  expect(loadTranscript(file).recordedUnder).toEqual(['abc1234'])
+})
+
+test('a transcript exported before provenance reports no stamps', () => {
+  const file = write([row(1, 'prompt_sent', { text: 'go' })])
+  expect(loadTranscript(file).recordedUnder).toEqual([])
+})

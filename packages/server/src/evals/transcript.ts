@@ -20,6 +20,14 @@ export type TranscriptRecord = {
   payload: unknown
   createdAt: string
   schemaVersion: number
+  /**
+   * Repository HEAD when the transcript was exported — an approximation of the
+   * code that produced it, exact when exported promptly after recording. Absent
+   * on anything exported before 2026-08-09. Reported, never gated: a transcript
+   * recorded under older code disagreeing with its own replay is the expected
+   * result of a pipeline fix, not a defect.
+   */
+  recordedUnder?: string
 }
 
 /** One prompt turn: `index` is 1-based, matching the label files. */
@@ -45,12 +53,17 @@ const TURN_CLOSING = new Set([
   'prompt_cancel_requested',
 ])
 
-export function loadTranscript(file: string): { name: string; turns: TranscriptTurn[] } {
+export function loadTranscript(file: string): {
+  name: string
+  turns: TranscriptTurn[]
+  recordedUnder: string[]
+} {
   const lines = readFileSync(file, 'utf8')
     .split('\n')
     .filter((l) => l.trim().length > 0)
   const turns: TranscriptTurn[] = []
   let current: TranscriptTurn | null = null
+  const stamps = new Set<string>()
 
   for (const [i, line] of lines.entries()) {
     const record = JSON.parse(line) as Partial<TranscriptRecord>
@@ -65,6 +78,7 @@ export function loadTranscript(file: string): { name: string; turns: TranscriptT
           'dropped tool failures.',
       )
     }
+    if (typeof record.recordedUnder === 'string') stamps.add(record.recordedUnder)
     if (record.type === 'prompt_sent') {
       current = { index: turns.length + 1, updates: [] }
       turns.push(current)
@@ -77,5 +91,9 @@ export function loadTranscript(file: string): { name: string; turns: TranscriptT
     if (record.type && TURN_CLOSING.has(record.type)) current = null
   }
 
-  return { name: basename(file).replace(/\.jsonl$/, ''), turns }
+  return {
+    name: basename(file).replace(/\.jsonl$/, ''),
+    turns,
+    recordedUnder: [...stamps],
+  }
 }
