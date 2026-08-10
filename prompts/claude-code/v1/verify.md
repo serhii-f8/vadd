@@ -5,9 +5,14 @@ expects: [evidence]
 ---
 Run the verification commands for this objective and report what they produced.
 
-Commands: {{verificationCommands}}
+Run every command again now, even if you already ran it during execute-task —
+this turn's evidence must be freshly produced, not recalled from earlier.
 
-Emit one `evidence` event per command, with the real headline from its output:
+Commands (report each separately, even if you ran them together):
+{{verificationCommands}}
+
+Emit one `evidence` event per command listed above — never fold two
+commands' output into one event, even if you ran them chained.
 
 ```vadd-event
 {"type":"evidence","kind":"lint","status":"warn","headline":"3 warnings, 0 errors","summary":["Two unused imports in ExportController"]}
