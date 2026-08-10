@@ -4,14 +4,19 @@ import {
   agentEventJsonSchema,
   type RawAgentUpdate,
 } from '@vadd/core'
-import { FenceScanner } from './fence-scanner.js'
+import { type FenceBlock, FenceScanner } from './fence-scanner.js'
 
 /** Filled in by Task 6. Injected so the pipeline itself stays I/O-free. */
 export type Summarizer = {
   extract(rawText: string, schema: Record<string, unknown>): Promise<unknown>
 }
 
-export type ViolationReason = 'parse' | 'schema' | 'unterminated' | 'missing_expected'
+export type ViolationReason =
+  | 'parse'
+  | 'schema'
+  | 'unterminated'
+  | 'missing_expected'
+  | 'fence_drift'
 
 export type ContractEmission =
   | {
@@ -98,13 +103,13 @@ export class ContractPipeline {
     if (text === null) return
     this.#raw += text
     if (sourceEventId !== undefined) this.#sources.push(sourceEventId)
-    for (const block of this.#scanner.push(text)) this.#handleBlock(block.body)
+    for (const block of this.#scanner.push(text)) this.#handleBlock(block)
   }
 
   async endTurn(turnId: string): Promise<void> {
     if (this.#turnId !== turnId) return
     const { blocks, unterminated } = this.#scanner.flush()
-    for (const block of blocks) this.#handleBlock(block.body)
+    for (const block of blocks) this.#handleBlock(block)
     if (unterminated !== null) this.#violation('unterminated', unterminated)
 
     const missing = this.#expect.filter((group) => !group.some((t) => this.#seen.has(t)))
@@ -113,7 +118,11 @@ export class ContractPipeline {
     this.#turnId = null
   }
 
-  #handleBlock(body: string): void {
+  #handleBlock(block: FenceBlock): void {
+    if (block.weldedRemainder !== undefined) {
+      this.#violation('fence_drift', block.weldedRemainder)
+    }
+    const body = block.body
     let parsed: unknown
     try {
       parsed = JSON.parse(body)

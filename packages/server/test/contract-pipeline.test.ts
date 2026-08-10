@@ -198,3 +198,25 @@ test('an execute-task turn emitting only evidence still reports the unmet group'
     raw: 'expected task_result or failure',
   })
 })
+
+test('a drift close emits the block AND a fence_drift violation', async () => {
+  const emitted: ContractEmission[] = []
+  const pipe = new ContractPipeline({ onEmit: (e) => emitted.push(e) })
+  pipe.beginTurn({ turnId: 't1' })
+  pipe.ingest({
+    update: {
+      sessionUpdate: 'agent_message_chunk',
+      content: {
+        type: 'text',
+        text: '```vadd-event\n{"type":"status","phase":"executing","headline":"Running tests"}\n```and then I checked the config\n',
+      },
+    },
+  } as never)
+  await pipe.endTurn('t1')
+
+  const events = emitted.filter((e) => e.kind === 'event')
+  const drift = emitted.filter((e) => e.kind === 'violation' && e.reason === 'fence_drift')
+  expect(events).toHaveLength(1)
+  expect(drift).toHaveLength(1)
+  expect(drift[0]).toMatchObject({ raw: 'and then I checked the config' })
+})

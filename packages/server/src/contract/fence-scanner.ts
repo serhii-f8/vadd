@@ -1,7 +1,7 @@
 /** The locked fence tag (spec §4). */
 export const FENCE_TAG = 'vadd-event'
 
-export type FenceBlock = { body: string }
+export type FenceBlock = { body: string; weldedRemainder?: string }
 
 /**
  * Pulls ```` ```vadd-event ```` blocks out of a text stream.
@@ -81,10 +81,15 @@ export class FenceScanner {
     // remainder as ordinary outside text, which is where a later opening fence
     // is found.
     if (trimmed.startsWith('```')) {
+      const remainder = trimmed.slice(3).trim()
       this.#inside = false
-      blocks.push({ body: this.#body.join('\n') })
+      blocks.push(
+        remainder.length > 0
+          ? { body: this.#body.join('\n'), weldedRemainder: remainder }
+          : { body: this.#body.join('\n') },
+      )
       this.#body = []
-      this.#consume(trimmed.slice(3), blocks)
+      this.#consume(remainder, blocks)
       return
     }
     this.#body.push(line)

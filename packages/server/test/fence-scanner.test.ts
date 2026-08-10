@@ -61,17 +61,46 @@ test('closes a block whose closing fence is welded to the following prose', () =
   const blocks = s.push(
     '```vadd-event\n{"type":"status"}\n```Dependencies are missing. Installing them.\n',
   )
-  expect(blocks).toEqual([{ body: '{"type":"status"}' }])
+  expect(blocks).toEqual([
+    {
+      body: '{"type":"status"}',
+      weldedRemainder: 'Dependencies are missing. Installing them.',
+    },
+  ])
 })
 
 test('still finds a later block after a welded closing fence', () => {
   const s = new FenceScanner()
   const blocks = s.push('```vadd-event\n{"a":1}\n```Prose ran on.\n\n```vadd-event\n{"b":2}\n```\n')
-  expect(blocks).toEqual([{ body: '{"a":1}' }, { body: '{"b":2}' }])
+  expect(blocks).toEqual([
+    { body: '{"a":1}', weldedRemainder: 'Prose ran on.' },
+    { body: '{"b":2}' },
+  ])
 })
 
 test('leaves no block open after a welded closing fence', () => {
   const s = new FenceScanner()
   s.push('```vadd-event\n{"type":"status"}\n```and then prose\n')
   expect(s.flush().unterminated).toBeNull()
+})
+
+test('a drift close reports the welded remainder', () => {
+  const scanner = new FenceScanner()
+  const blocks = scanner.push('```vadd-event\n{"type":"status"}\n```Now let me check the config\n')
+  expect(blocks).toHaveLength(1)
+  expect(blocks[0]?.body).toBe('{"type":"status"}')
+  expect(blocks[0]?.weldedRemainder).toBe('Now let me check the config')
+})
+
+test('a clean close leaves weldedRemainder unset', () => {
+  const scanner = new FenceScanner()
+  const blocks = scanner.push('```vadd-event\n{"type":"status"}\n```\n')
+  expect(blocks).toHaveLength(1)
+  expect(blocks[0]?.weldedRemainder).toBeUndefined()
+})
+
+test('a CRLF drift close leaves no stray carriage return', () => {
+  const scanner = new FenceScanner()
+  const blocks = scanner.push('```vadd-event\r\n{"type":"status"}\r\n```trailing\r\n')
+  expect(blocks[0]?.weldedRemainder).toBe('trailing')
 })
