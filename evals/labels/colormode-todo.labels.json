@@ -14,8 +14,8 @@
       "turn": 3,
       "type": "evidence",
       "key": "task-test",
-      "match": { "kind": "test" },
-      "note": "Execute-task is prompted test-first; the reviewer needs the test outcome."
+      "match": { "kind": "check" },
+      "note": "No automated test covers this cosmetic edit; the reviewer needs the manual check outcome instead."
     },
     {
       "turn": 4,
