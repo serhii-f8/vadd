@@ -4,7 +4,7 @@ import { type AgentEvent, fitsReadingBudget } from '@vadd/core'
 import { type ContractEmission, ContractPipeline } from '../contract/pipeline.js'
 import { GATED_TYPES, type GatedType, loadLabelFile } from './labels.js'
 import { matchEmissions } from './match.js'
-import { loadTranscript } from './transcript.js'
+import { loadTranscript, type TranscriptTurn } from './transcript.js'
 
 /** Spec §9: ≥90% precision and recall on the two gated types. */
 export const GATE_THRESHOLD = 0.9
@@ -53,6 +53,10 @@ export type EvalReport = {
     parseFailures: number
     contractViolations: number
     budgetViolations: number
+    repairedTurns: number
+    totalTurns: number
+    fenceDrifts: number
+    recordedUnder: string[]
   }
 }
 
@@ -66,8 +70,10 @@ export type EvalReport = {
 export async function replayTranscript(file: string): Promise<{
   byTurn: Map<number, AgentEvent[]>
   emissions: ContractEmission[]
+  turns: TranscriptTurn[]
+  recordedUnder: string[]
 }> {
-  const { turns } = loadTranscript(file)
+  const { turns, recordedUnder } = loadTranscript(file)
   const byTurn = new Map<number, AgentEvent[]>()
   const emissions: ContractEmission[] = []
 
@@ -86,7 +92,7 @@ export async function replayTranscript(file: string): Promise<{
     byTurn.set(turn.index, events)
   }
 
-  return { byTurn, emissions }
+  return { byTurn, emissions, turns, recordedUnder }
 }
 
 type Row = {
@@ -142,6 +148,10 @@ export async function scoreCorpus(opts: {
     parseFailures: 0,
     contractViolations: 0,
     budgetViolations: 0,
+    repairedTurns: 0,
+    totalTurns: 0,
+    fenceDrifts: 0,
+    recordedUnder: [] as string[],
   }
 
   for (const file of files) {
@@ -154,7 +164,9 @@ export async function scoreCorpus(opts: {
       )
     }
     const labels = loadLabelFile(labelFile)
-    const { byTurn, emissions } = await replayTranscript(join(opts.transcriptsDir, file))
+    const { byTurn, emissions, turns, recordedUnder } = await replayTranscript(
+      join(opts.transcriptsDir, file),
+    )
 
     // Turn numbers are assigned by the loader and written by hand, so an
     // off-by-one or a stale number after a re-export is a real possibility.
@@ -187,10 +199,16 @@ export async function scoreCorpus(opts: {
     extra.transcripts += 1
     if (labels.holdout) extra.holdoutTranscripts += 1
     else extra.tuningTranscripts += 1
+    extra.totalTurns += turns.length
+    extra.repairedTurns += turns.filter((t) => t.repaired).length
+    for (const stamp of recordedUnder) {
+      if (!extra.recordedUnder.includes(stamp)) extra.recordedUnder.push(stamp)
+    }
     for (const e of emissions) {
       if (e.kind === 'violation') {
         extra.contractViolations += 1
         if (e.reason === 'parse') extra.parseFailures += 1
+        if (e.reason === 'fence_drift') extra.fenceDrifts += 1
       } else {
         extra.budgetViolations += fitsReadingBudget(e.event).length
       }

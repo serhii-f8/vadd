@@ -182,6 +182,38 @@ test('a missing labels directory is not a crash', async () => {
   expect(report.gate.pass).toBe(false)
 })
 
+test('repair rate and provenance are reported and never gate', async () => {
+  const { transcriptsDir, labelsDir } = corpusCopy()
+  const file = join(transcriptsDir, 'tiny.jsonl')
+
+  // Stamp every record, and mark the first turn repaired by inserting a
+  // repair_prompt_sent after its prompt_sent.
+  const rows = readFileSync(file, 'utf8')
+    .split('\n')
+    .filter((l) => l.trim().length > 0)
+    .map((l) => JSON.parse(l) as Record<string, unknown>)
+  const stamped: Record<string, unknown>[] = rows.map((r) => ({ ...r, recordedUnder: 'abc1234' }))
+  const firstSent = stamped.findIndex((r) => r.type === 'prompt_sent')
+  stamped.splice(firstSent + 1, 0, {
+    ...stamped[firstSent],
+    id: -1,
+    type: 'repair_prompt_sent',
+    payload: { missing: 'evidence' },
+  })
+  writeFileSync(file, `${stamped.map((r) => JSON.stringify(r)).join('\n')}\n`)
+
+  const report = await scoreCorpus({ transcriptsDir, labelsDir })
+
+  expect(report.extra.repairedTurns).toBe(1)
+  expect(report.extra.totalTurns).toBeGreaterThanOrEqual(1)
+  expect(report.extra.recordedUnder).toEqual(['abc1234'])
+  // The inserted repair changed no emission, so the score is untouched: repair
+  // rate and provenance are reported, never gated.
+  const baseline = await scoreCorpus(corpusCopy())
+  expect(report.gate.pass).toBe(baseline.gate.pass)
+  expect(report.byType.map((s) => s.matched)).toEqual(baseline.byType.map((s) => s.matched))
+})
+
 test('runs offline — no summarizer is constructed', async () => {
   const spy = vi.spyOn(globalThis, 'fetch')
   await scoreCorpus({

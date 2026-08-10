@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { GATE_THRESHOLD, scoreCorpus } from '../src/evals/score.js'
 import { repoRoot } from '../src/paths.js'
@@ -76,11 +77,37 @@ if (process.argv.includes('--json')) {
     }
   }
 
+  const repairPct =
+    report.extra.totalTurns === 0 ? 0 : report.extra.repairedTurns / report.extra.totalTurns
   console.log(
     `\nreported, not gated: ${report.extra.parseFailures} parse failures, ` +
       `${report.extra.contractViolations} contract violations, ` +
-      `${report.extra.budgetViolations} reading-budget violations`,
+      `${report.extra.fenceDrifts} fence drifts, ` +
+      `${report.extra.budgetViolations} reading-budget violations,` +
+      `\n  ${report.extra.repairedTurns}/${report.extra.totalTurns} turns repaired (${pct(repairPct)})`,
   )
+
+  const scoringCommit = (() => {
+    try {
+      return execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+        cwd: repoRoot(),
+        encoding: 'utf8',
+      }).trim()
+    } catch {
+      return 'unknown'
+    }
+  })()
+  const stamps = report.extra.recordedUnder
+  if (stamps.length === 0) {
+    console.log(`\nscoring under ${scoringCommit}; transcripts carry no provenance stamp`)
+  } else if (stamps.length > 1 || stamps[0] !== scoringCommit) {
+    console.log(
+      `\nscoring under ${scoringCommit}; transcripts recorded under ${stamps.join(', ')}.` +
+        '\n  Replay derives every emission under the scoring commit, so this is' +
+        '\n  expected after a pipeline fix — not a defect, and never gated.',
+    )
+  }
+
   console.log(`\nGate (>= ${pct(report.gate.threshold)}): ${report.gate.pass ? 'PASS' : 'FAIL'}`)
 
   // A bare FAIL next to a table of high percentages reads as a bug in the tool.
