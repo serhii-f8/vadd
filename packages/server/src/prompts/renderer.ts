@@ -11,6 +11,7 @@ export const PROMPT_PHASES = [
   'execute-task',
   'verify',
   'review',
+  'repair',
 ] as const
 export type PromptPhase = (typeof PROMPT_PHASES)[number]
 
@@ -126,11 +127,15 @@ export const AUTO_TEMPLATE_VARS = ['title', 'goalText'] as const
  * only two templates that solicit `evidence`, one of the two gated types, and
  * they shipped sending the literal string `{{verificationCommands}}` to the
  * agent because nothing checked that any caller could satisfy them.
+ *
+ * `missing` is `repair.md`'s: the human-readable list of unmet expect groups,
+ * built by the caller from `ContractPipeline.unmetExpectations()`.
  */
 export const CALLER_TEMPLATE_VARS = [
   'verificationCommands',
   'taskTitle',
   'taskDescription',
+  'missing',
 ] as const
 
 /** Distinct `{{name}}` placeholders in a template body or a rendered prompt. */

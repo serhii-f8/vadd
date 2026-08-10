@@ -125,17 +125,20 @@ test('every placeholder in every bundled template has a declared source', () => 
   }
 })
 
-test('the objective-derived vars alone leave two templates unsatisfied', () => {
+test('the objective-derived vars alone leave three templates unsatisfied', () => {
   // Pins the fact the fix depends on: `verify` and `execute-task` genuinely
   // cannot be rendered from an objective row, so the route must reject them
   // without `vars` rather than treating the leftover braces as prose. If a
   // later phase wires these up from the verification spec and plan_tasks, this
   // test is the one to update — deliberately, not by accident.
+  //
+  // `repair` joins them for the same reason: `{{missing}}` comes from
+  // `ContractPipeline.unmetExpectations()` at repair time, not the objective row.
   const auto = Object.fromEntries(AUTO_TEMPLATE_VARS.map((v) => [v, 'x']))
   const unsatisfied = PROMPT_PHASES.filter(
     (p) => placeholdersIn(renderTemplate(loadTemplate(p), auto)).length > 0,
   )
-  expect(unsatisfied.sort()).toEqual(['execute-task', 'verify'])
+  expect(unsatisfied.sort()).toEqual(['execute-task', 'repair', 'verify'])
 })
 
 test('a fully supplied var set renders every template with no placeholder left', () => {
