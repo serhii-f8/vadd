@@ -77,7 +77,7 @@ test('ready objectives are left alone', async () => {
       goalText: 'g',
       worktreePath: path,
       branchName: 'vadd/o3',
-      status: 'ready',
+      status: 'idle',
       createdAt: now,
       updatedAt: now,
     })
@@ -97,7 +97,7 @@ test('running sessions from a previous process are marked orphaned', async () =>
       goalText: 'g',
       worktreePath: '/tmp/x',
       branchName: 'vadd/o4',
-      status: 'ready',
+      status: 'idle',
       createdAt: now,
       updatedAt: now,
     })

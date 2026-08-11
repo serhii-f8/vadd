@@ -66,7 +66,7 @@ function setup(startDelayMs?: number) {
       goalText: 'g',
       worktreePath: `${home}/wt`,
       branchName: 'vadd/obj-1',
-      status: 'ready',
+      status: 'idle',
       createdAt: now,
       updatedAt: now,
     })

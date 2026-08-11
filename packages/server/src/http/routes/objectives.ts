@@ -97,7 +97,7 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       .set({
         worktreePath: path,
         branchName: branch,
-        status: 'ready',
+        status: 'idle',
         updatedAt: new Date().toISOString(),
       })
       .where(eq(objectives.id, id))

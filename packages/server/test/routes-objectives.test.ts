@@ -31,7 +31,7 @@ test('creating an objective produces a worktree at the D4 path', async () => {
   expect(res.statusCode).toBe(201)
   const o = res.json()
 
-  expect(o.status).toBe('ready')
+  expect(o.status).toBe('idle')
   expect(o.worktreePath).toBe(`${home}/worktrees/${projectId}/${o.id}`)
   expect(o.branchName).toBe(`vadd/${o.id.slice(0, 8)}`)
   expect(existsSync(`${o.worktreePath}/README.md`)).toBe(true)
