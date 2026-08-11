@@ -100,3 +100,26 @@ export async function listWorktrees(repoPath: string): Promise<string[]> {
 export async function pruneWorktrees(repoPath: string): Promise<void> {
   await git(repoPath, ['worktree', 'prune'])
 }
+
+/**
+ * Spec §5: `git add -A && git commit` with a `vadd-checkpoint:` prefix before
+ * each `executing` entry, so `rollingBack` always has somewhere to land.
+ *
+ * Returns null on a clean tree. An empty commit would work but would leave the
+ * task's `checkpointRef` pointing at a commit indistinguishable from its
+ * predecessor, so a rollback could not tell whether it had undone anything.
+ */
+export async function checkpointCommit(
+  worktreePath: string,
+  message: string,
+): Promise<string | null> {
+  await git(worktreePath, ['add', '-A'])
+  const staged = await git(worktreePath, ['status', '--porcelain'])
+  if (staged.trim() === '') return null
+  await git(worktreePath, ['commit', '-m', message])
+  return (await git(worktreePath, ['rev-parse', 'HEAD'])).trim()
+}
+
+export async function resetHard(worktreePath: string, ref: string): Promise<void> {
+  await git(worktreePath, ['reset', '--hard', ref])
+}

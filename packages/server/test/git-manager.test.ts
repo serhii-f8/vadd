@@ -1,13 +1,17 @@
 import { existsSync, mkdtempSync } from 'node:fs'
+import { readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from 'vitest'
+import { execa } from 'execa'
+import { beforeEach, describe, expect, it, test } from 'vitest'
 import {
+  checkpointCommit,
   createWorktree,
   GitError,
   listWorktrees,
   pruneWorktrees,
   removeWorktree,
+  resetHard,
   validateRepo,
 } from '../src/git/git-manager.js'
 import { makeTempRepo } from './fixtures/temp-repo.js'
@@ -78,4 +82,33 @@ test('removeWorktree throws rather than silently leaking a stuck worktree', asyn
 test('GitError is thrown, not a raw execa error', async () => {
   const notRepo = mkdtempSync(join(tmpdir(), 'vadd-plain-'))
   await expect(validateRepo(notRepo)).rejects.toBeInstanceOf(GitError)
+})
+
+describe('checkpointCommit', () => {
+  let wt: string
+
+  beforeEach(() => {
+    wt = makeTempRepo()
+  })
+
+  it('commits everything and returns the sha', async () => {
+    await writeFile(join(wt, 'a.txt'), 'hello')
+    const sha = await checkpointCommit(wt, 'vadd-checkpoint: task 0')
+    expect(sha).toMatch(/^[0-9a-f]{7,40}$/)
+    const log = await execa('git', ['-C', wt, 'log', '-1', '--pretty=%s'])
+    expect(log.stdout).toBe('vadd-checkpoint: task 0')
+  })
+
+  it('returns null on a clean tree rather than making an empty commit', async () => {
+    await checkpointCommit(wt, 'vadd-checkpoint: first')
+    expect(await checkpointCommit(wt, 'vadd-checkpoint: again')).toBeNull()
+  })
+
+  it('resetHard returns the tree to a checkpoint', async () => {
+    await writeFile(join(wt, 'a.txt'), 'v1')
+    const sha = await checkpointCommit(wt, 'vadd-checkpoint: v1')
+    await writeFile(join(wt, 'a.txt'), 'v2')
+    await resetHard(wt, sha as string)
+    expect(await readFile(join(wt, 'a.txt'), 'utf8')).toBe('v1')
+  })
 })
