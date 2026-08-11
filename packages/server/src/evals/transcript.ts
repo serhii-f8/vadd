@@ -31,7 +31,21 @@ export type TranscriptRecord = {
 }
 
 /** One prompt turn: `index` is 1-based, matching the label files. */
-export type TranscriptTurn = { index: number; updates: RawAgentUpdate[]; repaired: boolean }
+export type TranscriptTurn = {
+  index: number
+  updates: RawAgentUpdate[]
+  repaired: boolean
+  /**
+   * `unexpected_type` violations the **live** pipeline recorded for this turn.
+   *
+   * Read from the recording rather than recomputed on replay because
+   * `replayTranscript` calls `beginTurn` with no `expect` groups, so a replayed
+   * turn does not know its own contract and could never raise this. Counting
+   * the live records keeps the measurement honest without giving replay a
+   * second, divergent notion of what the turn owed.
+   */
+  outOfContract: number
+}
 
 /**
  * Records that close a turn, i.e. the points at which the live pipeline's
@@ -80,7 +94,7 @@ export function loadTranscript(file: string): {
     }
     if (typeof record.recordedUnder === 'string') stamps.add(record.recordedUnder)
     if (record.type === 'prompt_sent') {
-      current = { index: turns.length + 1, updates: [], repaired: false }
+      current = { index: turns.length + 1, updates: [], repaired: false, outOfContract: 0 }
       turns.push(current)
       continue
     }
@@ -90,6 +104,11 @@ export function loadTranscript(file: string): {
     }
     if (record.type === 'repair_prompt_sent' && current) {
       current.repaired = true
+      continue
+    }
+    if (record.type === 'contract_violation' && current) {
+      const reason = (record.payload as { reason?: string } | undefined)?.reason
+      if (reason === 'unexpected_type') current.outOfContract += 1
       continue
     }
     if (record.type && TURN_CLOSING.has(record.type)) current = null

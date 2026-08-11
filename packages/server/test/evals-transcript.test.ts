@@ -128,3 +128,30 @@ test('repair_prompt_sent does not open a turn, and marks the turn repaired', () 
   expect(turns[0]?.updates).toHaveLength(2)
   expect(turns[0]?.repaired).toBe(true)
 })
+
+test('counts the live run out-of-contract emissions per turn', () => {
+  // Read from the recording rather than recomputed on replay: replayTranscript
+  // calls beginTurn with no expect groups, so a replayed turn cannot know its
+  // own contract and could never raise unexpected_type.
+  const file = write([
+    row(1, 'prompt_sent', { text: 'explore' }),
+    row(2, 'contract_violation', { reason: 'unexpected_type', raw: 'evidence' }),
+    row(3, 'contract_violation', { reason: 'fence_drift', raw: 'x' }),
+    row(4, 'contract_violation', { reason: 'unexpected_type', raw: 'decision_needed' }),
+    row(5, 'prompt_finished', { stopReason: 'end_turn' }),
+    row(6, 'prompt_sent', { text: 'plan' }),
+    row(7, 'prompt_finished', { stopReason: 'end_turn' }),
+  ])
+  const { turns } = loadTranscript(file)
+  expect(turns[0]?.outOfContract).toBe(2)
+  expect(turns[1]?.outOfContract).toBe(0)
+})
+
+test('a violation outside any open turn is not attributed to one', () => {
+  const file = write([
+    row(1, 'prompt_sent', { text: 'go' }),
+    row(2, 'prompt_finished', { stopReason: 'end_turn' }),
+    row(3, 'contract_violation', { reason: 'unexpected_type', raw: 'evidence' }),
+  ])
+  expect(loadTranscript(file).turns[0]?.outOfContract).toBe(0)
+})

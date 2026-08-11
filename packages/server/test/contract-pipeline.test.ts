@@ -355,3 +355,64 @@ test('a rejection names the type even when type itself is what failed', async ()
   expect(pipe.schemaRejections()[0]).toContain('invented')
   await pipe.endTurn('t1')
 })
+
+test('reports an event outside the turn expect groups, without suppressing it', async () => {
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: [['plan']] })
+  pipe.ingest(
+    chunk(
+      '```vadd-event\n' +
+        '{"type":"evidence","kind":"check","status":"info","headline":"Plan emitted, no code run","summary":["none"]}\n' +
+        '```\n' +
+        '```vadd-event\n' +
+        '{"type":"plan","tasks":[{"title":"Do the thing","description":"Because."}]}\n' +
+        '```\n',
+    ),
+  )
+  await pipe.endTurn('t1')
+
+  expect(out.filter((e) => e.kind === 'violation').map((v) => v.reason)).toContain(
+    'unexpected_type',
+  )
+
+  // Suppressing it would raise precision by hiding an emission from the
+  // scorer rather than by changing what the agent does. The event must still
+  // reach the bus exactly as before.
+  expect(
+    out
+      .filter((e) => e.kind === 'event')
+      .map((e) => e.event.type)
+      .sort(),
+  ).toEqual(['evidence', 'plan'])
+})
+
+test('an expected type raises no unexpected_type violation', async () => {
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: [['task_result', 'failure'], ['evidence']] })
+  pipe.ingest(
+    chunk(
+      '```vadd-event\n{"type":"evidence","kind":"test","status":"pass","headline":"OK","summary":["ran"]}\n```\n',
+    ),
+  )
+  await pipe.endTurn('t1')
+
+  expect(out.filter((e) => e.kind === 'violation').map((v) => v.reason)).not.toContain(
+    'unexpected_type',
+  )
+})
+
+test('a turn declaring no expectations never reports unexpected_type', async () => {
+  // repair turns carry expects: [] — everything is in budget there.
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: [] })
+  pipe.ingest(
+    chunk(
+      '```vadd-event\n{"type":"evidence","kind":"test","status":"pass","headline":"OK","summary":["ran"]}\n```\n',
+    ),
+  )
+  await pipe.endTurn('t1')
+
+  expect(out.filter((e) => e.kind === 'violation').map((v) => v.reason)).not.toContain(
+    'unexpected_type',
+  )
+})

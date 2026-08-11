@@ -56,6 +56,12 @@ export type EvalReport = {
     repairedTurns: number
     totalTurns: number
     fenceDrifts: number
+    /**
+     * Events the live run emitted outside their turn's `expects` groups
+     * (design §4.2). Read from the recording, not recomputed on replay, which
+     * has no `expect` groups to compare against.
+     */
+    unexpectedTypes: number
     recordedUnder: string[]
   }
 }
@@ -151,6 +157,7 @@ export async function scoreCorpus(opts: {
     repairedTurns: 0,
     totalTurns: 0,
     fenceDrifts: 0,
+    unexpectedTypes: 0,
     recordedUnder: [] as string[],
   }
 
@@ -201,6 +208,7 @@ export async function scoreCorpus(opts: {
     else extra.tuningTranscripts += 1
     extra.totalTurns += turns.length
     extra.repairedTurns += turns.filter((t) => t.repaired).length
+    extra.unexpectedTypes += turns.reduce((n, t) => n + t.outOfContract, 0)
     for (const stamp of recordedUnder) {
       if (!extra.recordedUnder.includes(stamp)) extra.recordedUnder.push(stamp)
     }

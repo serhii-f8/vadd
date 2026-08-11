@@ -83,6 +83,7 @@ if (process.argv.includes('--json')) {
     `\nreported, not gated: ${report.extra.parseFailures} parse failures, ` +
       `${report.extra.contractViolations} contract violations, ` +
       `${report.extra.fenceDrifts} fence drifts, ` +
+      `${report.extra.unexpectedTypes} out-of-contract emissions, ` +
       `${report.extra.budgetViolations} reading-budget violations,` +
       `\n  ${report.extra.repairedTurns}/${report.extra.totalTurns} turns repaired (${pct(repairPct)})`,
   )

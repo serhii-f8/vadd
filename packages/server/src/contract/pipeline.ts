@@ -18,6 +18,7 @@ export type ViolationReason =
   | 'missing_expected'
   | 'fence_drift'
   | 'dangling_evidence_ref'
+  | 'unexpected_type'
 
 export type ContractEmission =
   | {
@@ -187,6 +188,14 @@ export class ContractPipeline {
       }
       this.#seen.add(result.data.type)
       this.#trackClaims(result.data)
+      // Reported, never gated and never suppressed: the event still goes to
+      // the bus and to the scorer exactly as before. Filtering it here would
+      // raise precision by hiding emissions rather than by changing what the
+      // agent does, which is measurement fraud, not a fix. This counter is how
+      // the turn-budget prompt line gets measured instead of assumed.
+      if (this.#expect.length > 0 && !this.#expect.some((g) => g.includes(result.data.type))) {
+        this.#violation('unexpected_type', result.data.type)
+      }
       this.#emitEvent(result.data, false)
     }
   }
