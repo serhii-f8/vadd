@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-*Last updated 2026-08-11 at `72894a1` (phase 2d gate run), see `docs/superpowers/notes/m1-gate-result.md` for the full writeup. Keep this section and the ledger below current — see "Keeping status current".*
+*Last updated 2026-08-11 at `0c9b9c2` (phase 2d gate run + §9 timebox closure), see `docs/superpowers/notes/m1-gate-result.md` for the numbers and `docs/superpowers/notes/m1-timebox-decision.md` for the decision. Keep this section and the ledger below current — see "Keeping status current".*
 
-**M0 (Skeleton) is complete. M1 phases 1, 2, 2b, 2c and 2d are all complete.** Five real gate runs have been scored, each under different code.
+**M0 (Skeleton) is complete. M1 phases 1, 2, 2b, 2c and 2d are all finished as work** — every task in every plan is done and every package produced its scored run. "Finished" is not "cleared": five real gate runs have been scored, each under different code, and none reached the bar.
 
 **Phase 2 is closed — uncleared — under spec §9's timebox.** The decision, its reasoning and what it does *not* license are in `docs/superpowers/notes/m1-timebox-decision.md`. **Phases 3–6 are open.** Do not read that as the gate passing: `pnpm eval` still exits non-zero, and it must stay that way.
 
@@ -44,13 +44,13 @@ Read before touching M1 work, in this order:
 
 ## Status ledger
 
-Where we are, what's next. Phases are the M1 design's §1.4 build order; 2b is the unplanned insert that the gate's first two real runs forced.
+Where we are, what's next. Phases are the M1 design's §1.4 build order. **2b, 2c and 2d are all unplanned inserts** — each one a package built to answer why the gate would not clear, and each one ending in a scored run. Phase 2 as a whole is now closed by spec §9's timebox rather than by clearing.
 
 | Phase | Work | State | Evidence |
 |---|---|---|---|
 | M0 | Skeleton: ACP spike, ports, five tables, debug page | ✅ done | design §7.1; one criterion unmet (no browser render) |
 | 1 — Foundation | Agent profile isolation; `AgentEvent` union; fence scanner + validator; prompt contracts; contract events persisted | ✅ done | merged `1f0ac6d` |
-| 2 — Corpus + gate | Record + label 12 transcripts; eval harness; iterate prompt and pipeline. **Kill-switch checkpoint** | ⚠️ ran, does not clear | `8e8b385`; superseded by 2b's score |
+| 2 — Corpus + gate | Record + label 12 transcripts; eval harness; iterate prompt and pipeline. **Kill-switch checkpoint** | 🛑 **CLOSED UNCLEARED, 2026-08-11, by spec §9's timebox.** The kill-switch fired and was resolved the way §9 words it — *"fix pipeline"*, across 2b/2c/2d — not by clearing 90% | `0c9b9c2`; five scored runs, final `decision_needed` 100%/100%, `evidence` 75.0%/90.0%; `docs/superpowers/notes/m1-timebox-decision.md` |
 | 2b — Provenance + repair | Fence-drift violations; `recordedUnder` stamp; A4 repair turn; re-record and score once | ⚠️ **done, does not clear** | `283a1a8`..`1fb56ca`, all 7/7 tasks; `docs/superpowers/notes/m1-gate-result.md` |
 | 2c — Evidence precision | `verify.md` copy fixes; dangling-`evidenceRefs` repair trigger; one relabel; 6-of-10 targeted re-record | ⚠️ **done, does not clear; holdout comparison compromised** | `e0b4c98`..`823f95a`, all 5/5 tasks; `docs/superpowers/notes/m1-gate-result.md` |
 | 2d — Contract delivery | Schema reference to the agent; repair carries rejection reason; per-turn event budget; both malformed opening fences; per-worktree `vendor` | ⚠️ **done; gate does not clear, phase 2 closed by §9 timebox** | `c008a19`..`72894a1`, all 10/10 tasks; `docs/superpowers/notes/m1-timebox-decision.md` |
