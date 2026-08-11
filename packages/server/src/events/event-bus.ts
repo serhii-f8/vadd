@@ -28,8 +28,19 @@ export class EventBus {
 
   constructor(private readonly db: Db) {}
 
-  emit(e: { objectiveId?: string | null; type: string; payload: unknown }): VaddEvent {
-    const row = this.db
+  /**
+   * Insert without fan-out, on a caller-supplied handle.
+   *
+   * `emit` inserts and dispatches in one synchronous call, which is correct
+   * everywhere except inside a transaction: a subscriber that has already seen
+   * an event cannot un-see it if the transaction later rolls back. The workflow
+   * store inserts here and calls `dispatch` after the commit.
+   */
+  appendWithin(
+    tx: Db,
+    e: { objectiveId?: string | null; type: string; payload: unknown },
+  ): VaddEvent {
+    return tx
       .insert(events)
       .values({
         objectiveId: e.objectiveId ?? null,
@@ -39,7 +50,10 @@ export class EventBus {
       })
       .returning()
       .get() as VaddEvent
+  }
 
+  /** Fan out a row that is already committed. */
+  dispatch(row: VaddEvent): void {
     for (const sub of this.#subs) {
       if (sub.objectiveId !== null && sub.objectiveId !== row.objectiveId) continue
       try {
@@ -48,6 +62,11 @@ export class EventBus {
         // One bad subscriber (e.g. a half-closed SSE socket) must not stop the rest.
       }
     }
+  }
+
+  emit(e: { objectiveId?: string | null; type: string; payload: unknown }): VaddEvent {
+    const row = this.appendWithin(this.db, e)
+    this.dispatch(row)
     return row
   }
 
