@@ -77,3 +77,45 @@ two contract fixes landed mid-recording.
 `pnpm eval` prints the scoring commit and any mismatch. It never gates on it. A
 transcript recorded under older code disagreeing with its own replay is the
 expected outcome of a pipeline fix, and the whole point of replaying.
+
+## Recording against `flexpick.net`: do not symlink `vendor/`
+
+Each worktree gets its **own** `vendor/`, as a hard-link copy, with its own
+autoloader:
+
+```bash
+cp -al /var/www/html/flexpick.net/backend/vendor "$WORKTREE/backend/vendor"
+(cd "$WORKTREE/backend" && composer dump-autoload)
+```
+
+`frontend/node_modules` may stay a symlink — it bakes no absolute paths and has
+no PHP autoloader.
+
+One physical `vendor` shared by every worktree caused two failures in the fourth
+gate run that look unrelated until you find the shared root:
+
+1. **Permission denials that cost gated labels.** `isInsideWorktree`
+   (`packages/server/src/agent/permissions.ts`) resolves symlinks on both sides
+   before comparing — deliberately, so `..` and symlinks cannot escape — so a
+   lexically-inside `backend/vendor/...` path resolves *outside* the worktree
+   and is denied. On `scheduler-missed-alert` turn 1 that cascaded into a failed
+   `Task` call and cost a `decision_needed` outright; `error-tracking-wiring`
+   turn 3 hit it on `vendor/sentry/sentry-laravel`. The predicate is correct;
+   the recipe was wrong. Do not reach for this by loosening the predicate.
+2. **A stale autoloader silently running dead code.** The shared `vendor`'s
+   `autoload_psr4.php`, `autoload_static.php` and `installed.php` carried
+   absolute paths baked against a worktree that no longer existed, so `App\` and
+   `Tests\` classes resolved to that old checkout. Reproduced deterministically,
+   outside any concurrency window, and very likely behind
+   `scheduler-missed-alert`'s `getaddrinfo for mysql failed`.
+
+`cp -al` hard-links: it costs directory structure and a second or two, so the
+objection that rejected a per-worktree `composer install` as too expensive does
+not apply here.
+
+**Still true, and still not fixed by this:** every worktree shares the one Sail
+`testing` database, so turns that run tests must be serialised across
+objectives. And an agent that reaches for `docker compose exec` is operating on
+the *main* checkout, not its worktree — `operator-change-log`'s agent edited its
+own correctly-configured `.env` toward container-internal networking mid-turn
+and did exactly that. Phase 4's `setup` commands are the real fix for both.
