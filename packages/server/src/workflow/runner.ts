@@ -1,5 +1,11 @@
 import type { MachineStateName, VerificationSpec, WorkflowEvent } from '@vadd/core'
-import { initialContext, TERMINAL_STATES, toMachineEvent, type workflowMachine } from '@vadd/core'
+import {
+  initialContext,
+  MACHINE_STATES,
+  TERMINAL_STATES,
+  toMachineEvent,
+  type workflowMachine,
+} from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import type { ActorRefFrom } from 'xstate'
 import { createActor } from 'xstate'
@@ -18,6 +24,22 @@ type WorkflowActor = ActorRefFrom<typeof workflowMachine>
 
 /** Marks every action `bindEffects` bound for one particular actor build as stale. */
 type BindingToken = { cancelled: boolean }
+
+/**
+ * Rejects anything that is not a persisted snapshot of *this* machine.
+ *
+ * `value` naming one of spec §5's states is the cheapest check that separates a
+ * real `getPersistedSnapshot()` payload from a hand-edited row, a snapshot of
+ * some other machine, or a truncated write.
+ */
+function assertRestorable(objectiveId: string, snapshot: unknown): void {
+  const value = (snapshot as { value?: unknown } | null)?.value
+  if (typeof value !== 'string' || !(MACHINE_STATES as readonly string[]).includes(value)) {
+    throw new Error(
+      `Unrestorable snapshot for ${objectiveId}: value ${JSON.stringify(value)} is not a machine state`,
+    )
+  }
+}
 
 /**
  * One XState actor per objective — the only component that talks to both the
@@ -73,8 +95,17 @@ export class WorkflowRunner {
    * resumed state and that no duplicate side effect fires"). XState does not
    * re-run entry actions for a snapshot-resumed actor, so `sendPrompt` does
    * not fire again and no duplicate turn starts.
+   *
+   * Throws on a snapshot the machine cannot restore, rather than letting one
+   * through: `createActor` does **not** reject an unrecognised object. It
+   * returns an actor whose state value is `undefined` and then throws from
+   * xstate's own scheduler *asynchronously*, outside any caller's try/catch —
+   * an uncaught exception that can take the process down, on an actor that
+   * already looked like it had resumed. Refusing up front keeps the failure
+   * synchronous, attributable, and catchable by boot rehydration.
    */
   resume(objectiveId: string, snapshot: unknown): WorkflowActor {
+    assertRestorable(objectiveId, snapshot)
     const row = this.#objective(objectiveId)
     const machine = this.#bindMachine(objectiveId, row)
     // xstate v5 types `input` as required on `ActorOptions` whenever the
