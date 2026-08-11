@@ -15,24 +15,20 @@ emit one fenced block:
 Rules:
 
 1. The fence tag is exactly `vadd-event`. The block holds one JSON object, or an
-   array of them. Nothing else goes inside the fence.
-2. Every event must match the schema in `agent-event.schema.json`. Unknown
-   fields are rejected.
-3. Enum fields take one of their listed values verbatim — never an invented one,
-   and never a value with an explanation appended. `status.phase` is one of
-   `exploring`, `clarifying`, `proposing`, `planning`, `executing`, `verifying`,
-   `reviewing`, `integrating`. `evidence.kind` is one of `test`, `diff`, `lint`,
-   `build`, `check`, `artifact`, `warning`, and `evidence.status` one of `pass`,
-   `fail`, `warn`, `info`.
-4. An `evidence` event carries `kind`, `status`, `headline` and `summary` — it
-   has no `detail` field, and a block that invents one is rejected whole. This
-   shape holds in every phase, not only `verify`:
+   array of them. Nothing else goes inside the fence. Start the opening fence on
+   its own line, with a blank line before it — a fence run onto the end of a
+   sentence is the one shape most likely to be lost in transit.
+2. Every event must match the "Event reference" section below: those are the
+   only fields it accepts, and every cap there is enforced. An unknown field or
+   an over-long string is rejected and the whole block is lost. Enum values are
+   taken verbatim — never an invented one, and never a value with an
+   explanation appended.
 
    ```vadd-event
-   {"type":"evidence","kind":"check","status":"pass","headline":"Health routes already registered","summary":["/up and /health/ready both defined","11 checks wired"]}
+   {"type":"evidence","kind":"test","status":"pass","headline":"OK (12 tests, 30 assertions)","summary":["Covers the empty-input case"]}
    ```
 
-5. Keep prose minimal. A headline is at most 15 words; a block of detail at most
+3. Keep prose minimal. A headline is at most 15 words; a block of detail at most
    80. Anything longer is not read.
-6. Never claim completion without an `evidence` event for each verification
+4. Never claim completion without an `evidence` event for each verification
    item. A claim without evidence is not a result.

@@ -51,3 +51,31 @@ test('is idempotent and regenerates a hand-edited CLAUDE.md', () => {
   ensureAgentProfile()
   expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8')).toContain(PROFILE_CANARY)
 })
+
+test('CLAUDE.md carries the generated event reference, not just prose rules', () => {
+  const dir = ensureAgentProfile()
+  const claudeMd = readFileSync(join(dir, 'CLAUDE.md'), 'utf8')
+
+  // The four types no template exemplifies: their required fields reached the
+  // agent from nowhere before this.
+  expect(claudeMd).toContain('### failure')
+  expect(claudeMd).toContain('probableCause')
+  expect(claudeMd).toContain('suggestedActions')
+  expect(claudeMd).toContain('### plan')
+  expect(claudeMd).toContain('### task_result')
+  expect(claudeMd).toContain('### clarification')
+})
+
+test('CLAUDE.md states the length caps that live only in the schema', () => {
+  const claudeMd = readFileSync(join(ensureAgentProfile(), 'CLAUDE.md'), 'utf8')
+  expect(claudeMd).toMatch(/label.*80/)
+  expect(claudeMd).toMatch(/verification.*120/)
+})
+
+test('the addendum no longer points at a file the agent cannot read', () => {
+  const claudeMd = readFileSync(join(ensureAgentProfile(), 'CLAUDE.md'), 'utf8')
+  // agent-event.schema.json is generated into the VADD repo. An agent in a
+  // worktree under an isolated CLAUDE_CONFIG_DIR has never been able to open
+  // it, so instructing it to is worse than saying nothing.
+  expect(claudeMd).not.toContain('agent-event.schema.json')
+})

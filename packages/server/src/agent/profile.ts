@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { contractReference } from '@vadd/core'
 import { vaddHome } from '../paths.js'
 import { bundledPromptDir, parseTemplate } from '../prompts/renderer.js'
 
@@ -59,6 +60,19 @@ export function ensureAgentProfile(): string {
       `When asked for the profile canary, reply with exactly: ${PROFILE_CANARY}`,
       '',
       addendum,
+      '',
+      // The contract itself, generated from Zod. The addendum used to point at
+      // `agent-event.schema.json` instead — a file generated into the VADD
+      // repo, which an agent in a worktree under an isolated CLAUDE_CONFIG_DIR
+      // has never been able to open. Every length cap, and the required-field
+      // list for the four types no template exemplifies, lived only there.
+      '## Event reference',
+      '',
+      'Generated from the schema. These are the only fields each event accepts,',
+      'and the caps are enforced — a longer string is rejected and the whole',
+      'block is lost.',
+      '',
+      contractReference(),
       '',
     ].join('\n'),
   )
