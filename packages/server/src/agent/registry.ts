@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentPort } from '@vadd/core'
 import { eq } from 'drizzle-orm'
+import type { ContractEmission } from '../contract/pipeline.js'
 import { ContractPipeline } from '../contract/pipeline.js'
 import { summarizerFromSettings } from '../contract/summarizer.js'
 import type { Db } from '../db/client.js'
@@ -56,6 +57,14 @@ export class AgentRegistry {
     private readonly db: Db,
     private readonly bus: EventBus,
     factory?: PortFactory,
+    /**
+     * Lets `WorkflowRunner` see every validated `AgentEvent` / violation the
+     * pipeline emits, without the registry importing the runner — that
+     * import would be circular (`agent/registry.ts` -> `workflow/runner.ts`
+     * -> `agent/registry.ts`, since the runner's `runTurn` calls need an
+     * `AgentRegistry`). The runner subscribes here instead.
+     */
+    private readonly onContractEmission?: (objectiveId: string, e: ContractEmission) => void,
   ) {
     this.factory =
       factory ??
@@ -121,6 +130,9 @@ export class AgentRegistry {
           type: emission.kind === 'event' ? 'agent_event' : 'contract_violation',
           payload: emission,
         })
+        // The runner subscribes here rather than the registry importing it —
+        // see the constructor's `onContractEmission` comment.
+        this.onContractEmission?.(objective.id, emission)
       },
     })
 

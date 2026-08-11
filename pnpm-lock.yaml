@@ -69,6 +69,9 @@ importers:
       fastify:
         specifier: ^5.11.0
         version: 5.11.0
+      xstate:
+        specifier: ^5.20.1
+        version: 5.20.1
       zod:
         specifier: ^3.25.76
         version: 3.25.76
