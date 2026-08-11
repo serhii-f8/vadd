@@ -14,6 +14,11 @@ export {
   type WorkflowContext,
   type WorkflowEvent,
 } from './machine/types.js'
+export {
+  initialContext,
+  type WorkflowInput,
+  workflowMachine,
+} from './machine/workflow-machine.js'
 export { type CommandDecision, decideCommand } from './policies/command-policy.js'
 export {
   type BudgetViolation,
