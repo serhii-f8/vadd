@@ -80,13 +80,20 @@ expected outcome of a pipeline fix, and the whole point of replaying.
 
 ## Recording against `flexpick.net`: do not symlink `vendor/`
 
-Each worktree gets its **own** `vendor/`, as a hard-link copy, with its own
-autoloader:
+Each worktree gets its **own** `vendor/`, with its own autoloader:
 
 ```bash
-cp -al /var/www/html/flexpick.net/backend/vendor "$WORKTREE/backend/vendor"
+cp -a /var/www/html/flexpick.net/backend/vendor "$WORKTREE/backend/vendor"
 (cd "$WORKTREE/backend" && composer dump-autoload)
 ```
+
+**`cp -al` does not work here, despite both paths being on one ext4 volume.**
+This machine has `fs.protected_hardlinks = 1`, and a handful of `vendor/` files
+are owned by `root` because Docker created them — a non-root user cannot hard-link
+a file it does not own, so `cp -al` dies partway with `Operation not permitted`.
+A real copy costs about 9 seconds and 337 MB per worktree (~3.4 GB for a
+ten-objective corpus), which is still far cheaper than a per-worktree
+`composer install` and is the reason that objection does not apply.
 
 `frontend/node_modules` may stay a symlink — it bakes no absolute paths and has
 no PHP autoloader.
@@ -109,9 +116,9 @@ gate run that look unrelated until you find the shared root:
    outside any concurrency window, and very likely behind
    `scheduler-missed-alert`'s `getaddrinfo for mysql failed`.
 
-`cp -al` hard-links: it costs directory structure and a second or two, so the
-objection that rejected a per-worktree `composer install` as too expensive does
-not apply here.
+Neither symptom is worth working around by loosening the permission predicate or
+by rebuilding the shared autoloader — both leave one physical `vendor` serving
+worktrees that disagree about what is in it.
 
 **Still true, and still not fixed by this:** every worktree shares the one Sail
 `testing` database, so turns that run tests must be serialised across
