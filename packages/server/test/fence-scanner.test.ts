@@ -104,3 +104,74 @@ test('a CRLF drift close leaves no stray carriage return', () => {
   const blocks = scanner.push('```vadd-event\r\n{"type":"status"}\r\n```trailing\r\n')
   expect(blocks[0]?.weldedRemainder).toBe('trailing')
 })
+
+test('recovers an opening fence welded to the preceding prose', () => {
+  // health-ready-disclosure (phase 2b) and operator-change-log twice in one
+  // verify turn (phase 2c). Total silence before this: no block, no
+  // weldedRemainder, no unterminated body, no violation — a direct breach of
+  // the pipeline's "never drop silently" rule, and it cost a gated label.
+  const s = new FenceScanner()
+  const blocks = [
+    ...s.push('Let me fix it and re-run.```vadd-event\n{"type":"status"}\n```\n'),
+    ...s.flush().blocks,
+  ]
+  expect(blocks).toHaveLength(1)
+  expect(blocks[0]?.body).toBe('{"type":"status"}')
+})
+
+test('recovers an opening whose tag sits on the line after the backticks', () => {
+  // error-tracking-wiring turn 3: ``` then vadd-event then the JSON. Swallowed
+  // an honest failure event whole.
+  const s = new FenceScanner()
+  const blocks = [...s.push('```\nvadd-event\n{"type":"status"}\n```\n'), ...s.flush().blocks]
+  expect(blocks).toHaveLength(1)
+  expect(blocks[0]?.body).toBe('{"type":"status"}')
+})
+
+test('reports a welded opening as drift so it is never silent', () => {
+  const s = new FenceScanner()
+  const blocks = [...s.push('Prose.```vadd-event\n{"a":1}\n```\n'), ...s.flush().blocks]
+  expect(blocks[0]?.weldedRemainder).toBe('Prose.')
+})
+
+test('recovers two welded openings in one turn', () => {
+  // operator-change-log's verify turn hit the same pattern twice, the second
+  // carrying a top-level array the pipeline already supports.
+  const s = new FenceScanner()
+  const blocks = [
+    ...s.push('First.```vadd-event\n{"a":1}\n```\nThen.```vadd-event\n[{"b":2},{"c":3}]\n```\n'),
+    ...s.flush().blocks,
+  ]
+  expect(blocks.map((b) => b.body)).toEqual(['{"a":1}', '[{"b":2},{"c":3}]'])
+})
+
+test('a plain code fence is still not a vadd-event block', () => {
+  const s = new FenceScanner()
+  const blocks = [...s.push('```json\n{"a":1}\n```\n'), ...s.flush().blocks]
+  expect(blocks).toEqual([])
+})
+
+test('a bare fence not followed by the tag stays an ordinary code fence', () => {
+  const s = new FenceScanner()
+  const blocks = [...s.push('```\nconst x = 1\n```\n'), ...s.flush().blocks]
+  expect(blocks).toEqual([])
+})
+
+test('prose merely mentioning the tag does not open a block', () => {
+  const s = new FenceScanner()
+  const blocks = [...s.push('Use the vadd-event fence tag.\n'), ...s.flush().blocks]
+  expect(blocks).toEqual([])
+})
+
+test('a welded opening split across chunk boundaries still opens', () => {
+  // ACP splits chunks at arbitrary points, sometimes mid-word — the reason the
+  // scanner buffers by line rather than by chunk.
+  const s = new FenceScanner()
+  const blocks = [
+    ...s.push('Done.```vadd-e'),
+    ...s.push('vent\n{"a":1}\n'),
+    ...s.push('```\n'),
+    ...s.flush().blocks,
+  ]
+  expect(blocks.map((b) => b.body)).toEqual(['{"a":1}'])
+})

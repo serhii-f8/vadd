@@ -16,9 +16,16 @@ export type FenceBlock = { body: string; weldedRemainder?: string }
  * the adapter welds a closing fence to the prose of the next assistant message.
  *
  * Deliberate limitation, unchanged: a ```` ``` ```` at the start of a line
- * inside a JSON string still ends the block early. An *opening* fence welded to
- * preceding text is likewise still missed — the same transport quirk could
- * produce it, but nothing in the corpus has.
+ * inside a JSON string still ends the block early. Still unseen in the corpus —
+ * a claim this scanner's own history says to hold loosely.
+ *
+ * Two malformed *opening* variants are recovered, both found in the corpus
+ * after an earlier version of this docstring called them hypothetical: a fence
+ * welded to the preceding prose with no newline (`...re-run.` + ```` ```vadd-event ````),
+ * and a bare ```` ``` ```` whose `vadd-event` tag landed on the next line. Each
+ * previously produced total silence — no block, no drift, no violation — which
+ * is the one outcome this pipeline exists to prevent, and one of them cost a
+ * gated label.
  *
  * The buffer is turn-scoped — `flush()` clears it — so it is bounded by one
  * turn's output rather than the session's.
@@ -27,6 +34,10 @@ export class FenceScanner {
   #pending = ''
   #inside = false
   #body: string[] = []
+  /** Text welded ahead of the current block's opening fence, if any. */
+  #pendingWeld: string | null = null
+  /** A bare ``` is pending: the next line decides whether it opened a block. */
+  #sawBareFence = false
 
   push(text: string): FenceBlock[] {
     this.#pending += text
@@ -55,22 +66,68 @@ export class FenceScanner {
     const unterminated = this.#inside ? this.#body.join('\n') : null
     this.#inside = false
     this.#body = []
+    this.#pendingWeld = null
+    this.#sawBareFence = false
     return { blocks, unterminated }
+  }
+
+  /**
+   * Closes the current block, attaching any text welded ahead of its opening
+   * fence so `#handleBlock` raises `fence_drift`. A recovered block must never
+   * be indistinguishable from a clean one.
+   */
+  #close(blocks: FenceBlock[], weldedAfter?: string): void {
+    const weld = this.#pendingWeld ?? weldedAfter
+    this.#pendingWeld = null
+    this.#inside = false
+    blocks.push(
+      weld !== null && weld !== undefined && weld.length > 0
+        ? { body: this.#body.join('\n'), weldedRemainder: weld }
+        : { body: this.#body.join('\n') },
+    )
+    this.#body = []
+  }
+
+  #open(weld: string | null): void {
+    this.#inside = true
+    this.#body = []
+    this.#pendingWeld = weld
   }
 
   #consume(line: string, blocks: FenceBlock[]): void {
     const trimmed = line.trim()
     if (!this.#inside) {
+      const bare = this.#sawBareFence
+      this.#sawBareFence = false
+
       if (trimmed === `\`\`\`${FENCE_TAG}`) {
-        this.#inside = true
-        this.#body = []
+        this.#open(null)
+        return
       }
+      // A bare ``` on the previous line, and this one is the tag: the opening
+      // fence arrived split in two. error-tracking-wiring turn 3 swallowed an
+      // honest `failure` event this way.
+      if (bare && trimmed === FENCE_TAG) {
+        this.#open('```')
+        return
+      }
+      // An *opening* fence welded to the prose before it, with no newline:
+      // "...and re-run.```vadd-event". Symmetric with the welded *closing*
+      // case below and produced by the same transport quirk. Anything after
+      // the tag on the same line means this is not an opening at all (a fence
+      // quoted mid-sentence), so the tail must be empty.
+      const welded = line.indexOf(`\`\`\`${FENCE_TAG}`)
+      if (welded > 0 && line.slice(welded + 3 + FENCE_TAG.length).trim() === '') {
+        this.#open(line.slice(0, welded).trim())
+        return
+      }
+      // Remember a bare fence and let the next line decide: the tag opens a
+      // block, anything else means this was an ordinary code fence.
+      if (trimmed === '```') this.#sawBareFence = true
       return
     }
     if (trimmed === '```') {
-      this.#inside = false
-      blocks.push({ body: this.#body.join('\n') })
-      this.#body = []
+      this.#close(blocks)
       return
     }
     // A closing fence welded to the text that followed it. The adapter
@@ -82,13 +139,7 @@ export class FenceScanner {
     // is found.
     if (trimmed.startsWith('```')) {
       const remainder = trimmed.slice(3).trim()
-      this.#inside = false
-      blocks.push(
-        remainder.length > 0
-          ? { body: this.#body.join('\n'), weldedRemainder: remainder }
-          : { body: this.#body.join('\n') },
-      )
-      this.#body = []
+      this.#close(blocks, remainder.length > 0 ? remainder : undefined)
       this.#consume(remainder, blocks)
       return
     }
