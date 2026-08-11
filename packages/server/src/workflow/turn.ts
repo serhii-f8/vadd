@@ -53,22 +53,22 @@ type TurnInput = {
 type Entry = Awaited<ReturnType<AgentRegistry['ensure']>>
 
 /**
- * Everything a turn needs decided before the agent is prompted: which
- * template (if any), its rendered text, and whether a turn is even allowed to
- * start right now. Kept as a plain (non-async) function, not folded into
- * `runTurn`'s body, so a rejection here throws synchronously out of
- * `runTurn(...)` — reaching the route's `try/catch` even though the route
- * calls `runTurn` as `void runTurn(...)` and never awaits it. An `async`
- * function can't do this: any throw inside one, even before its first
- * `await`, becomes a rejected promise instead of a synchronous throw, and a
- * `void`-ed promise's rejection never reaches an enclosing `try/catch`.
+ * Renders the turn's prompt text and its `expect` groups, or throws
+ * `TurnRejected(msg, 400)` for a bad phase or an unresolved placeholder.
+ *
+ * Deliberately takes no live `AgentRegistry` entry: it only needs the
+ * objective row and the turn request, so the route can call it — and let a
+ * bad request 400 — *before* `agents.ensure()`. Spawning a real adapter child
+ * process, an ACP handshake and an `agent_sessions` row for a request that
+ * was always going to be rejected is a real resource cost, not just an
+ * ordering nicety: a client retrying against a bad phase would otherwise
+ * accumulate live agent processes for objectives that never get a valid
+ * turn. This is exactly the check order the pre-refactor route used.
  */
-function prepareTurn(
-  deps: Deps,
-  entry: Entry,
+export function renderTurnPrompt(
   objective: ObjectiveRef,
   turn: TurnInput,
-): { turnId: string; text: string } {
+): { text: string; expect: AgentEventType[][] } {
   let text = turn.text ?? ''
   let expect: AgentEventType[][] = []
   if (turn.phase !== undefined) {
@@ -104,6 +104,30 @@ function prepareTurn(
       )
     }
   }
+
+  return { text, expect }
+}
+
+/**
+ * Everything a turn needs decided once a live entry exists: the rendered
+ * prompt (recomputed here — a synchronous file read and a few string
+ * substitutions, not a live process spawn, so doing it twice costs nothing)
+ * plus whether a turn is even allowed to start right now. Kept as a plain
+ * (non-async) function, not folded into `runTurn`'s body, so a rejection
+ * here throws synchronously out of `runTurn(...)` — reaching the route's
+ * `try/catch` even though the route calls `runTurn` as `void runTurn(...)`
+ * and never awaits it. An `async` function can't do this: any throw inside
+ * one, even before its first `await`, becomes a rejected promise instead of
+ * a synchronous throw, and a `void`-ed promise's rejection never reaches an
+ * enclosing `try/catch`.
+ */
+function prepareTurn(
+  deps: Deps,
+  entry: Entry,
+  objective: ObjectiveRef,
+  turn: TurnInput,
+): { turnId: string; text: string } {
+  const { text, expect } = renderTurnPrompt(objective, turn)
 
   // A second prompt while one is still open would have beginTurn silently
   // discard the first turn's buffered state (design rule 2: never drop

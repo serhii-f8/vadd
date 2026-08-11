@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify'
 import { agentSessions, objectives, projects } from '../../db/schema.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
-import { runTurn, TurnRejected } from '../../workflow/turn.js'
+import { renderTurnPrompt, runTurn, TurnRejected } from '../../workflow/turn.js'
 import type { AppDeps } from '../app.js'
 
 /** ACP rejects with plain objects, so `String(err)` yields "[object Object]". */
@@ -179,6 +179,11 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     }
 
     try {
+      // Validate the phase/placeholders *before* touching the agent registry:
+      // a bad request must 400 without spawning (or reusing) a real adapter
+      // child process, an ACP handshake, or an `agent_sessions` row.
+      renderTurnPrompt(objective, { phase, text: rawText, vars: parsed.data.vars })
+
       const { sessionId } = await agents.ensure(objective)
       // Do not await the turn: it can run for minutes, and progress is
       // observable over SSE. The response only confirms the prompt was

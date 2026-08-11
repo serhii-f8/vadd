@@ -73,6 +73,31 @@ test('a turn carrying two closing records does not produce a phantom turn', () =
   expect(turns[1]?.updates).toHaveLength(1)
 })
 
+test('a timed-out turn closes immediately, the same way a cancel request does', () => {
+  // runTurn's timeout closes the pipeline's turn as soon as it fires, because
+  // the underlying prompt() may never settle. If a real adapter's prompt did
+  // eventually answer, it would still emit its own prompt_finished/
+  // prompt_cancelled for the same turnId — a second closing record, like
+  // prompt_cancel_requested's own late prompt_cancelled above. Without
+  // turn_timed_out in TURN_CLOSING, replay would keep the timed-out turn
+  // "open" until that stale terminal arrived and misattribute the next turn's
+  // real updates to it.
+  const file = write([
+    row(1, 'prompt_sent', { text: 'go' }),
+    row(2, 'agent_update', chunk('a')),
+    row(3, 'turn_timed_out', { turnId: 't1', timeoutMs: 50, phase: null }),
+    row(4, 'prompt_sent', { text: 'again' }),
+    row(5, 'agent_update', chunk('b')),
+    row(6, 'prompt_finished', { stopReason: 'end_turn' }),
+    // The original prompt's own terminal, arriving late for the timed-out turn.
+    row(7, 'prompt_cancelled', { message: 'cancelled' }),
+  ])
+  const { turns } = loadTranscript(file)
+  expect(turns.map((t) => t.index)).toEqual([1, 2])
+  expect(turns[0]?.updates).toHaveLength(1)
+  expect(turns[1]?.updates).toHaveLength(1)
+})
+
 test('updates after a cancel request are excluded, matching what the live pipeline did', () => {
   // The cancel route ends the pipeline's turn as soon as the request lands,
   // because the adapter may never settle the prompt. If replay kept appending

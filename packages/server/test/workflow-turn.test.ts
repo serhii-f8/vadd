@@ -4,8 +4,8 @@ import { AgentRegistry } from '../src/agent/registry.js'
 import { createDb, type Db } from '../src/db/client.js'
 import { events, objectives, projects, settings } from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
-import { runTurn, turnTimeoutMs } from '../src/workflow/turn.js'
-import { withTempHome } from './fixtures/temp-repo.js'
+import { renderTurnPrompt, runTurn, TurnRejected, turnTimeoutMs } from '../src/workflow/turn.js'
+import { buildTestApp, withTempHome } from './fixtures/temp-repo.js'
 
 function freshDb(): Db {
   const home = withTempHome()
@@ -158,5 +158,66 @@ describe('runTurn', () => {
       .all()
       .map((e) => e.type)
     expect(types).toContain('turn_timed_out')
+  })
+})
+
+describe('renderTurnPrompt', () => {
+  const objective = { id: 'obj-1', title: 't', goalText: 'g', worktreePath: null }
+
+  it('takes no live agent registry entry — it is pure over the objective and the turn request', () => {
+    // No AgentRegistry, no db, no bus: proves the validation genuinely needs
+    // nothing but the objective row and the request, so the route can run it
+    // before agents.ensure() without spawning anything first.
+    const { text, expect: groups } = renderTurnPrompt(objective, { phase: 'explore' })
+    expect(text).toContain('g')
+    expect(groups).toEqual([['status', 'clarification']])
+  })
+
+  it('rejects an unknown phase with TurnRejected(400)', () => {
+    expect(() => renderTurnPrompt(objective, { phase: 'nope' })).toThrow(TurnRejected)
+    try {
+      renderTurnPrompt(objective, { phase: 'nope' })
+    } catch (err) {
+      expect(err).toBeInstanceOf(TurnRejected)
+      expect((err as TurnRejected).status).toBe(400)
+    }
+  })
+})
+
+describe('the route rejects an invalid phase before touching the agent registry', () => {
+  // Regression cover for the reordering finding: a request that renderTurnPrompt
+  // will reject must never reach agents.ensure(), or a client retrying against a
+  // bad phase would accumulate live agent child processes for an objective that
+  // never gets a valid turn. routes-phase-prompt.test.ts already covers the 400
+  // itself and must stay unedited (a different task's protected file), so the
+  // added assertion — no agent was spawned — lives here instead.
+  it('spawns no agent for an unknown phase', async () => {
+    const ctx = await buildTestApp({ fakeAcpMode: 'contract' })
+    try {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/api/objectives/${ctx.objectiveId}/events`,
+        payload: { type: 'prompt', phase: 'nope' },
+      })
+      expect(res.statusCode).toBe(400)
+      expect(ctx.agents.get(ctx.objectiveId)).toBeUndefined()
+    } finally {
+      await ctx.cleanup()
+    }
+  })
+
+  it('spawns no agent for an unresolved placeholder', async () => {
+    const ctx = await buildTestApp({ fakeAcpMode: 'contract' })
+    try {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/api/objectives/${ctx.objectiveId}/events`,
+        payload: { type: 'prompt', phase: 'verify' },
+      })
+      expect(res.statusCode).toBe(400)
+      expect(ctx.agents.get(ctx.objectiveId)).toBeUndefined()
+    } finally {
+      await ctx.cleanup()
+    }
   })
 })

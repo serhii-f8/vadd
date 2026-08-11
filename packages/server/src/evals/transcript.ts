@@ -59,12 +59,23 @@ export type TranscriptTurn = {
  * afterwards; closing an already-closed turn is a no-op both here and in the
  * pipeline, and one turn carrying two closing records must not produce a
  * phantom turn.
+ *
+ * `turn_timed_out` is in the set for the same reason `prompt_cancel_requested`
+ * is: `runTurn`'s timeout closes the pipeline's turn as soon as it fires,
+ * because the underlying `prompt()` may never settle at all (the fake peer's
+ * `hang-on-prompt` mode never does; a real adapter honoring `session/cancel`
+ * with a late `stopReason: 'cancelled'` might still emit its own terminal
+ * afterwards). Leaving it out of this set was exactly the bug this project
+ * already paid for once with `prompt_cancel_requested`: without it, a timed-out
+ * turn stays "open" in replay until that stale later terminal arrives, and
+ * whatever the next turn's real updates were get misattributed to it.
  */
 const TURN_CLOSING = new Set([
   'prompt_finished',
   'prompt_failed',
   'prompt_cancelled',
   'prompt_cancel_requested',
+  'turn_timed_out',
 ])
 
 export function loadTranscript(file: string): {
