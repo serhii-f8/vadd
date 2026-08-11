@@ -1,4 +1,19 @@
 export const CORE_VERSION = '0.0.0'
+export {
+  evidenceComplete,
+  isFastFix,
+  userApproved,
+} from './machine/guards.js'
+export {
+  type EvidenceItemLike,
+  MACHINE_STATES,
+  type MachineStateName,
+  type PlanTaskLike,
+  TERMINAL_STATES,
+  toMachineEvent,
+  type WorkflowContext,
+  type WorkflowEvent,
+} from './machine/types.js'
 export { type CommandDecision, decideCommand } from './policies/command-policy.js'
 export {
   type BudgetViolation,
@@ -23,3 +38,8 @@ export {
 } from './schemas/api.js'
 export { contractReference } from './schemas/contract-reference.js'
 export { agentEventJsonSchema } from './schemas/json-schema.js'
+export {
+  normalizeChecks,
+  VerificationSpec,
+  type VerifyCommand,
+} from './schemas/verification.js'
