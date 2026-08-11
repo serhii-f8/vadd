@@ -37,6 +37,26 @@ export type ContractEmission =
       sourceEventIds: number[]
     }
 
+/**
+ * One short line an agent can act on: which event type was rejected, which
+ * field, and the rule it broke.
+ *
+ * Zod issue paths are arrays (`['options', 0, 'label']`); they are joined with
+ * dots because that is how the agent sees the JSON it wrote. Capped at three
+ * issues so one badly-shaped block cannot flood the repair prompt.
+ */
+function describeRejection(item: unknown, issues: unknown): string {
+  const type = (item as { type?: unknown })?.type
+  const label = typeof type === 'string' ? type : 'unknown type'
+  const list = Array.isArray(issues) ? issues : []
+  const parts = list.slice(0, 3).map((issue) => {
+    const i = issue as { path?: unknown[]; message?: string }
+    const path = (i.path ?? []).join('.')
+    return path === '' ? (i.message ?? 'invalid') : `${path} — ${i.message ?? 'invalid'}`
+  })
+  return parts.length === 0 ? `${label}: rejected` : `${label}: ${parts.join('; ')}`
+}
+
 /** Text of an assistant message chunk, or null for anything else. */
 function chunkText(update: unknown): string | null {
   const u = update as {
@@ -72,6 +92,7 @@ export class ContractPipeline {
   #seen = new Set<AgentEventType>()
   #evidenceHeadlines = new Set<string>()
   #claimedEvidenceRefs = new Set<string>()
+  #schemaRejections: string[] = []
   #sources: number[] = []
   /** Full turn text, kept for the summarizer fallback and violation records. */
   #raw = ''
@@ -98,6 +119,7 @@ export class ContractPipeline {
     this.#seen = new Set()
     this.#evidenceHeadlines = new Set()
     this.#claimedEvidenceRefs = new Set()
+    this.#schemaRejections = []
     this.#sources = []
     this.#raw = ''
   }
@@ -155,6 +177,11 @@ export class ContractPipeline {
     for (const item of items) {
       const result = AgentEvent.safeParse(item)
       if (!result.success) {
+        // Kept, not just reported: the repair turn needs to tell the agent what
+        // was wrong with a block it believes it already sent. Only blocks the
+        // agent itself emitted are recorded — the summarizer's rejections in
+        // #fallback are not the agent's to correct.
+        this.#schemaRejections.push(describeRejection(item, result.error.issues))
         this.#violation('schema', JSON.stringify(item), result.error.issues)
         continue
       }
@@ -275,5 +302,27 @@ export class ContractPipeline {
   danglingEvidenceRefs(): string[] {
     if (this.#turnId === null) return []
     return [...this.#claimedEvidenceRefs].filter((ref) => !this.#evidenceHeadlines.has(ref))
+  }
+
+  /**
+   * Blocks this turn emitted that failed schema validation, each as one line
+   * naming the type, the failing field and the rule broken.
+   *
+   * The repair turn needs this and never had it. A turn whose `decision_needed`
+   * was rejected for an over-long `label` was told only "That turn owes
+   * decision_needed", so the agent — believing it had already sent the card —
+   * reasonably substituted an unrelated event rather than correcting it. That
+   * substitution appeared on three objectives across two different `repair.md`
+   * wordings, which a wording explanation does not account for and a missing
+   * diagnostic does.
+   *
+   * Pure and turn-scoped, like `unmetExpectations()` and
+   * `danglingEvidenceRefs()`: empty once the turn is closed, so a caller
+   * racing `endTurn` repairs nothing rather than prompting a turn that has
+   * already reported.
+   */
+  schemaRejections(): string[] {
+    if (this.#turnId === null) return []
+    return [...this.#schemaRejections]
   }
 }

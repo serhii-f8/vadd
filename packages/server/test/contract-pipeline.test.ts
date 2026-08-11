@@ -305,3 +305,53 @@ test('a resolved ref raises no violation at endTurn', async () => {
   await pipe.endTurn('t1')
   expect(out.filter((e) => e.kind === 'violation')).toEqual([])
 })
+
+const LONG_LABEL_CARD = JSON.stringify({
+  type: 'decision_needed',
+  question: 'Which source?',
+  recommendedId: 'a',
+  options: [
+    {
+      id: 'a',
+      label: 'x'.repeat(90),
+      pros: ['p'],
+      cons: ['c'],
+      reversibility: 'high',
+      verification: 'v',
+    },
+    { id: 'b', label: 'B', pros: ['p'], cons: ['c'], reversibility: 'high', verification: 'v' },
+  ],
+})
+
+test('retains schema rejections so the repair turn can quote them', async () => {
+  // The exact rejection discount-action-type turn 1 hit in the fourth gate
+  // run: a decision_needed whose label overruns its 80-char cap.
+  const { pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: [['decision_needed']] })
+  pipe.ingest(chunk(`\`\`\`vadd-event\n${LONG_LABEL_CARD}\n\`\`\`\n`))
+
+  const rejections = pipe.schemaRejections()
+  expect(rejections).toHaveLength(1)
+  expect(rejections[0]).toContain('decision_needed')
+  expect(rejections[0]).toContain('options.0.label')
+  expect(rejections[0]).toMatch(/80/)
+
+  await pipe.endTurn('t1')
+})
+
+test('schemaRejections is empty once the turn is closed', async () => {
+  const { pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: [['decision_needed']] })
+  pipe.ingest(chunk('```vadd-event\n{"type":"evidence"}\n```\n'))
+  expect(pipe.schemaRejections().length).toBeGreaterThan(0)
+  await pipe.endTurn('t1')
+  expect(pipe.schemaRejections()).toEqual([])
+})
+
+test('a rejection names the type even when type itself is what failed', async () => {
+  const { pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: [['status']] })
+  pipe.ingest(chunk('```vadd-event\n{"type":"invented","headline":"x"}\n```\n'))
+  expect(pipe.schemaRejections()[0]).toContain('invented')
+  await pipe.endTurn('t1')
+})
