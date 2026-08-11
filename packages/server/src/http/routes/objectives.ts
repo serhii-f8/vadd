@@ -8,6 +8,7 @@ import {
   agentSessions,
   decisions,
   evidenceItems,
+  machineSnapshots,
   objectives,
   planTasks,
   projects,
@@ -276,11 +277,24 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       if (objective.worktreePath && objective.branchName) {
         await removeWorktree(project.repoPath, objective.worktreePath, objective.branchName)
       }
-      // agent_sessions.objective_id has a foreign key on objectives.id with no
-      // cascade, so a discard with a recorded session must clear those rows
-      // first or the delete below fails the constraint.
-      db.delete(agentSessions).where(eq(agentSessions.objectiveId, objective.id)).run()
-      db.delete(objectives).where(eq(objectives.id, objective.id)).run()
+      // Every one of these tables has a foreign key on objectives.id with no
+      // cascade, so each must be cleared before the objective row itself or
+      // the delete fails the constraint. `evidence_items` goes first because it
+      // also references `plan_tasks`.
+      //
+      // Phase 3 added the four machine tables and this list did not grow with
+      // them: against the real server, discarding an objective that had ever
+      // been driven removed the worktree and then 500'd on the FOREIGN KEY,
+      // leaving a row pointing at a directory that no longer existed. One
+      // transaction so a failure part-way through cannot repeat that.
+      db.transaction((tx) => {
+        tx.delete(evidenceItems).where(eq(evidenceItems.objectiveId, objective.id)).run()
+        tx.delete(planTasks).where(eq(planTasks.objectiveId, objective.id)).run()
+        tx.delete(decisions).where(eq(decisions.objectiveId, objective.id)).run()
+        tx.delete(machineSnapshots).where(eq(machineSnapshots.objectiveId, objective.id)).run()
+        tx.delete(agentSessions).where(eq(agentSessions.objectiveId, objective.id)).run()
+        tx.delete(objectives).where(eq(objectives.id, objective.id)).run()
+      })
       bus.emit({
         objectiveId: objective.id,
         type: 'objective_discarded',

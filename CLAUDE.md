@@ -4,11 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-*Last updated 2026-08-11 at `0c9b9c2` (phase 2d gate run + §9 timebox closure), see `docs/superpowers/notes/m1-gate-result.md` for the numbers and `docs/superpowers/notes/m1-timebox-decision.md` for the decision. Keep this section and the ledger below current — see "Keeping status current".*
+*Last updated 2026-08-11 at the phase 3 merge (workflow machine), see `docs/superpowers/notes/m1-gate-result.md` for the gate numbers and `docs/superpowers/notes/m1-timebox-decision.md` for why phase 2 closed uncleared. Keep this section and the ledger below current — see "Keeping status current".*
 
 **M0 (Skeleton) is complete. M1 phases 1, 2, 2b, 2c and 2d are all finished as work** — every task in every plan is done and every package produced its scored run. "Finished" is not "cleared": five real gate runs have been scored, each under different code, and none reached the bar.
 
-**Phase 2 is closed — uncleared — under spec §9's timebox.** The decision, its reasoning and what it does *not* license are in `docs/superpowers/notes/m1-timebox-decision.md`. **Phases 3–6 are open.** Do not read that as the gate passing: `pnpm eval` still exits non-zero, and it must stay that way.
+**Phase 2 is closed — uncleared — under spec §9's timebox.** The decision, its reasoning and what it does *not* license are in `docs/superpowers/notes/m1-timebox-decision.md`. **Phase 3 is done; phases 4–6 are open.** Do not read that as the gate passing: `pnpm eval` still exits non-zero, and it must stay that way.
+
+**Phase 3 shipped the machine, and an objective still cannot reach `done` — by construction.** The four remaining tables, the spec §5 machine in `core`, transactional snapshot persistence, boot rehydration and the spec §7 command surface are all in. But `evidenceComplete` is satisfied only by `evidence_items` rows carrying a `commandId`, and the only thing that will ever write one is EvidenceCollector — **phase 4**. Until then the guard correctly refuses every objective at `integrating → done`. That is the guard working, not a defect, and it is why phase 3 cannot demonstrate M1's exit criterion.
 
 Phase 2d's score, under `72894a1`, with one `recordedUnder` stamp across all ten transcripts equal to the scoring commit:
 
@@ -33,7 +35,8 @@ Read before touching M1 work, in this order:
 - `docs/superpowers/plans/2026-08-09-m1-phase2b-provenance-repair.md` — the 7-task implementation plan for phase 2b, TDD throughout; **all 7 tasks done**
 - `docs/superpowers/specs/2026-08-10-m1-evidence-precision-design.md` — the approved phase 2c design (Fixes A–D), with the `evidence`-precision breakdown behind it
 - `docs/superpowers/plans/2026-08-10-m1-evidence-precision.md` — the 5-task implementation plan for phase 2c; **all 5 tasks done**
-- `docs/superpowers/notes/m1-timebox-decision.md` — **read this before starting phase 3**: why phase 2 closed uncleared, what that does and does not permit, and the follow-ups it defers
+- `docs/superpowers/notes/m1-timebox-decision.md` — why phase 2 closed uncleared, what that does and does not permit, and the follow-ups it defers
+- `docs/superpowers/plans/2026-08-11-m1-phase3-workflow-machine.md` — the 11-task phase 3 plan (machine, persistence, rehydration, command surface); **all 11 tasks done**
 - `docs/superpowers/specs/2026-08-11-m1-phase2d-contract-delivery-design.md` — the approved phase 2d design (contract delivery, repair feedback, turn budget, fence recovery)
 - `docs/superpowers/plans/2026-08-11-m1-phase2d-contract-delivery.md` — the 10-task phase 2d plan; **all 10 tasks done**
 - `docs/superpowers/notes/m1-gate-result.md` — all gate results, newest section last: the numbers, the repair-rate/fence-drift detail, the missed-label breakdown, the holdout-purity caveat from phase 2c, and what each design declined to engineer around
@@ -54,18 +57,22 @@ Where we are, what's next. Phases are the M1 design's §1.4 build order. **2b, 2
 | 2b — Provenance + repair | Fence-drift violations; `recordedUnder` stamp; A4 repair turn; re-record and score once | ⚠️ **done, does not clear** | `283a1a8`..`1fb56ca`, all 7/7 tasks; `docs/superpowers/notes/m1-gate-result.md` |
 | 2c — Evidence precision | `verify.md` copy fixes; dangling-`evidenceRefs` repair trigger; one relabel; 6-of-10 targeted re-record | ⚠️ **done, does not clear; holdout comparison compromised** | `e0b4c98`..`823f95a`, all 5/5 tasks; `docs/superpowers/notes/m1-gate-result.md` |
 | 2d — Contract delivery | Schema reference to the agent; repair carries rejection reason; per-turn event budget; both malformed opening fences; per-worktree `vendor` | ⚠️ **done; gate does not clear, phase 2 closed by §9 timebox** | `c008a19`..`72894a1`, all 10/10 tasks; `docs/superpowers/notes/m1-timebox-decision.md` |
-| 3 — Machine | Four remaining migrations; XState machine; snapshot persistence; boot rehydration | 🟢 open (timebox, not a cleared gate) | — |
-| 4 — Verification | Spec resolution + detection; `setup` commands; EvidenceCollector; command permissions | 🟢 open (A3's policy already landed, `83aabd8`) | — |
+| 3 — Machine | Four remaining migrations; XState machine; snapshot persistence; boot rehydration; spec §7 command surface | ✅ done, opened by the timebox rather than a cleared gate | `9c03808`..`m1-phase3`, all 11/11 tasks; 364 tests; crash/reboot verified by hand against the real server (see "Traps phase 3 paid for") |
+| 4 — Verification | Spec resolution + detection; `setup` commands; EvidenceCollector; command permissions | 🟢 open (A3's policy already landed, `83aabd8`) — **`done` is unreachable until this lands** | — |
 | 5 — Surfaces | Skeleton Focus View; Evidence Panel; `integrate` commit/keep/discard | 🟢 open | — |
 | 6 — Exit run | One real `flexpick.net` bugfix driven to `done` through green evidence | 🟢 open — **still M1's binding exit criterion, not waived by the timebox** | — |
 
 ### Next steps
 
-1. **Phase 3 — the machine.** Four remaining migrations, the XState machine defined in `core` with `setup()`, snapshot persistence in the same SQLite transaction as the event append, and boot rehydration. Opened by the §9 timebox, not by a cleared gate — read `docs/superpowers/notes/m1-timebox-decision.md` first, in particular §5's "what opening phase 3 does *not* license".
+1. **Phase 4 — verification.** Spec resolution (`.vadd/config.json` → auto-detection → per-objective override), `setup` commands, EvidenceCollector, and reconciling results against `verificationSpec`. **This is what makes `done` reachable at all**: nothing else writes an `evidence_items` row with a `commandId`, and without one `evidenceComplete` is false for every objective. Two things phase 3 left for it to honour — the machine renders `execute-task` from `currentTaskIndex` (never `tasks[0]`), and a null `verificationSpec` must never let `{{verificationCommands}}` reach the agent.
 
-2. **Independent re-labelling, and a corpus past ten — the human's call, and the highest-value work on the measurement.** Every gate number to date rests on labels blind-drafted inside the recording sessions, which is not design §5.6's standard. Six more labelled emissions would close the precision gap; more transcripts would close the holdout gap. Neither is agent work. Nothing in phases 3–5 depends on it, so it need not block them — but it should not quietly disappear either.
+2. **One orphan-process gap, found by hand and not fixed** (see "Traps phase 3 paid for"): `kill -9` on the server leaves the `claude-code-acp` child running. Graceful shutdown stops it; a hard crash does not, because nothing records the child's pid. Design §12's exit criterion says a crash-and-reboot must leave "no orphan adapter process", so **phase 6 cannot be signed off until this is closed** — most likely a `childPid` column on `agent_sessions` that `reconcileOnBoot` kills.
 
-3. **Smaller follow-ups the gate run left open**, in `docs/superpowers/notes/m1-timebox-decision.md` §7: a parse failure gives the repair turn no diagnostic (a schema rejection now names its field and rule); reading-budget violations rose to six from one; and the recording harness drives `execute-task` from `tasks[0]`, so a plan opening with an investigative task cannot produce test evidence — phase 4's plan-task wiring should not inherit that.
+3. **Independent re-labelling, and a corpus past ten — the human's call, and the highest-value work on the measurement.** Every gate number to date rests on labels blind-drafted inside the recording sessions, which is not design §5.6's standard. Six more labelled emissions would close the precision gap; more transcripts would close the holdout gap. Neither is agent work. Nothing in phases 3–5 depends on it, so it need not block them — but it should not quietly disappear either.
+
+4. **Smaller follow-ups the gate run left open**, in `docs/superpowers/notes/m1-timebox-decision.md` §7: a parse failure gives the repair turn no diagnostic (a schema rejection now names its field and rule); and reading-budget violations rose to six from one. (§7's third item — `execute-task` driven from `tasks[0]` — is closed: the machine reads `currentTaskIndex`, with a test that fails if it regresses.)
+
+5. **One command surface gap phase 3 deliberately left**: spec §7 lists `cancel` among the machine's commands, meaning "abandon the objective", but M0 already spent that name on "cancel the in-flight turn" and the corpus-recording path depends on the M0 meaning. The turn meaning was kept, so the machine's terminal `CANCEL` has no route today. Phase 5's Focus View needs both, under two different names.
 
 **The gate stays red and stays in CI.** `pnpm eval` exits non-zero by design. Do not relax it, re-scope it, or lower its bar; and do not edit a label file to close the gap — that is the human's to author, from blind transcripts.
 
@@ -80,7 +87,7 @@ At the end of every phase (and after any run that moves the gate number), update
 
 Never mark a row ✅ from intent. A row is done when a command was run and its output seen — the gate row says "ran, does not clear" for exactly that reason.
 
-The monorepo is real: `packages/core` (ports, Zod schemas, policies), `packages/server` (Fastify, Drizzle, GitManager, AcpAgentPort, EventBus), `packages/web` (Vite + React debug page). Five tables are migrated; M1 adds the other four.
+The monorepo is real: `packages/core` (ports, Zod schemas, policies, the workflow machine), `packages/server` (Fastify, Drizzle, GitManager, AcpAgentPort, EventBus, contract pipeline, WorkflowRunner), `packages/web` (Vite + React debug page). All nine spec §3 tables are migrated as of phase 3.
 
 Verified on this machine 2026-08-03: Node v22.20.0, pnpm 11.9.0, git 2.43.0, `@zed-industries/claude-code-acp@0.16.2`, `@zed-industries/agent-client-protocol@0.4.5`. Both ACP packages are pinned exactly (spec §2) — do not bump them casually; M0 found two places where the SDK's types disagree with the adapter's real output.
 
@@ -88,7 +95,7 @@ Verified on this machine 2026-08-03: Node v22.20.0, pnpm 11.9.0, git 2.43.0, `@z
 
 `vadd-spec-final.md` is FINAL. Every choice in §1 (D1–D15) and §2 (stack) is locked. **Deviations require editing the spec file first** — if a task implies a different framework, a different isolation model, telemetry, gamification, an orchestrator role, or anything in §11 ("Explicitly out"), stop and raise it rather than implementing it.
 
-Three amendments exist, all 2026-08-04, all from the M1 design and all recorded in the spec itself: **A1** adds optional `cwd` and `setup` to §6's verification format and extends auto-detection to depth-1 subdirectories; **A2** changes M1's exit repo from Wheelership (no checkout on this machine) to `flexpick.net`; **A3** gives command authorization its own predicate, since §5's low-risk policy governs diffs and says nothing about which commands an agent may run. Follow that pattern for any further deviation: amend the spec in the same commit as the design that justifies it.
+Five amendments exist, all recorded in the spec itself. **A1** adds optional `cwd` and `setup` to §6's verification format and extends auto-detection to depth-1 subdirectories; **A2** changes M1's exit repo from Wheelership (no checkout on this machine) to `flexpick.net`; **A3** gives command authorization its own predicate, since §5's low-risk policy governs diffs and says nothing about which commands an agent may run (all three 2026-08-04, from the M1 design). **A4** (2026-08-09) allows one repair prompt per turn. **A5** (2026-08-11, phase 3) adds `evidence_items.commandId`: §5's verification guard reads "every verificationSpec item has an evidence_item with status `pass`", and with no stored link back to the `verify.commands[].id` that produced a row, that guard has nothing to join on. Follow that pattern for any further deviation: amend the spec in the same commit as the design that justifies it.
 
 Naming is settled: **VADD everywhere** — packages `@vadd/*`, binary `vadd`, state in `~/.vadd/`, fence tag `vadd-event`, repo config `.vadd/config.json`.
 
@@ -154,6 +161,16 @@ Found recording the real corpus, not hypothetical either.
 - **The eval corpus is turn-indexed, so anything turn-opening invalidates all 40 labels.** `loadTranscript` opens a turn on `prompt_sent` alone; a `prompt_cancelled` is turn-closing. That is why A4's repair is emitted as `repair_prompt_sent` inside the open turn, and why a cancelled turn means discarding and re-recording that whole objective rather than re-prompting it.
 - **A corpus recorded across a pipeline change measures neither version.** Two contract fixes landed mid-recording from a concurrent session (`11e35d4`, `0180334`), and the resulting replay-vs-live divergence cost hours to diagnose because transcripts recorded what the agent said and not what parsed it. Confirm a clean tree and note HEAD before recording; phase 2b's `recordedUnder` stamp makes it visible afterwards.
 - **Zod's length caps and thorough reasoning are in tension.** `decision_needed` options (`verification` ≤120 chars, `pros`/`cons` items ≤100 each) and `evidence.summary` items (≤100 chars) were exceeded routinely across the real corpus whenever the agent reasoned carefully. Left as-is — this is real signal for the gate, not a bug — but expect it to recur and possibly cap achievable recall.
+
+## Traps phase 3 paid for
+
+All four were found by running the thing, not by reading it. The first two were invisible to the unit tests that existed at the time.
+
+- **Test setup can hide a missing production step.** `runTurn` requires an already-live agent session (`agents.get`, throwing otherwise); the prompt *route* calls `ensure()` first, but the machine's `sendPrompt` did not — so every machine-driven objective failed its very first turn into `paused`. Both `workflow-effects.test.ts` and `workflow-runner.test.ts` called `agents.ensure()` in their own setup, which made the gap invisible. The fix is guarded by `agents.get()` rather than always awaiting: an unconditional `await` defers `prompt()` by a microtask, and every turn-driving test settles the fake prompt synchronously after `send()`.
+- **`PAUSE` has to stop the turn, not just the machine.** Without that, `RESUME` re-entered a state whose entry sends a prompt, `runTurn` refused with "a turn is already in flight", and the objective bounced straight back to `paused` — pause was unusable in exactly the situation it exists for. `cancelOpenTurn()` is shared by the `cancel` route and the runner's `paused` entry.
+- **`createActor` does not reject a snapshot it cannot restore.** It returns an actor whose state value is `undefined` and then throws from xstate's own scheduler **asynchronously**, outside any caller's `try`/`catch` — an uncaught exception on an actor that already looked resumed. `WorkflowRunner.resume` validates `value` against `MACHINE_STATES` up front so one corrupt row cannot abort boot rehydration or take the process with it.
+- **A `kill -9` orphans the adapter child.** Verified by hand: graceful shutdown stops it, a hard crash does not, because nothing records the child's pid. Design §12 requires "no orphan adapter process" after a crash-and-reboot, so this is still open. **Related trap:** `pgrep -f "tsx src/index.ts"` matches the wrapper shells, not the node process that actually holds the port — the first kill in that session silently did nothing and the run had to be redone. Confirm a server is dead by checking the listener (`ss -tlnp | grep <port>`), never by the absence of a pattern match.
+- **Deleting an objective now touches six tables.** `machine_snapshots`, `decisions`, `plan_tasks` and `evidence_items` all carry a foreign key on `objectives.id` with no cascade. `integrate: discard` cleared only `agent_sessions`, so against the real server it removed the worktree and *then* 500'd on the constraint, leaving a row pointing at a directory that no longer existed. The deletes now run in one transaction, `evidence_items` first (it also references `plan_tasks`).
 
 ## Commands
 

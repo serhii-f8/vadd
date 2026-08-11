@@ -1,10 +1,12 @@
 import { resolveAdapterBin } from './agent/acp-agent-port.js'
 import { AgentRegistry } from './agent/registry.js'
 import { reconcileOnBoot } from './boot/reconcile.js'
+import { rehydrateOnBoot } from './boot/rehydrate.js'
 import { createDb } from './db/client.js'
 import { EventBus } from './events/event-bus.js'
 import { buildApp } from './http/app.js'
 import { dbPath } from './paths.js'
+import { WorkflowRunner } from './workflow/runner.js'
 
 const PORT = Number(process.env.VADD_PORT ?? 4319)
 
@@ -20,11 +22,24 @@ try {
 
 const db = createDb(dbPath())
 const bus = new EventBus(db)
-const agents = new AgentRegistry(db, bus)
 
+// Late binding, deliberately: the registry's `onContractEmission` hook needs
+// the runner, and the runner's constructor needs the registry. The hook cannot
+// fire before the assignment below — it runs only from a pipeline a live agent
+// session feeds, and no session exists until the first turn.
+let runner: WorkflowRunner
+const agents = new AgentRegistry(db, bus, undefined, (objectiveId, emission) => {
+  runner.ingest(objectiveId, emission)
+})
+runner = new WorkflowRunner({ db, bus, agents })
+
+// Order matters: reconciliation deletes the `creating` remnants and orphans the
+// previous process's agent sessions, so rehydration only ever sees rows that
+// are genuinely resumable.
 await reconcileOnBoot(db, bus)
+await rehydrateOnBoot({ db, bus, runner })
 
-const app = buildApp({ db, bus, agents })
+const app = buildApp({ db, bus, agents, runner })
 
 // Localhost only (spec §7). Never bind 0.0.0.0.
 await app.listen({ port: PORT, host: '127.0.0.1' })
@@ -39,6 +54,13 @@ async function shutdown(signal: string) {
   // neither may skip the exit. Previously this was fire-and-forget, so one
   // rejection aborted the process before it stopped anything — the opposite of
   // what a shutdown handler exists to do, and it would strand adapters.
+  // Actors first: a running actor can still start a turn, and stopping the
+  // agents underneath one would strand it mid-prompt.
+  try {
+    runner.stopAll()
+  } catch (err) {
+    console.error('Failed to stop workflow actors cleanly:', err)
+  }
   try {
     await agents.stopAll()
   } catch (err) {

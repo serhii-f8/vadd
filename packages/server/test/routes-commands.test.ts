@@ -4,10 +4,17 @@ import { describe, expect, it } from 'vitest'
 import type { PortFactory } from '../src/agent/registry.js'
 import { AgentRegistry } from '../src/agent/registry.js'
 import { createDb, type Db } from '../src/db/client.js'
-import { decisions, objectives, planTasks } from '../src/db/schema.js'
+import {
+  decisions,
+  evidenceItems,
+  machineSnapshots,
+  objectives,
+  planTasks,
+} from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { buildApp } from '../src/http/app.js'
 import { WorkflowRunner } from '../src/workflow/runner.js'
+import { loadSnapshot } from '../src/workflow/store.js'
 import { makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
 import { until } from './fixtures/until.js'
 
@@ -305,6 +312,26 @@ describe('integrate: discard keeps its M0 meaning', () => {
     const res = await command(ctx, { type: 'integrate', action: 'discard' })
     expect(res.statusCode).toBe(200)
     expect(ctx.db.select().from(objectives).all()).toHaveLength(0)
+  })
+
+  it('discards an objective that has machine rows attached', async () => {
+    // Phase 3's four tables all reference objectives.id with no cascade, so a
+    // discard that deletes only agent_sessions now trips a FOREIGN KEY
+    // violation the moment an objective has ever been driven. Found against
+    // the real server: the worktree was removed and the rows survived, leaving
+    // an objective pointing at a directory that no longer exists.
+    const ctx = await withObjective()
+    await driveToAwaitingDecision(ctx)
+    expect(ctx.db.select().from(decisions).all().length).toBeGreaterThan(0)
+    expect(loadSnapshot(ctx.db, ctx.objectiveId)).not.toBeNull()
+
+    const res = await command(ctx, { type: 'integrate', action: 'discard' })
+    expect(res.statusCode).toBe(200)
+    expect(ctx.db.select().from(objectives).all()).toHaveLength(0)
+    expect(ctx.db.select().from(decisions).all()).toHaveLength(0)
+    expect(ctx.db.select().from(machineSnapshots).all()).toHaveLength(0)
+    expect(ctx.db.select().from(planTasks).all()).toHaveLength(0)
+    expect(ctx.db.select().from(evidenceItems).all()).toHaveLength(0)
   })
 })
 
