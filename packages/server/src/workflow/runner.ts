@@ -10,6 +10,7 @@ import { objectives } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
 import { bindEffects, recordDecisionChoice } from './effects.js'
 import { commitTransition } from './store.js'
+import { cancelOpenTurn } from './turn.js'
 
 type Deps = { db: Db; bus: EventBus; agents: AgentRegistry }
 type ObjectiveRow = typeof objectives.$inferSelect
@@ -199,6 +200,19 @@ export class WorkflowRunner {
           event: { type: 'state_changed', payload: { to: state, from } },
         },
       )
+      // Pausing has to stop the turn, not just the machine. Without this,
+      // `PAUSE` left the agent working, and `RESUME` re-entered a state whose
+      // entry sends a prompt — which `runTurn` refused with "A turn is already
+      // in flight", failing the turn and bouncing the objective straight back
+      // to `paused`. Pause was therefore unusable in exactly the situation it
+      // exists for: something is running and the user wants it to stop.
+      //
+      // Safe on the other two routes into `paused` (a failed turn, a red
+      // evidence set): both arrive with the turn already closed, and
+      // `cancelOpenTurn` is a no-op then.
+      if (state === 'paused') {
+        void cancelOpenTurn({ db: this.#db, bus: this.#bus, agents: this.#agents }, objectiveId)
+      }
       if ((TERMINAL_STATES as readonly string[]).includes(state)) this.stop(objectiveId)
     })
   }

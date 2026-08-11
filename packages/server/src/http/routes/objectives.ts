@@ -1,11 +1,22 @@
 import { randomUUID } from 'node:crypto'
+import type { WorkflowEvent } from '@vadd/core'
 import { CreateObjectiveBody, ObjectiveCommand } from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { agentSessions, objectives, projects } from '../../db/schema.js'
+import type { Db } from '../../db/client.js'
+import {
+  agentSessions,
+  decisions,
+  evidenceItems,
+  objectives,
+  planTasks,
+  projects,
+} from '../../db/schema.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
-import { renderTurnPrompt, runTurn, TurnRejected } from '../../workflow/turn.js'
+import type { WorkflowRunner } from '../../workflow/runner.js'
+import { loadSnapshot } from '../../workflow/store.js'
+import { cancelOpenTurn, renderTurnPrompt, runTurn, TurnRejected } from '../../workflow/turn.js'
 import type { AppDeps } from '../app.js'
 
 /** ACP rejects with plain objects, so `String(err)` yields "[object Object]". */
@@ -42,6 +53,93 @@ export function errorMessage(err: unknown): string {
   return String(err)
 }
 
+/**
+ * Returns the live actor for an objective, building one if this process has
+ * none yet.
+ *
+ * Objectives are created without an actor — creation is a git operation, not a
+ * workflow step — so the first command an objective receives has to bring one
+ * into existence. A persisted snapshot wins over a fresh `start()`: a server
+ * that was restarted between two commands must not silently rewind an
+ * objective to `idle`. (Boot rehydration does the same thing eagerly for every
+ * non-terminal objective; this is the lazy path for one that was terminal, or
+ * created since boot.)
+ */
+function ensureActor(runner: WorkflowRunner, db: Db, objectiveId: string) {
+  const live = runner.get(objectiveId)
+  if (live) return live
+  const snapshot = loadSnapshot(db, objectiveId)
+  return snapshot === null ? runner.start(objectiveId) : runner.resume(objectiveId, snapshot)
+}
+
+/**
+ * Translates a validated API command into the machine's vocabulary, or returns
+ * a `{ error }` for the two commands that carry references the machine cannot
+ * check for itself.
+ *
+ * `decide` is validated here rather than in the machine because the machine has
+ * no access to the `decisions` table: a `decisionId` naming another objective's
+ * row, or an `optionId` the decision never offered, would otherwise be accepted
+ * and written straight through `recordDecisionChoice` as a no-op update — a
+ * silent failure on the one command that records a human's choice.
+ */
+function toWorkflowEvent(
+  db: Db,
+  objectiveId: string,
+  command: ObjectiveCommand,
+): { event: WorkflowEvent } | { error: string; status: number } {
+  switch (command.type) {
+    case 'start':
+      return { event: { type: 'START' } }
+    case 'answer_clarification':
+      return { event: { type: 'ANSWER_CLARIFICATION', answer: command.answer } }
+    case 'approve_task':
+      return { event: { type: 'APPROVE_TASK' } }
+    case 'revise':
+      return { event: { type: 'REVISE', instruction: command.instruction } }
+    case 'rollback':
+      return { event: { type: 'ROLLBACK' } }
+    case 'pause':
+      return { event: { type: 'PAUSE' } }
+    case 'resume':
+      return { event: { type: 'RESUME' } }
+    case 'approve_plan':
+      return {
+        event: {
+          type: 'APPROVE_PLAN',
+          // `id: String(ord)` matches the machine's own convention when it
+          // builds tasks from a `plan` event; an edited list that numbered its
+          // tasks differently would not line up with the `plan_tasks` rows.
+          tasks: command.edits?.map((t, ord) => ({
+            id: String(ord),
+            ord,
+            title: t.title,
+            description: t.description,
+            checkpointRef: null,
+          })),
+        },
+      }
+    case 'decide': {
+      const row = db.select().from(decisions).where(eq(decisions.id, command.decisionId)).get()
+      if (!row || row.objectiveId !== objectiveId) {
+        return { error: `No decision "${command.decisionId}" on this objective`, status: 400 }
+      }
+      const options = (row.options ?? []) as { id?: unknown }[]
+      if (!options.some((o) => o.id === command.optionId)) {
+        return {
+          error: `Decision "${command.decisionId}" offers no option "${command.optionId}"`,
+          status: 400,
+        }
+      }
+      return {
+        event: { type: 'DECIDE', decisionId: command.decisionId, optionId: command.optionId },
+      }
+    }
+    default:
+      return { error: `Command "${command.type}" does not drive the machine`, status: 400 }
+  }
+}
+
 export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, bus } = deps
 
@@ -70,6 +168,12 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
         worktreePath: null,
         branchName: null,
         status: 'creating',
+        mode: parsed.data.mode,
+        // Spec §6's per-objective override. Null means unresolved, which
+        // `evidenceComplete` treats as "not proven" — never as trivially green.
+        verificationSpec: parsed.data.verificationOverrides ?? null,
+        lowEnergy: false,
+        setupAt: null,
         createdAt: now,
         updatedAt: now,
       })
@@ -100,10 +204,28 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     return reply.code(201).send(row)
   })
 
+  // Spec §7's "full aggregate (state, decisions, tasks, evidence)". The Focus
+  // View mirrors this and performs no client-side transitions, so `state` is
+  // read from the live actor where there is one and falls back to the mirrored
+  // `objectives.status` column otherwise — the two agree by construction,
+  // because `commitTransition` writes them in the same transaction.
   app.get<{ Params: { id: string } }>('/api/objectives/:id', async (req, reply) => {
     const row = db.select().from(objectives).where(eq(objectives.id, req.params.id)).get()
     if (!row) return reply.code(404).send({ error: 'Objective not found' })
-    return row
+
+    const actor = deps.runner?.get(row.id)
+    return {
+      objective: row,
+      state: actor ? String(actor.getSnapshot().value) : row.status,
+      tasks: db
+        .select()
+        .from(planTasks)
+        .where(eq(planTasks.objectiveId, row.id))
+        .orderBy(planTasks.ord)
+        .all(),
+      decisions: db.select().from(decisions).where(eq(decisions.objectiveId, row.id)).all(),
+      evidence: db.select().from(evidenceItems).where(eq(evidenceItems.objectiveId, row.id)).all(),
+    }
   })
 
   app.post<{ Params: { id: string } }>('/api/objectives/:id/events', async (req, reply) => {
@@ -117,10 +239,38 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     const objective = db.select().from(objectives).where(eq(objectives.id, req.params.id)).get()
     if (!objective) return reply.code(404).send({ error: 'Objective not found' })
 
+    if (parsed.data.type === 'integrate' && parsed.data.action !== 'discard') {
+      const { action } = parsed.data
+      if (action === 'pr' || action === 'merge') {
+        // Accepted by the schema only so this message can say why — spec §8.1
+        // assigns both to M2. A union rejection would 400 with a zod issue
+        // tree that never mentions the milestone.
+        return reply
+          .code(400)
+          .send({ error: `integrate via "${action}" is M2; use commit, keep or discard` })
+      }
+      const runner = deps.runner
+      if (!runner) return reply.code(500).send({ error: 'Workflow runner is not configured' })
+
+      const actor = ensureActor(runner, db, objective.id)
+      const event: WorkflowEvent = { type: 'INTEGRATE', action }
+      if (!actor.getSnapshot().can(event)) {
+        return reply
+          .code(409)
+          .send({ error: `Cannot integrate from state "${String(actor.getSnapshot().value)}"` })
+      }
+      runner.send(objective.id, event)
+      return reply.code(202).send({ ok: true, state: String(actor.getSnapshot().value) })
+    }
+
     if (parsed.data.type === 'integrate') {
       const project = db.select().from(projects).where(eq(projects.id, objective.projectId)).get()
       if (!project) return reply.code(500).send({ error: 'Objective has no project' })
 
+      // The machine is stopped before the rows go: an actor left running on a
+      // deleted objective would still hold a binding whose next turn writes to
+      // rows that no longer exist.
+      deps.runner?.stop(objective.id)
       await deps.agents?.stop(objective.id)
 
       if (objective.worktreePath && objective.branchName) {
@@ -139,36 +289,58 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       return reply.code(200).send({ ok: true })
     }
 
+    // Everything except `prompt`, `cancel` and `integrate` is a machine command.
+    //
+    // `cancel` is deliberately NOT among them. M0's `cancel` cancels the
+    // in-flight *turn* and is what the hand-driven corpus-recording path uses
+    // to unwedge a slow turn; spec §7's `cancel` in the machine's command list
+    // means abandoning the whole objective, which is terminal. Two different
+    // verbs collided on one name, and mapping this one to the machine's
+    // `CANCEL` would destroy an objective every time a recording session
+    // stopped a turn. The turn meaning is kept; reaching the machine's
+    // `CANCEL` is left to phase 5's Focus View, which has room for both.
+    // (`integrate` is already fully handled above, in both its machine and its
+    // discard form, so it cannot reach here — TS narrows it out.)
+    if (parsed.data.type !== 'prompt' && parsed.data.type !== 'cancel') {
+      const runner = deps.runner
+      if (!runner) return reply.code(500).send({ error: 'Workflow runner is not configured' })
+
+      const translated = toWorkflowEvent(db, objective.id, parsed.data)
+      if ('error' in translated) {
+        return reply.code(translated.status).send({ error: translated.error })
+      }
+
+      const actor = ensureActor(runner, db, objective.id)
+      const state = String(actor.getSnapshot().value)
+      // A command the machine will not accept must not answer 200. An ignored
+      // command reported as success is the "never drop silently" failure this
+      // codebase has paid for more than once — and the state name is the only
+      // thing that tells a caller why.
+      if (!actor.getSnapshot().can(translated.event)) {
+        return reply
+          .code(409)
+          .send({ error: `Command "${parsed.data.type}" is not accepted in state "${state}"` })
+      }
+
+      runner.send(objective.id, translated.event)
+      return reply.code(202).send({ ok: true, state: String(actor.getSnapshot().value) })
+    }
+
     const agents = deps.agents
     if (!agents) return reply.code(500).send({ error: 'Agent registry is not configured' })
 
     if (parsed.data.type === 'cancel') {
-      const live = agents.get(objective.id)
-      if (!live) return reply.code(409).send({ error: 'No active agent session' })
-      await live.port.cancel(live.sessionId)
-
       // Requesting a cancel is not the same event as a turn ending, and
-      // conflating them broke both ways. Emitting `prompt_cancelled` here put a
-      // *second* terminal record in the turn once the in-flight prompt settled
-      // and emitted its own — and `loadTranscript` closes a turn on the first
-      // terminal, so every update streamed in between was replayed outside the
-      // turn while the live pipeline had counted it. Emissions could vanish
-      // from scoring, which raises precision by hiding a false positive.
-      bus.emit({ objectiveId: objective.id, type: 'prompt_cancel_requested', payload: {} })
-
-      // The other half: the pipeline's turn has to be closed here, because the
-      // adapter may never settle the prompt at all. Verified with the
-      // `hang-on-prompt` fake peer — cancel returned 200, `turnActive` stayed
-      // true, and every later prompt on the objective 409'd permanently, with
-      // `integrate: discard` (which destroys the worktree) the only recovery.
-      // During hand-driven corpus recording, cancelling one slow turn cost the
-      // whole transcript. `endTurn` is a no-op for a turn that already closed,
-      // so the settle path's own call stays safe.
-      const openTurn = live.turnId
-      if (openTurn !== null) {
-        live.turnId = null
-        await live.pipeline.endTurn(openTurn)
-      }
+      // conflating them broke both ways — see `cancelOpenTurn`, which owns the
+      // sequence now that the machine's `paused` entry needs it too. Emitting
+      // `prompt_cancelled` here put a *second* terminal record in the turn once
+      // the in-flight prompt settled and emitted its own, and `loadTranscript`
+      // closes a turn on the first terminal, so every update streamed in
+      // between was replayed outside the turn while the live pipeline had
+      // counted it. Emissions could vanish from scoring, which raises precision
+      // by hiding a false positive.
+      const cancelled = await cancelOpenTurn({ db, bus, agents }, objective.id)
+      if (!cancelled) return reply.code(409).send({ error: 'No active agent session' })
       return reply.code(200).send({ ok: true })
     }
 

@@ -37,7 +37,9 @@ export function evidenceComplete(
 
   for (const check of checks) {
     const item = items.find((i) => i.commandId === check.id && i.kind === 'check')
-    if (!item || item.status !== 'pass') return false
+    // A missing item and a non-passing one are the same answer here: the check
+    // is not satisfied.
+    if (item?.status !== 'pass') return false
   }
 
   return true

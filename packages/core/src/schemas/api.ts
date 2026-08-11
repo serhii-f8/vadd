@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { VerificationSpec } from './verification.js'
 
 export const RegisterProjectBody = z.object({
   repoPath: z.string().min(1),
@@ -9,6 +10,14 @@ export type RegisterProjectBody = z.infer<typeof RegisterProjectBody>
 export const CreateObjectiveBody = z.object({
   title: z.string().min(1).max(120),
   goalText: z.string().min(1).max(4000),
+  /** D1's two paths (spec §7). Fast Fix skips proposing/awaitingDecision only. */
+  mode: z.enum(['standard', 'fastfix']).default('standard'),
+  /**
+   * Spec §6's per-objective override, stored on the objective row and winning
+   * over repo config and auto-detection. Phase 4 adds the two it wins over; a
+   * caller can supply it directly until then.
+   */
+  verificationOverrides: VerificationSpec.optional(),
 })
 export type CreateObjectiveBody = z.infer<typeof CreateObjectiveBody>
 
@@ -36,6 +45,39 @@ export const ObjectiveCommand = z.discriminatedUnion('type', [
     vars: z.record(z.string(), z.string().max(4000)).optional(),
   }),
   z.object({ type: z.literal('cancel') }),
-  z.object({ type: z.literal('integrate'), action: z.literal('discard') }),
+  /**
+   * `pr` and `merge` are accepted by the schema only so the route can refuse
+   * them with a message that says *why* (they are M2, spec §8.1) rather than a
+   * generic union-mismatch 400. `discard` keeps its M0 meaning — stop the
+   * agent, remove the worktree, delete the rows — and never reaches the
+   * machine; `commit` and `keep` are machine transitions.
+   */
+  z.object({
+    type: z.literal('integrate'),
+    action: z.enum(['commit', 'keep', 'discard', 'pr', 'merge']),
+  }),
+
+  // --- spec §7's remaining user commands, all feeding the machine ---
+  z.object({ type: z.literal('start') }),
+  z.object({
+    type: z.literal('decide'),
+    decisionId: z.string().min(1),
+    optionId: z.string().min(1),
+  }),
+  z.object({ type: z.literal('answer_clarification'), answer: z.string().min(1).max(2000) }),
+  z.object({
+    type: z.literal('approve_plan'),
+    /** Spec §8's PlanApproval list is editable; absent means "approve as proposed". */
+    edits: z
+      .array(z.object({ title: z.string().min(1).max(80), description: z.string().max(300) }))
+      .min(1)
+      .max(12)
+      .optional(),
+  }),
+  z.object({ type: z.literal('approve_task') }),
+  z.object({ type: z.literal('revise'), instruction: z.string().min(1).max(2000) }),
+  z.object({ type: z.literal('rollback') }),
+  z.object({ type: z.literal('pause') }),
+  z.object({ type: z.literal('resume') }),
 ])
 export type ObjectiveCommand = z.infer<typeof ObjectiveCommand>

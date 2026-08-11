@@ -299,3 +299,30 @@ export function runTurn(
   const { turnId, text } = prepareTurn(deps, entry, objective, turn)
   return raceTimeout(deps, entry, objective, turn, turnId, text)
 }
+
+/**
+ * Cancels whatever turn is open for an objective. Returns false if there was no
+ * live agent session at all.
+ *
+ * Extracted so the `cancel` route and the machine's `paused` entry share one
+ * implementation. The pipeline's turn has to be closed here and not merely
+ * cancelled at the port, because the adapter may never settle the prompt:
+ * leaving `turnActive` true makes every later prompt on the objective 409
+ * permanently, which during hand-driven corpus recording cost a whole
+ * transcript. `endTurn` is a no-op for a turn that already closed, so calling
+ * this against an idle objective is safe.
+ */
+export async function cancelOpenTurn(deps: Deps, objectiveId: string): Promise<boolean> {
+  const live = deps.agents.get(objectiveId)
+  if (!live) return false
+
+  await live.port.cancel(live.sessionId)
+  deps.bus.emit({ objectiveId, type: 'prompt_cancel_requested', payload: {} })
+
+  const openTurn = live.turnId
+  if (openTurn !== null) {
+    live.turnId = null
+    await live.pipeline.endTurn(openTurn)
+  }
+  return true
+}

@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import type { AgentRegistry } from '../agent/registry.js'
 import type { Db } from '../db/client.js'
 import type { EventBus } from '../events/event-bus.js'
+import type { WorkflowRunner } from '../workflow/runner.js'
 import { registerEventRoutes } from './routes/events.js'
 import { registerObjectiveRoutes } from './routes/objectives.js'
 import { registerProjectRoutes } from './routes/projects.js'
@@ -11,6 +12,12 @@ export type AppDeps = {
   bus: EventBus
   /** Populated in Task 11. Optional so Tasks 7–9 can construct an app without it. */
   agents?: AgentRegistry
+  /**
+   * Optional for the same reason `agents` is: several route tests predate the
+   * machine and build an app without one. A machine command that arrives with
+   * no runner configured is a 500, not a silent no-op.
+   */
+  runner?: WorkflowRunner
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {

@@ -151,6 +151,30 @@ async function sendPromptEffect(
     worktreePath: row.worktreePath,
   }
 
+  // `runTurn` requires a session that already exists — it calls `agents.get()`
+  // and throws `TurnRejected('No active agent session', 500)` on a miss. The
+  // prompt *route* satisfies that by calling `ensure()` itself; nothing did on
+  // the machine path, so every machine-driven objective failed its very first
+  // `sendPrompt` and fell straight to `paused`. Both this file's tests and the
+  // runner's pre-called `ensure()` in their setup, which hid it.
+  //
+  // Guarded by `get()` rather than always awaiting `ensure()`: an unconditional
+  // await defers the `prompt()` call by a microtask even when a session is
+  // already live, and every existing turn-driving test settles the fake prompt
+  // synchronously after `send()`. Skipping the await on the hot path keeps that
+  // contract and confines the asynchrony to the one turn that genuinely starts
+  // an adapter.
+  if (!deps.agents.get(objectiveId)) {
+    try {
+      await deps.agents.ensure(objectiveRef)
+    } catch (err) {
+      const message = errorMessage(err)
+      deps.bus.emit({ objectiveId, type: 'agent_start_failed', payload: { message } })
+      runner.send(objectiveId, { type: 'TURN_FAILED', reason: 'error', message })
+      return
+    }
+  }
+
   let attempt: Promise<TurnOutcome>
   try {
     attempt = runTurn(deps, objectiveRef, { phase, vars })
