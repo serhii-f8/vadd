@@ -105,3 +105,37 @@ test('a dangling evidenceRef that is not repaired still reports the violation', 
     ),
   ).toBe(true)
 })
+
+test('a repair prompt names the schema rejection that caused the gap', async () => {
+  // The gap here is not silence: the agent *did* emit a decision_needed, and
+  // it was rejected for an over-long label. Told only what is missing, the
+  // agent substitutes something else; told what was wrong, it can correct it.
+  harness = await buildTestApp({ fakeAcpMode: 'schema-rejected' })
+  const { app, objectiveId, events, until } = harness
+
+  await app.inject({
+    method: 'POST',
+    url: `/api/objectives/${objectiveId}/events`,
+    payload: { type: 'prompt', phase: 'propose' },
+  })
+  await until(() => events().some((e) => e.type === 'prompt_finished'))
+
+  const repair = events().find((e) => e.type === 'repair_prompt_sent')
+  expect(repair, 'no repair was sent at all').toBeDefined()
+  const rejected = (repair?.payload as { rejected?: string[] } | undefined)?.rejected ?? []
+  expect(rejected.join(' ')).toContain('options.0.label')
+  expect(rejected.join(' ')).toMatch(/80/)
+
+  // Still exactly one repair inside one turn — the corpus is turn-indexed.
+  const types = events().map((e) => e.type)
+  expect(types.filter((t) => t === 'repair_prompt_sent')).toHaveLength(1)
+  expect(types.filter((t) => t === 'prompt_sent')).toHaveLength(1)
+  // The repair supplied a valid card, so nothing is reported missing.
+  expect(
+    events().some(
+      (e) =>
+        e.type === 'contract_violation' &&
+        (e.payload as { reason?: string }).reason === 'missing_expected',
+    ),
+  ).toBe(false)
+})

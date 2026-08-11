@@ -13,6 +13,7 @@ import {
   placeholdersIn,
   renderTemplate,
 } from '../../prompts/renderer.js'
+import { buildRepairPrompt } from '../../prompts/repair-prompt.js'
 import type { AppDeps } from '../app.js'
 
 /** ACP rejects with plain objects, so `String(err)` yields "[object Object]". */
@@ -258,6 +259,10 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
         // turn-indexed labels in the eval corpus (design §5.2).
         const unmet = entry.pipeline.unmetExpectations()
         const dangling = entry.pipeline.danglingEvidenceRefs()
+        // Read before the repair prompt is built: a turn can owe an event
+        // *because* a block it sent was rejected, and saying only what is
+        // missing invites the agent to substitute rather than correct.
+        const rejected = entry.pipeline.schemaRejections()
         if (unmet.length > 0 || dangling.length > 0) {
           const parts = [
             ...unmet.map((group) => group.join(' or ')),
@@ -265,11 +270,14 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
           ]
           const missing = parts.join(', ')
           try {
-            const repair = renderTemplate(loadTemplate('repair'), { missing })
+            const repair = buildRepairPrompt(
+              renderTemplate(loadTemplate('repair'), { missing }),
+              rejected,
+            )
             bus.emit({
               objectiveId: objective.id,
               type: 'repair_prompt_sent',
-              payload: { missing },
+              payload: { missing, rejected },
             })
             await entry.port.prompt(entry.sessionId, repair)
           } catch (err) {

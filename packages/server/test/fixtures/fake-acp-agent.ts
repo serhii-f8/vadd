@@ -16,6 +16,10 @@
  *                             emitted; the repair prompt does not resolve it
  *   'dangling-ref-repaired' — same first turn; the repair prompt supplies the
  *                             cited evidence
+ *   'schema-rejected'    — first turn's decision_needed is rejected for an
+ *                          over-long label, so the turn owes an event *because*
+ *                          a block failed validation; the repair supplies a
+ *                          valid card
  */
 import { createInterface } from 'node:readline'
 
@@ -119,6 +123,41 @@ rl.on('line', async (line) => {
           update: {
             sessionUpdate: 'agent_message_chunk',
             content: { type: 'text', text: promptCount === 1 ? first : second },
+          },
+        },
+      })
+      send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      return
+    }
+
+    if (mode === 'schema-rejected') {
+      promptCount += 1
+      const option = (id: string, label: string) => ({
+        id,
+        label,
+        pros: ['p'],
+        cons: ['c'],
+        reversibility: 'high',
+        verification: 'v',
+      })
+      const card = (label: string) =>
+        `\`\`\`vadd-event\n${JSON.stringify({
+          type: 'decision_needed',
+          question: 'Which source?',
+          recommendedId: 'a',
+          options: [option('a', label), option('b', 'B')],
+        })}\n\`\`\`\n`
+      send({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            // First turn: 90 chars, over the schema's 80-char cap, so the whole
+            // card is rejected and the turn owes decision_needed. Second turn:
+            // short enough to validate.
+            content: { type: 'text', text: card(promptCount === 1 ? 'x'.repeat(90) : 'Short') },
           },
         },
       })
