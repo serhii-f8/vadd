@@ -21,4 +21,5 @@ export {
   ObjectiveCommand,
   RegisterProjectBody,
 } from './schemas/api.js'
+export { contractReference } from './schemas/contract-reference.js'
 export { agentEventJsonSchema } from './schemas/json-schema.js'

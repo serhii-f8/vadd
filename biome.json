@@ -10,6 +10,13 @@
     "formatter": { "quoteStyle": "single", "semicolons": "asNeeded" }
   },
   "files": {
-    "includes": ["**", "!**/dist", "!**/node_modules", "!**/drizzle", "!**/evals/transcripts"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/node_modules",
+      "!**/drizzle",
+      "!**/evals/transcripts",
+      "!.claude"
+    ]
   }
 }
