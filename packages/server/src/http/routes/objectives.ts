@@ -257,6 +257,11 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
         // NOT prompt_sent: loadTranscript opens a turn on prompt_sent alone, and
         // a second turn here would shift every later turn and invalidate all 40
         // turn-indexed labels in the eval corpus (design §5.2).
+        // Settle first: the scanner decides only on complete lines, so a
+        // closing fence with no newline after it — the end of nearly every
+        // agent message — is still buffered here. Without this the turn looks
+        // empty and the repair demands an event the agent already sent.
+        entry.pipeline.settle()
         const unmet = entry.pipeline.unmetExpectations()
         const dangling = entry.pipeline.danglingEvidenceRefs()
         // Read before the repair prompt is built: a turn can owe an event

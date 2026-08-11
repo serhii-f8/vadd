@@ -16,6 +16,9 @@
  *                             emitted; the repair prompt does not resolve it
  *   'dangling-ref-repaired' — same first turn; the repair prompt supplies the
  *                             cited evidence
+ *   'no-trailing-newline' — a satisfied turn whose closing fence carries no
+ *                          newline after it, i.e. what nearly every real agent
+ *                          message looks like
  *   'schema-rejected'    — first turn's decision_needed is rejected for an
  *                          over-long label, so the turn owes an event *because*
  *                          a block failed validation; the repair supplies a
@@ -158,6 +161,29 @@ rl.on('line', async (line) => {
             // card is rejected and the turn owes decision_needed. Second turn:
             // short enough to validate.
             content: { type: 'text', text: card(promptCount === 1 ? 'x'.repeat(90) : 'Short') },
+          },
+        },
+      })
+      send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      return
+    }
+
+    if (mode === 'no-trailing-newline') {
+      send({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: {
+              type: 'text',
+              // Note the absent final newline: push() only acts on complete
+              // lines, so this block stays buffered until the turn settles.
+              text:
+                '```vadd-event\n{"type":"evidence","kind":"test","status":"pass","headline":"OK (1 test)","summary":[]}\n```\n' +
+                '```vadd-event\n{"type":"task_result","taskId":"t","claim":"done","evidenceRefs":["OK (1 test)"]}\n```',
+            },
           },
         },
       })

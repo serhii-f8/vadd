@@ -134,6 +134,26 @@ export class ContractPipeline {
     for (const block of this.#scanner.push(text)) this.#handleBlock(block)
   }
 
+  /**
+   * Parses whatever the scanner still holds, without closing the turn.
+   *
+   * Callers that inspect a turn before `endTurn` — the repair path reading
+   * `unmetExpectations()`, `danglingEvidenceRefs()` and `schemaRejections()` —
+   * must call this first. `FenceScanner.push()` decides only on complete
+   * lines, so a closing fence with no newline after it stays buffered until
+   * `flush()`, which runs inside `endTurn()`. Without settling, a turn whose
+   * final block was its *only* block looks empty, and the repair fires
+   * demanding an event the agent had in fact already sent — which is what the
+   * agent then, reasonably, refuses to send twice.
+   *
+   * Safe to call repeatedly, and never reports `unterminated`: a block still
+   * genuinely open is not a finding until the turn ends.
+   */
+  settle(): void {
+    if (this.#turnId === null) return
+    for (const block of this.#scanner.settle()) this.#handleBlock(block)
+  }
+
   async endTurn(turnId: string): Promise<void> {
     if (this.#turnId !== turnId) return
     const { blocks, unterminated } = this.#scanner.flush()

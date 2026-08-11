@@ -139,3 +139,27 @@ test('a repair prompt names the schema rejection that caused the gap', async () 
     ),
   ).toBe(false)
 })
+
+test('a turn satisfied only by its final block is not repaired', async () => {
+  // Regression: the scanner decides on complete lines, so a closing fence with
+  // no newline after it — the end of nearly every real agent message — was
+  // still buffered when the repair decision was made. The turn looked empty,
+  // and the repair demanded events the agent had already sent.
+  harness = await buildTestApp({ fakeAcpMode: 'no-trailing-newline' })
+  const { app, objectiveId, events, until } = harness
+
+  await app.inject(executeTask(objectiveId))
+  await until(() => events().some((e) => e.type === 'prompt_finished'))
+
+  expect(events().some((e) => e.type === 'repair_prompt_sent')).toBe(false)
+  expect(
+    events().some(
+      (e) =>
+        e.type === 'contract_violation' &&
+        (e.payload as { reason?: string }).reason === 'missing_expected',
+    ),
+  ).toBe(false)
+  // Both events still reach the bus exactly once.
+  const emitted = events().filter((e) => e.type === 'agent_event')
+  expect(emitted).toHaveLength(2)
+})

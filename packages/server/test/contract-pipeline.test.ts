@@ -416,3 +416,69 @@ test('a turn declaring no expectations never reports unexpected_type', async () 
     'unexpected_type',
   )
 })
+
+test('settle() parses a block whose closing fence carried no trailing newline', async () => {
+  // The bug this exists for: FenceScanner.push() only decides on complete
+  // lines, so a final ``` with no newline after it — i.e. the end of almost
+  // every agent message — stays buffered until flush(), which runs inside
+  // endTurn(). The repair decision is made *before* endTurn, so it saw a turn
+  // that had emitted nothing and demanded an event the agent had already sent.
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: [['plan']] })
+  pipe.ingest(
+    chunk('```vadd-event\n{"type":"plan","tasks":[{"title":"T","description":"D"}]}\n```'),
+  )
+
+  // Before settling, the turn looks empty — this is the state the repair saw.
+  expect(pipe.unmetExpectations()).toEqual([['plan']])
+
+  pipe.settle()
+
+  expect(pipe.unmetExpectations()).toEqual([])
+  expect(out.filter((e) => e.kind === 'event').map((e) => e.event.type)).toEqual(['plan'])
+  await pipe.endTurn('t1')
+  // endTurn must not emit it a second time.
+  expect(out.filter((e) => e.kind === 'event')).toHaveLength(1)
+})
+
+test('settle() surfaces a schema rejection the repair turn needs to quote', async () => {
+  const { pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: [['plan']] })
+  const long = 'x'.repeat(90)
+  pipe.ingest(
+    chunk(
+      `\`\`\`vadd-event\n{"type":"plan","tasks":[{"title":"${long}","description":"D"}]}\n\`\`\``,
+    ),
+  )
+
+  expect(pipe.schemaRejections()).toEqual([])
+  pipe.settle()
+
+  const r = pipe.schemaRejections()
+  expect(r).toHaveLength(1)
+  expect(r[0]).toContain('tasks.0.title')
+  await pipe.endTurn('t1')
+})
+
+test('settle() leaves the turn open and is safe to call twice', async () => {
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: [['status']] })
+  pipe.ingest(chunk('```vadd-event\n{"type":"status","phase":"planning","headline":"H"}\n```'))
+  pipe.settle()
+  pipe.settle()
+  expect(pipe.turnActive).toBe(true)
+  expect(out.filter((e) => e.kind === 'event')).toHaveLength(1)
+  await pipe.endTurn('t1')
+})
+
+test('settle() on an unterminated block reports nothing yet', async () => {
+  // A block still genuinely open is not a finding until the turn ends — only
+  // endTurn may call it unterminated.
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: [['status']] })
+  pipe.ingest(chunk('```vadd-event\n{"type":"status","phase":"planning"'))
+  pipe.settle()
+  expect(out.filter((e) => e.kind === 'violation')).toHaveLength(0)
+  await pipe.endTurn('t1')
+  expect(out.filter((e) => e.kind === 'violation').map((v) => v.reason)).toContain('unterminated')
+})

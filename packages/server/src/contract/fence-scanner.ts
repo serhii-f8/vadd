@@ -56,13 +56,28 @@ export class FenceScanner {
    * Ends the turn: closes a block whose last line carried no newline, reports
    * any block left open, and resets so the instance can serve the next turn.
    */
-  flush(): { blocks: FenceBlock[]; unterminated: string | null } {
+  /**
+   * Decides on the buffered tail without ending the turn.
+   *
+   * `push()` only acts on complete lines, so a closing fence that arrived with
+   * no newline after it — the end of very nearly every agent message — stays
+   * buffered. Anything that needs to know what a turn produced *before* the
+   * turn closes has to settle first, or it sees a turn that emitted nothing.
+   *
+   * Idempotent: the buffer is consumed, so a second call finds nothing.
+   */
+  settle(): FenceBlock[] {
     const blocks: FenceBlock[] = []
     if (this.#pending.length > 0) {
       const line = this.#pending
       this.#pending = ''
       this.#consume(line, blocks)
     }
+    return blocks
+  }
+
+  flush(): { blocks: FenceBlock[]; unterminated: string | null } {
+    const blocks = this.settle()
     const unterminated = this.#inside ? this.#body.join('\n') : null
     this.#inside = false
     this.#body = []
