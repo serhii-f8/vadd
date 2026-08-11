@@ -8,6 +8,8 @@ would build.
 
 Goal: {{goalText}}
 
+Emit only: `clarification`.
+
 Emit a single `clarification` event with up to four suggested answers:
 
 ```vadd-event

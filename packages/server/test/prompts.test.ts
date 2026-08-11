@@ -191,3 +191,25 @@ test('no bundled template requires an event that contradicts another it expects'
     }
   }
 })
+
+test('every template states its event budget, and it matches expects', () => {
+  // `expects` is a server-side assertion the agent cannot read. Nothing ever
+  // told it what a turn may emit, and in the fourth gate run eleven of sixteen
+  // unlabelled emissions were turns 1-2 producing types their own declared
+  // contract never solicited — five of them evidence asserting no work was done.
+  for (const phase of PROMPT_PHASES) {
+    const t = loadTemplate(phase)
+    // repair: its budget is whatever the turn owed, named by {{missing}}.
+    if (t.expects.length === 0) continue
+
+    const line = /^Emit only: (.+)\.$/m.exec(t.body)
+    expect(line, `${phase}.md has no "Emit only:" line`).not.toBeNull()
+
+    const stated = [...(line?.[1] ?? '').matchAll(/`(\w+)`/g)].map((m) => m[1])
+    const declared = t.expects.flat()
+    expect(
+      [...new Set(stated)].sort(),
+      `${phase}.md states a budget that disagrees with its expects front-matter`,
+    ).toEqual([...new Set(declared)].sort())
+  }
+})

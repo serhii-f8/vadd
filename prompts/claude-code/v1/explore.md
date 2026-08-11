@@ -8,6 +8,11 @@ file yet.
 
 Goal: {{goalText}}
 
+Emit only: `status` or `clarification`.
+
+Findings go in the headline, not in an `evidence` event. Evidence reports a
+command you ran and its output; a turn that ran no commands has none.
+
 Report what you found with a single `status` event when you are done:
 
 ```vadd-event

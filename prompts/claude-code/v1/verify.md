@@ -11,6 +11,8 @@ this turn's evidence must be freshly produced, not recalled from earlier.
 Commands (report each separately, even if you ran them together):
 {{verificationCommands}}
 
+Emit only: `evidence`.
+
 Emit one `evidence` event per command listed above — never fold two
 commands' output into one event, even if you ran them chained.
 

@@ -8,6 +8,8 @@ alone.
 
 Goal: {{goalText}}
 
+Emit only: `decision_needed`.
+
 Emit one `decision_needed` event with two to four options. Every option must
 carry `reversibility`, whose value is exactly one of `high`, `medium` or `low` —
 the bare word, with no explanation appended. Put the reasoning in `cons`:

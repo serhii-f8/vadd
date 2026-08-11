@@ -7,6 +7,8 @@ Review the diff on this branch against the objective. Change nothing.
 
 Goal: {{goalText}}
 
+Emit only: `status` or `failure`.
+
 If the diff satisfies the goal, emit a `status` event saying so. If it does not,
 emit a `failure` event naming the probable cause:
 

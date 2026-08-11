@@ -7,6 +7,12 @@ Break the goal into ordered tasks. Each task must be independently verifiable.
 
 Goal: {{goalText}}
 
+Emit only: `plan`.
+
+Findings go in the plan's task descriptions, not in an `evidence` event.
+Evidence reports a command you ran and its output; a turn that ran no commands
+has none.
+
 Emit exactly one `plan` event, at most 12 tasks:
 
 ```vadd-event
