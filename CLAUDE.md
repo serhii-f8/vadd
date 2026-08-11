@@ -4,24 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-*Last updated 2026-08-10 at `823f95a` (gate re-run), see `docs/superpowers/notes/m1-gate-result.md` for the full writeup. Keep this section and the ledger below current — see "Keeping status current".*
+*Last updated 2026-08-11 at `72894a1` (phase 2d gate run), see `docs/superpowers/notes/m1-gate-result.md` for the full writeup. Keep this section and the ledger below current — see "Keeping status current".*
 
-**M0 (Skeleton) is complete. M1 phases 1–2 (Output Contract pipeline + eval gate infrastructure) are merged. Task 14 is complete**: 12 transcripts recorded (10 gate + 2 floor), all 10 gate transcripts labelled with a 4-transcript holdout marked.
+**M0 (Skeleton) is complete. M1 phases 1, 2, 2b, 2c and 2d are all complete.** Five real gate runs have been scored, each under different code.
 
-**M1 phase 2b is complete** — code (tasks 1–6) and the one re-record + score (task 7). All ten objectives were re-recorded fresh against the pinned `flexpick-corpus-base` (`f4251ea`) and scored under `1fb56ca`: `decision_needed` 100.0%/100.0%, `evidence` 61.5%/80.0%, tuning-vs-holdout recall gap 19.4%. The repair turn (A4) fired on 9 of 10 objectives (12/40 turns) and every repair that fired supplied what the turn owed — zero `missing_expected` violations survived to scoring, which closed the claimed-but-unevidenced failure mode that motivated the phase. What it left was `evidence` precision: `kind` mismatches plus unlabelled exploration-turn evidence the exhaustive-labelling scheme was never going to predict (design §6, "declined to engineer around").
+**Phase 2 is closed — uncleared — under spec §9's timebox.** The decision, its reasoning and what it does *not* license are in `docs/superpowers/notes/m1-timebox-decision.md`. **Phases 3–6 are open.** Do not read that as the gate passing: `pnpm eval` still exits non-zero, and it must stay that way.
 
-**M1 phase 2c (evidence precision) is complete — all 5 plan tasks and the one re-record + score.** Four targeted fixes: two prompt-copy fixes to `verify.md` (numbered command list, no credit for stale results), a new pipeline check for a `task_result` citing `evidenceRefs` that never existed, wired into the A4 repair turn, and one corrected label (`colormode-todo`'s task-test, to the `kind` the turn can produce). Six of the ten objectives were re-recorded to verify, four left as recorded under `1fb56ca`; scored once under `f5d8ef5`:
+Phase 2d's score, under `72894a1`, with one `recordedUnder` stamp across all ten transcripts equal to the scoring commit:
 
 | type | labels | matched | precision | recall |
 |---|---|---|---|---|
-| `decision_needed` | 10 | 8 | 88.9% | 80.0% |
-| `evidence` | 30 | 27 | **64.3%** | **90.0%** |
+| `decision_needed` | 10 | 10 | **100.0%** | **100.0%** |
+| `evidence` | 30 | 27 | **75.0%** | **90.0%** |
 
-**The gate does not clear, and phases 3–6 are therefore still closed.** `evidence` moved the way the fixes intended — precision 61.5% → 64.3% (still far short of 90%), recall 80.0% → 90.0%. `decision_needed` regressed from 100.0%/100.0% to 88.9%/80.0%, on real agent variance in the re-recorded objectives and not on anything this package changed (no fix touched `decision_needed`): one `decision_needed.options[].label` exceeded its 80-char schema cap, and one permission denial inside a `Task` call cost a decision outright.
+Three of four bars clear. `evidence` precision is 15 points short and the tuning-vs-holdout recall gap is 16.7% (line is 10). Best run on every axis; full history in the gate note.
 
-The tuning-vs-holdout recall gap widened to 33.3%, **but this round's holdout comparison is compromised**: `error-tracking-wiring` is a holdout transcript *and* the transcript Fix A was diagnosed from, and it was re-recorded this round to verify that fix — so unlike phase 2b's, this holdout number is not a clean generalization measurement, and only three of the four holdout transcripts remain untouched. See `docs/superpowers/notes/m1-gate-result.md`'s newest section for the full accounting, the four new failure modes this run surfaced (including the welded-*opening*-fence limitation recurring on `operator-change-log`, now confirmed to cost a gated label), and the recording caveats.
+**Why the timebox was invoked rather than a sixth round.** All nine remaining false positives are `evidence` events in `execute-task` turns — a turn whose `expects` solicits exactly that. The out-of-contract counter added this phase settles what earlier rounds could only guess: 25 out-of-contract emissions, **all `status`**, zero of them a gated type. The agent obeyed its budget everywhere. Closing the gap now means labelling six more emissions, and labels are the human's to author. Design §10 named this combination in advance as the evidence that moves the diagnosis from the agent to the labels.
 
-**Per the plan's exit condition, phase 2c stops here — no second re-record.** Spec §9's timebox conversation is next: this is the fourth real gate run, and the narrower package built to answer "can `evidence` precision be moved with prompt and pipeline fixes" has run and moved it 2.8 points.
+**The finding that reframes phases 2b and 2c.** `FenceScanner.push()` decides only on complete lines, so a closing fence with no trailing newline — the end of nearly every agent message — stayed buffered until `flush()`, which runs inside `endTurn()`, *after* the A4 repair decision. The repair routinely read a turn the pipeline had not finished parsing and demanded events the agent had already sent; the duplicate re-emissions that followed were false positives on gated types. Phases 2b and 2c both saw that behaviour and reworded `repair.md` twice to chase it. `ContractPipeline.settle()` fixes it: repairs carrying rejection detail went 0/6 → 5/6, duplicate gated emissions 2 → 0, repair rate 40.0% → 15.0%.
+
+**Standing caveat on every number above.** The ten label files were blind-drafted inside the sessions that recorded the transcripts, not written independently against blind transcripts as design §5.6 requires. A cleared gate on these labels would have been worth less than it looked. Independent re-labelling and a corpus larger than ten remain the highest-value outstanding work on the measurement.
 
 Read before touching M1 work, in this order:
 
@@ -31,7 +33,10 @@ Read before touching M1 work, in this order:
 - `docs/superpowers/plans/2026-08-09-m1-phase2b-provenance-repair.md` — the 7-task implementation plan for phase 2b, TDD throughout; **all 7 tasks done**
 - `docs/superpowers/specs/2026-08-10-m1-evidence-precision-design.md` — the approved phase 2c design (Fixes A–D), with the `evidence`-precision breakdown behind it
 - `docs/superpowers/plans/2026-08-10-m1-evidence-precision.md` — the 5-task implementation plan for phase 2c; **all 5 tasks done**
-- `docs/superpowers/notes/m1-gate-result.md` — both gate results, newest section last: the numbers, the repair-rate/fence-drift detail, the missed-label breakdown, the holdout-purity caveat from phase 2c, and what each design declined to engineer around
+- `docs/superpowers/notes/m1-timebox-decision.md` — **read this before starting phase 3**: why phase 2 closed uncleared, what that does and does not permit, and the follow-ups it defers
+- `docs/superpowers/specs/2026-08-11-m1-phase2d-contract-delivery-design.md` — the approved phase 2d design (contract delivery, repair feedback, turn budget, fence recovery)
+- `docs/superpowers/plans/2026-08-11-m1-phase2d-contract-delivery.md` — the 10-task phase 2d plan; **all 10 tasks done**
+- `docs/superpowers/notes/m1-gate-result.md` — all gate results, newest section last: the numbers, the repair-rate/fence-drift detail, the missed-label breakdown, the holdout-purity caveat from phase 2c, and what each design declined to engineer around
 - `docs/superpowers/notes/m1-phase12-known-gaps.md` — what phases 1–2 left open, what's since been resolved (profile credentials, the A3 command permission policy, an `execute-task.md` template gap), and what Task 14's real corpus runs found
 - `docs/superpowers/notes/m0-known-gaps.md` — what M0 left open, and what M1 inherits by construction
 - `docs/superpowers/specs/2026-08-03-m0-skeleton-design.md` — M0's design, including the verification record in §7.1
@@ -48,14 +53,21 @@ Where we are, what's next. Phases are the M1 design's §1.4 build order; 2b is t
 | 2 — Corpus + gate | Record + label 12 transcripts; eval harness; iterate prompt and pipeline. **Kill-switch checkpoint** | ⚠️ ran, does not clear | `8e8b385`; superseded by 2b's score |
 | 2b — Provenance + repair | Fence-drift violations; `recordedUnder` stamp; A4 repair turn; re-record and score once | ⚠️ **done, does not clear** | `283a1a8`..`1fb56ca`, all 7/7 tasks; `docs/superpowers/notes/m1-gate-result.md` |
 | 2c — Evidence precision | `verify.md` copy fixes; dangling-`evidenceRefs` repair trigger; one relabel; 6-of-10 targeted re-record | ⚠️ **done, does not clear; holdout comparison compromised** | `e0b4c98`..`823f95a`, all 5/5 tasks; `docs/superpowers/notes/m1-gate-result.md` |
-| 3 — Machine | Four remaining migrations; XState machine; snapshot persistence; boot rehydration | ⛔ blocked on the gate | — |
-| 4 — Verification | Spec resolution + detection; `setup` commands; EvidenceCollector; command permissions | ⛔ blocked (A3's policy already landed, `83aabd8`) | — |
-| 5 — Surfaces | Skeleton Focus View; Evidence Panel; `integrate` commit/keep/discard | ⛔ blocked | — |
-| 6 — Exit run | One real `flexpick.net` bugfix driven to `done` through green evidence | ⛔ blocked | — |
+| 2d — Contract delivery | Schema reference to the agent; repair carries rejection reason; per-turn event budget; both malformed opening fences; per-worktree `vendor` | ⚠️ **done; gate does not clear, phase 2 closed by §9 timebox** | `c008a19`..`72894a1`, all 10/10 tasks; `docs/superpowers/notes/m1-timebox-decision.md` |
+| 3 — Machine | Four remaining migrations; XState machine; snapshot persistence; boot rehydration | 🟢 open (timebox, not a cleared gate) | — |
+| 4 — Verification | Spec resolution + detection; `setup` commands; EvidenceCollector; command permissions | 🟢 open (A3's policy already landed, `83aabd8`) | — |
+| 5 — Surfaces | Skeleton Focus View; Evidence Panel; `integrate` commit/keep/discard | 🟢 open | — |
+| 6 — Exit run | One real `flexpick.net` bugfix driven to `done` through green evidence | 🟢 open — **still M1's binding exit criterion, not waived by the timebox** | — |
 
 ### Next steps
 
-1. **Spec §9 timebox conversation.** Phase 2c — the narrow package aimed at `evidence` precision — is complete and the gate still fails. The state it leaves behind, all four gate runs' worth: `evidence` precision 64.3% (moved 2.8 points, needs 90%), `evidence` recall 90.0% (clears), `decision_needed` 88.9%/80.0% (regressed off 100%/100% on agent variance, not on this package's code), and a 33.3% tuning-vs-holdout recall gap whose holdout side is compromised this round (`error-tracking-wiring` was both a holdout transcript and Fix A's diagnostic source). Decide, with `docs/superpowers/notes/m1-gate-result.md` in hand, whether to spend further budget on `evidence` precision, grow the corpus past ten and designate fresh untouched holdout transcripts, or invoke §9's timebox and move to phase 3 without a cleared gate. Do not silently start phase 3.
+1. **Phase 3 — the machine.** Four remaining migrations, the XState machine defined in `core` with `setup()`, snapshot persistence in the same SQLite transaction as the event append, and boot rehydration. Opened by the §9 timebox, not by a cleared gate — read `docs/superpowers/notes/m1-timebox-decision.md` first, in particular §5's "what opening phase 3 does *not* license".
+
+2. **Independent re-labelling, and a corpus past ten — the human's call, and the highest-value work on the measurement.** Every gate number to date rests on labels blind-drafted inside the recording sessions, which is not design §5.6's standard. Six more labelled emissions would close the precision gap; more transcripts would close the holdout gap. Neither is agent work. Nothing in phases 3–5 depends on it, so it need not block them — but it should not quietly disappear either.
+
+3. **Smaller follow-ups the gate run left open**, in `docs/superpowers/notes/m1-timebox-decision.md` §7: a parse failure gives the repair turn no diagnostic (a schema rejection now names its field and rule); reading-budget violations rose to six from one; and the recording harness drives `execute-task` from `tasks[0]`, so a plan opening with an investigative task cannot produce test evidence — phase 4's plan-task wiring should not inherit that.
+
+**The gate stays red and stays in CI.** `pnpm eval` exits non-zero by design. Do not relax it, re-scope it, or lower its bar; and do not edit a label file to close the gap — that is the human's to author, from blind transcripts.
 
 ### Keeping status current
 
