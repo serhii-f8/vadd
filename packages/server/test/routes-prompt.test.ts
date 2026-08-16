@@ -188,6 +188,9 @@ test('permission decisions reach the event log with their reason', async () => {
 })
 
 test('discarding an objective stops its agent', async () => {
+  // Migrated from `integrate: discard` (amendment A9): destroying an
+  // objective is now `DELETE /api/objectives/:id`, and this test only ever
+  // used discard as teardown, asserting nothing about integration.
   const ctx = await buildTestApp()
   await ctx.app.inject({
     method: 'POST',
@@ -195,15 +198,14 @@ test('discarding an objective stops its agent', async () => {
     payload: { type: 'prompt', text: 'hi' },
   })
   await ctx.until(() => ctx.agents.get(ctx.objectiveId) !== undefined)
-  // The agent is genuinely up before the discard, so what follows is a real
+  // The agent is genuinely up before the delete, so what follows is a real
   // teardown rather than a no-op against nothing.
   const sessionRow = ctx.db.select().from(agentSessions).all()[0]
   expect(sessionRow?.status).toBe('running')
 
   const res = await ctx.app.inject({
-    method: 'POST',
-    url: `/api/objectives/${ctx.objectiveId}/events`,
-    payload: { type: 'integrate', action: 'discard' },
+    method: 'DELETE',
+    url: `/api/objectives/${ctx.objectiveId}`,
   })
   expect(res.statusCode).toBe(200)
 
@@ -223,7 +225,8 @@ test('discarding an objective stops its agent', async () => {
 test('discarding mid-turn reports a cancelled turn, not a failed one', async () => {
   // The turn never settled at all before AgentStoppedError existed: no
   // prompt_finished, no prompt_failed, nothing. The page showed it running
-  // forever.
+  // forever. Migrated from `integrate: discard` to `DELETE`, same reasoning
+  // as the test above.
   const ctx = await buildTestApp({ fakeAcpMode: 'hang-on-prompt' })
   await ctx.app.inject({
     method: 'POST',
@@ -233,9 +236,8 @@ test('discarding mid-turn reports a cancelled turn, not a failed one', async () 
   await ctx.until(() => ctx.agents.get(ctx.objectiveId) !== undefined)
 
   await ctx.app.inject({
-    method: 'POST',
-    url: `/api/objectives/${ctx.objectiveId}/events`,
-    payload: { type: 'integrate', action: 'discard' },
+    method: 'DELETE',
+    url: `/api/objectives/${ctx.objectiveId}`,
   })
   await ctx.until(() => ctx.events().some((e) => e.type === 'prompt_cancelled'))
 

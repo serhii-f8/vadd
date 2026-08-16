@@ -6,17 +6,10 @@ import { describe, expect, it } from 'vitest'
 import type { PortFactory } from '../src/agent/registry.js'
 import { AgentRegistry } from '../src/agent/registry.js'
 import { createDb, type Db } from '../src/db/client.js'
-import {
-  decisions,
-  evidenceItems,
-  machineSnapshots,
-  objectives,
-  planTasks,
-} from '../src/db/schema.js'
+import { decisions, objectives, planTasks } from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { buildApp } from '../src/http/app.js'
 import { WorkflowRunner } from '../src/workflow/runner.js'
-import { loadSnapshot } from '../src/workflow/store.js'
 import { makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
 import { until } from './fixtures/until.js'
 
@@ -426,6 +419,69 @@ async function seedIntegratingObjectiveWithGreenEvidence() {
   return { app, db, bus, agents, runner, objectiveId, worktreePath }
 }
 
+/**
+ * Drives a fresh objective to `executing` with its execute-task turn
+ * genuinely in flight — unsettled, matching the "non-terminal, mid-turn"
+ * scenario amendment A9's `abandon` exists for. Same pipeline as
+ * `seedIntegratingObjectiveWithGreenEvidence` up to the point `executing`
+ * sends its prompt, but stops there rather than settling it.
+ */
+async function seedExecutingObjective() {
+  const home = withTempHome()
+  const db = createDb(`${home}/vadd.db`)
+  const bus = new EventBus(db)
+  const repo = makeTempRepo()
+  const { factory, promptCalls, queueEvents, settleNext } = queueStubFactory()
+
+  let runner!: WorkflowRunner
+  const agents = new AgentRegistry(db, bus, factory, (objectiveId, emission) => {
+    runner.ingest(objectiveId, emission)
+  })
+  runner = new WorkflowRunner({ db, bus, agents })
+  const app = buildApp({ db, bus, agents, runner })
+
+  const projectId = (
+    await app.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: repo } })
+  ).json().id as string
+  const created = await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/objectives`,
+    payload: { title: 't', goalText: 'g' },
+  })
+  const objectiveId = created.json().id as string
+  const row0 = db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()
+  if (!row0?.worktreePath) throw new Error('expected a worktree path')
+  const worktreePath = row0.worktreePath
+
+  await agents.ensure({ id: objectiveId, worktreePath })
+
+  async function settleFakeTurn(): Promise<void> {
+    settleNext()
+    for (let i = 0; i < 25; i++) await Promise.resolve()
+    await new Promise((r) => setTimeout(r, 0))
+  }
+
+  runner.start(objectiveId)
+  queueEvents([GREEN_STATUS_EVENT], [GREEN_DECISION_EVENT], [GREEN_PLAN_EVENT])
+  runner.send(objectiveId, { type: 'START' })
+  await settleFakeTurn() // explore -> proposing
+  await settleFakeTurn() // propose -> awaitingDecision
+
+  const decision = db.select().from(decisions).all()[0]
+  if (!decision) throw new Error('expected a decisions row before DECIDE')
+  runner.send(objectiveId, { type: 'DECIDE', decisionId: decision.id, optionId: 'a' })
+  await settleFakeTurn() // plan -> awaitingPlanApproval
+
+  runner.send(objectiveId, { type: 'APPROVE_PLAN' })
+  // `checkpoint` is async and `sendPrompt` awaits it, so `executing`'s
+  // execute-task prompt lands a tick after the transition — the same race
+  // `seedIntegratingObjectiveWithGreenEvidence` waits out. Deliberately not
+  // settled: the turn stays in flight, which is the scenario under test.
+  await until(() => promptCalls() >= 4)
+
+  return { app, db, bus, agents, runner, objectiveId, worktreePath }
+}
+
 describe('integrate performs real git work', () => {
   it('refuses from a state the machine will not accept, doing no git work', async () => {
     const { app, objectiveId, worktreePath } = await seedIdleObjective()
@@ -527,32 +583,63 @@ describe('commands the machine refuses', () => {
   })
 })
 
-describe('integrate: discard keeps its M0 meaning', () => {
-  it('removes the worktree and the row without consulting the machine', async () => {
-    const ctx = await withObjective()
-    const res = await command(ctx, { type: 'integrate', action: 'discard' })
-    expect(res.statusCode).toBe(200)
-    expect(ctx.db.select().from(objectives).all()).toHaveLength(0)
+// The destructive delete moved to `DELETE /api/objectives/:id` (amendment
+// A9) — `integrate: discard` is now a machine transition from `integrating`
+// like `commit`/`keep`, and its row-deletion assertions moved with it into
+// `routes-objectives.test.ts`'s `DELETE /api/objectives/:id` describe.
+
+describe('abandon (amendment A9)', () => {
+  it('drives a non-terminal objective to cancelled and keeps every row', async () => {
+    const { app, db, objectiveId, worktreePath } = await seedExecutingObjective()
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'abandon' },
+    })
+    expect(res.statusCode).toBe(202)
+    await until(
+      () =>
+        db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()?.status ===
+        'cancelled',
+    )
+    const row = db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()
+    expect(row).toBeDefined()
+    expect(row?.worktreePath).toBeNull()
+    expect(existsSync(worktreePath)).toBe(false)
   })
 
-  it('discards an objective that has machine rows attached', async () => {
-    // Phase 3's four tables all reference objectives.id with no cascade, so a
-    // discard that deletes only agent_sessions now trips a FOREIGN KEY
-    // violation the moment an objective has ever been driven. Found against
-    // the real server: the worktree was removed and the rows survived, leaving
-    // an objective pointing at a directory that no longer exists.
-    const ctx = await withObjective()
-    await driveToAwaitingDecision(ctx)
-    expect(ctx.db.select().from(decisions).all().length).toBeGreaterThan(0)
-    expect(loadSnapshot(ctx.db, ctx.objectiveId)).not.toBeNull()
+  it('409s on an objective that is already terminal', async () => {
+    const { app, db, objectiveId } = await seedExecutingObjective()
+    await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'abandon' },
+    })
+    await until(
+      () =>
+        db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()?.status ===
+        'cancelled',
+    )
+    const again = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'abandon' },
+    })
+    expect(again.statusCode).toBe(409)
+  })
 
-    const res = await command(ctx, { type: 'integrate', action: 'discard' })
-    expect(res.statusCode).toBe(200)
-    expect(ctx.db.select().from(objectives).all()).toHaveLength(0)
-    expect(ctx.db.select().from(decisions).all()).toHaveLength(0)
-    expect(ctx.db.select().from(machineSnapshots).all()).toHaveLength(0)
-    expect(ctx.db.select().from(planTasks).all()).toHaveLength(0)
-    expect(ctx.db.select().from(evidenceItems).all()).toHaveLength(0)
+  it('does not cancel the in-flight turn meaning of "cancel"', async () => {
+    // A9 keeps `cancel` as M0's turn-cancel. Sending it must not make the
+    // objective terminal — the corpus-recording path depends on this.
+    const { app, db, objectiveId } = await seedExecutingObjective()
+    await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'cancel' },
+    })
+    expect(
+      db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()?.status,
+    ).not.toBe('cancelled')
   })
 })
 

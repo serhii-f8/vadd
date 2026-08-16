@@ -50,10 +50,6 @@ export const api = {
       body: JSON.stringify({ type: 'prompt', ...body }),
     }).then(json<{ ok: boolean }>),
 
-  discard: (objectiveId: string) =>
-    fetch(`/api/objectives/${objectiveId}/events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'integrate', action: 'discard' }),
-    }).then(json<{ ok: boolean }>),
+  deleteObjective: (objectiveId: string) =>
+    fetch(`/api/objectives/${objectiveId}`, { method: 'DELETE' }).then(json<{ ok: boolean }>),
 }

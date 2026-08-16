@@ -51,11 +51,20 @@ export const ObjectiveCommand = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('cancel') }),
   /**
+   * Amendment A9. Spec §7 called this `cancel`; M0 had already spent that name
+   * on cancelling the in-flight *turn*, and the corpus-recording path depends
+   * on the M0 meaning — one word cannot mean both "stop this turn" and
+   * "destroy this objective". `abandon` carries the spec's semantics:
+   * terminal, from any non-terminal state, ending at `cancelled`.
+   */
+  z.object({ type: z.literal('abandon') }),
+  /**
    * `pr` and `merge` are accepted by the schema only so the route can refuse
    * them with a message that says *why* (they are M2, spec §8.1) rather than a
-   * generic union-mismatch 400. `discard` keeps its M0 meaning — stop the
-   * agent, remove the worktree, delete the rows — and never reaches the
-   * machine; `commit` and `keep` are machine transitions.
+   * generic union-mismatch 400. All three of `commit`, `keep` and `discard`
+   * are machine transitions from `integrating`, guarded by `evidenceComplete`;
+   * `discard` means "this was proven and I do not want it", which is why the
+   * rows survive. The destructive delete lives at `DELETE /api/objectives/:id`.
    */
   z.object({
     type: z.literal('integrate'),

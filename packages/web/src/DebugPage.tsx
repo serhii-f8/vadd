@@ -178,11 +178,11 @@ export function DebugPage() {
             disabled={busy || !objective}
             onClick={run(async () => {
               if (!objective) return
-              await api.discard(objective.id)
+              await api.deleteObjective(objective.id)
               setObjective(null)
             })}
           >
-            Discard
+            Delete
           </button>
         </div>
         <div className="flex gap-2">

@@ -10,8 +10,16 @@ import {
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db } from '../../db/client.js'
-import { decisions, evidenceItems, objectives, planTasks, projects } from '../../db/schema.js'
-import { createWorktree } from '../../git/git-manager.js'
+import {
+  agentSessions,
+  decisions,
+  evidenceItems,
+  machineSnapshots,
+  objectives,
+  planTasks,
+  projects,
+} from '../../db/schema.js'
+import { createWorktree, removeWorktree } from '../../git/git-manager.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
 import { resolveVerification } from '../../verification/resolve.js'
 import { runSetup } from '../../verification/setup.js'
@@ -288,6 +296,49 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     }
   })
 
+  /**
+   * The destructive delete. Separate from `integrate: discard`, which since
+   * amendment A9 means "this was proven and I do not want it" and keeps every
+   * row — the evidence is worth keeping even when the code is not.
+   */
+  app.delete<{ Params: { id: string } }>('/api/objectives/:id', async (req, reply) => {
+    const objective = db.select().from(objectives).where(eq(objectives.id, req.params.id)).get()
+    if (!objective) return reply.code(404).send({ error: 'Objective not found' })
+
+    const project = db.select().from(projects).where(eq(projects.id, objective.projectId)).get()
+    if (!project) return reply.code(500).send({ error: 'Objective has no project' })
+
+    // The machine is stopped before the rows go: an actor left running on a
+    // deleted objective would still hold a binding whose next turn writes to
+    // rows that no longer exist.
+    deps.runner?.stop(objective.id)
+    await deps.agents?.stop(objective.id)
+
+    if (objective.worktreePath && objective.branchName) {
+      await removeWorktree(project.repoPath, objective.worktreePath, objective.branchName)
+    }
+    // Every one of these tables has a foreign key on objectives.id with no
+    // cascade, so each must be cleared before the objective row itself or the
+    // delete fails the constraint. `evidence_items` goes first because it also
+    // references `plan_tasks`. Against the real server this list being short by
+    // four tables removed a worktree and then 500'd, leaving a row pointing at
+    // a directory that no longer existed — hence one transaction.
+    db.transaction((tx) => {
+      tx.delete(evidenceItems).where(eq(evidenceItems.objectiveId, objective.id)).run()
+      tx.delete(planTasks).where(eq(planTasks.objectiveId, objective.id)).run()
+      tx.delete(decisions).where(eq(decisions.objectiveId, objective.id)).run()
+      tx.delete(machineSnapshots).where(eq(machineSnapshots.objectiveId, objective.id)).run()
+      tx.delete(agentSessions).where(eq(agentSessions.objectiveId, objective.id)).run()
+      tx.delete(objectives).where(eq(objectives.id, objective.id)).run()
+    })
+    bus.emit({
+      objectiveId: objective.id,
+      type: 'objective_discarded',
+      payload: { id: objective.id },
+    })
+    return reply.code(200).send({ ok: true })
+  })
+
   app.post<{ Params: { id: string } }>('/api/objectives/:id/events', async (req, reply) => {
     const parsed = ObjectiveCommand.safeParse(req.body)
     if (!parsed.success) {
@@ -387,16 +438,53 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       return reply.code(202).send({ ok: true, state: String(actor.getSnapshot().value) })
     }
 
-    // Everything except `prompt`, `cancel` and `integrate` is a machine command.
+    if (parsed.data.type === 'abandon') {
+      const runner = deps.runner
+      if (!runner) return reply.code(500).send({ error: 'Workflow runner is not configured' })
+
+      const project = db.select().from(projects).where(eq(projects.id, objective.projectId)).get()
+      if (!project) return reply.code(500).send({ error: 'Objective has no project' })
+
+      const actor = ensureActor(runner, db, objective.id)
+      const event: WorkflowEvent = { type: 'CANCEL' }
+      // `can()` alone is not enough: it resolves the transition table against
+      // the state *value*, not the actor's runtime status, so a snapshot
+      // resumed from an already-terminal state (`done`/`cancelled`/`failed`)
+      // still reports `can({type:'CANCEL'})` as true — verified by hand, since
+      // the root `on: { CANCEL: '.cancelled' }` transition is defined for
+      // every value including `cancelled` itself. `status === 'done'` is the
+      // actual terminality check.
+      if (actor.getSnapshot().status === 'done' || !actor.getSnapshot().can(event)) {
+        return reply.code(409).send({
+          error: `Cannot abandon from state "${String(actor.getSnapshot().value)}"`,
+        })
+      }
+
+      // Stop the turn before the machine goes terminal, for the same reason
+      // `paused` does: a running prompt on an abandoned objective writes into
+      // rows nobody is watching.
+      if (deps.agents) {
+        await cancelOpenTurn({ db, bus, agents: deps.agents }, objective.id).catch(() => false)
+      }
+      await deps.agents?.stop(objective.id)
+
+      const outcome = await runIntegration({ db, bus }, objective, project, 'discard')
+      if (!outcome.ok) return reply.code(500).send({ error: outcome.message })
+
+      runner.send(objective.id, event)
+      return reply.code(202).send({ ok: true, state: String(actor.getSnapshot().value) })
+    }
+
+    // Everything except `prompt`, `cancel` and `abandon` is a machine command.
     //
     // `cancel` is deliberately NOT among them. M0's `cancel` cancels the
     // in-flight *turn* and is what the hand-driven corpus-recording path uses
-    // to unwedge a slow turn; spec §7's `cancel` in the machine's command list
-    // means abandoning the whole objective, which is terminal. Two different
-    // verbs collided on one name, and mapping this one to the machine's
-    // `CANCEL` would destroy an objective every time a recording session
-    // stopped a turn. The turn meaning is kept; reaching the machine's
-    // `CANCEL` is left to phase 5's Focus View, which has room for both.
+    // to unwedge a slow turn. Amendment A9 gives spec §7's "abandon the whole
+    // objective, terminal" meaning its own name, `abandon`, precisely so it
+    // does not collide with M0's `cancel` — mapping the M0 verb onto the
+    // machine's `CANCEL` would destroy an objective every time a recording
+    // session stopped a turn. `abandon` is handled in its own branch above,
+    // before this one, so it never reaches the generic translator either.
     // (`integrate` is already fully handled above — every action, `discard`
     // included, now goes through the machine — so it cannot reach here; TS
     // narrows it out.)
