@@ -1,0 +1,113 @@
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { eq } from 'drizzle-orm'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { createDb, type Db } from '../src/db/client.js'
+import { objectives } from '../src/db/schema.js'
+import { EventBus } from '../src/events/event-bus.js'
+import { buildApp } from '../src/http/app.js'
+import { makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
+
+let db: Db
+let app: ReturnType<typeof buildApp>
+let repo: string
+let projectId: string
+
+beforeEach(async () => {
+  const home = withTempHome()
+  db = createDb(`${home}/vadd.db`)
+  app = buildApp({ db, bus: new EventBus(db) })
+  repo = makeTempRepo()
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ scripts: { test: 'vitest' } }))
+  projectId = (
+    await app.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: repo } })
+  ).json().id
+})
+
+async function create(payload: Record<string, unknown>) {
+  return app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/objectives`,
+    payload: { title: 't', goalText: 'g', ...payload },
+  })
+}
+
+describe('GET /api/projects/:id/verification', () => {
+  it('previews the detected spec', async () => {
+    const res = await app.inject({ method: 'GET', url: `/api/projects/${projectId}/verification` })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().kind).toBe('resolved')
+    expect(res.json().spec.verify.commands[0].id).toBe('test')
+  })
+
+  it('reports none, naming what was scanned', async () => {
+    const bare = makeTempRepo()
+    const other = (
+      await app.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: bare } })
+    ).json().id
+    const res = await app.inject({ method: 'GET', url: `/api/projects/${other}/verification` })
+    expect(res.json().kind).toBe('none')
+    expect(res.json().scanned).toContain('.')
+  })
+
+  it('404s for an unknown project', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/projects/nope/verification' })
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+describe('resolution at objective creation', () => {
+  it('stores the detected spec on the objective', async () => {
+    const id = (await create({})).json().id
+    const row = db.select().from(objectives).where(eq(objectives.id, id)).get()
+    expect(row?.verificationSpec).toBeTruthy()
+    const spec = row?.verificationSpec as { verify: { commands: { id: string }[] } }
+    expect(spec.verify.commands[0]?.id).toBe('test')
+  })
+
+  it('merges verificationOverrides onto the detected base', async () => {
+    const id = (await create({ verificationOverrides: { verify: { timeoutSec: 30 } } })).json().id
+    const row = db.select().from(objectives).where(eq(objectives.id, id)).get()
+    const spec = row?.verificationSpec as { verify: { timeoutSec: number; commands: unknown[] } }
+    expect(spec.verify.timeoutSec).toBe(30)
+    expect(spec.verify.commands).toHaveLength(1)
+  })
+
+  it('leaves verificationSpec null when nothing resolves, and says so', async () => {
+    const bare = makeTempRepo()
+    const other = (
+      await app.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: bare } })
+    ).json().id
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${other}/objectives`,
+      payload: { title: 't', goalText: 'g' },
+    })
+    expect(res.statusCode).toBe(201)
+    const row = db.select().from(objectives).where(eq(objectives.id, res.json().id)).get()
+    expect(row?.verificationSpec).toBeNull()
+  })
+
+  it('refuses a spec carrying a denied command, and creates nothing', async () => {
+    mkdirSync(join(repo, '.vadd'), { recursive: true })
+    writeFileSync(
+      join(repo, '.vadd', 'config.json'),
+      JSON.stringify({
+        verify: { commands: [{ id: 'evil', run: 'sudo rm -rf /', required: true }] },
+      }),
+    )
+    const res = await create({})
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/evil/)
+    expect(res.json().error).toMatch(/sudo/i)
+    expect(db.select().from(objectives).all()).toHaveLength(0)
+  })
+
+  it('refuses a malformed config, and creates nothing', async () => {
+    mkdirSync(join(repo, '.vadd'), { recursive: true })
+    writeFileSync(join(repo, '.vadd', 'config.json'), '{ not json')
+    const res = await create({})
+    expect(res.statusCode).toBe(400)
+    expect(db.select().from(objectives).all()).toHaveLength(0)
+  })
+})

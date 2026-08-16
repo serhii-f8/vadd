@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { WorkflowEvent } from '@vadd/core'
-import { CreateObjectiveBody, ObjectiveCommand } from '@vadd/core'
+import { assertSpecAllowed, CreateObjectiveBody, ObjectiveCommand } from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db } from '../../db/client.js'
@@ -15,6 +15,7 @@ import {
 } from '../../db/schema.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
+import { resolveVerification } from '../../verification/resolve.js'
 import type { WorkflowRunner } from '../../workflow/runner.js'
 import { loadSnapshot } from '../../workflow/store.js'
 import { cancelOpenTurn, renderTurnPrompt, runTurn, TurnRejected } from '../../workflow/turn.js'
@@ -144,6 +145,15 @@ function toWorkflowEvent(
 export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, bus } = deps
 
+  // Spec §6's resolution, previewed before an objective exists — phase 5's
+  // confirm/edit step reads this. Scans `repoPath`, the same input creation
+  // uses (design §4.2), so the preview and the stored result cannot disagree.
+  app.get<{ Params: { id: string } }>('/api/projects/:id/verification', async (req, reply) => {
+    const project = db.select().from(projects).where(eq(projects.id, req.params.id)).get()
+    if (!project) return reply.code(404).send({ error: 'Project not found' })
+    return resolveVerification(project.repoPath, null)
+  })
+
   app.post<{ Params: { id: string } }>('/api/projects/:id/objectives', async (req, reply) => {
     const parsed = CreateObjectiveBody.safeParse(req.body)
     if (!parsed.success) {
@@ -158,6 +168,25 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     const path = worktreePathFor(project.id, id)
     const branch = branchNameFor(id)
 
+    // Design §4.2: resolve against repoPath *before* anything is created, and
+    // assert the command policy against the worktree path we are about to use.
+    // A denial or a malformed config must cost the user nothing.
+    const resolution = resolveVerification(
+      project.repoPath,
+      parsed.data.verificationOverrides ?? null,
+    )
+    if (resolution.kind === 'invalid') {
+      return reply.code(400).send({ error: `Verification spec rejected: ${resolution.reason}` })
+    }
+    if (resolution.kind === 'resolved') {
+      const allowed = assertSpecAllowed(resolution.spec, path)
+      if (!allowed.allowed) {
+        return reply.code(400).send({
+          error: `Verification command '${allowed.commandId}' rejected: ${allowed.reason}`,
+        })
+      }
+    }
+
     // DB-first: a crash after this insert leaves a visible 'creating' row that
     // boot reconciliation (Task 12) can clean up, not an orphan directory.
     db.insert(objectives)
@@ -170,15 +199,23 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
         branchName: null,
         status: 'creating',
         mode: parsed.data.mode,
-        // Spec §6's per-objective override. Null means unresolved, which
-        // `evidenceComplete` treats as "not proven" — never as trivially green.
-        verificationSpec: parsed.data.verificationOverrides ?? null,
+        // Null stays null: `evidenceComplete` treats an unresolved spec as
+        // "not proven", never as trivially green.
+        verificationSpec: resolution.kind === 'resolved' ? resolution.spec : null,
         lowEnergy: false,
         setupAt: null,
         createdAt: now,
         updatedAt: now,
       })
       .run()
+
+    if (resolution.kind === 'none') {
+      bus.emit({
+        objectiveId: id,
+        type: 'verification_unresolved',
+        payload: { scanned: resolution.scanned },
+      })
+    }
 
     try {
       await createWorktree(project.repoPath, path, branch)
