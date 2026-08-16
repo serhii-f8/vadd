@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createDb, type Db } from '../src/db/client.js'
 import {
+  agentSessions,
   decisions,
   evidenceItems,
   machineSnapshots,
@@ -12,6 +13,7 @@ import {
   planTasks,
   projects,
 } from '../src/db/schema.js'
+import { withTempHome } from './fixtures/temp-repo.js'
 
 let home: string
 let db: Db
@@ -185,5 +187,113 @@ describe('phase 4 migration', () => {
       .run()
     const row = db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()
     expect(row?.status).toBe('setup_failed')
+  })
+})
+
+describe('amendment A8 columns', () => {
+  it('stores baseSha and integrateAction on an objective', () => {
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const now = new Date().toISOString()
+    db.insert(projects)
+      .values({ id: 'p1', name: 'p', repoPath: '/tmp/p', config: {}, createdAt: now })
+      .run()
+    db.insert(objectives)
+      .values({
+        id: 'o1',
+        projectId: 'p1',
+        title: 't',
+        goalText: 'g',
+        status: 'idle',
+        baseSha: 'deadbeef',
+        integrateAction: 'commit',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run()
+    const row = db.select().from(objectives).where(eq(objectives.id, 'o1')).get()
+    expect(row?.baseSha).toBe('deadbeef')
+    expect(row?.integrateAction).toBe('commit')
+  })
+
+  it('defaults both to null', () => {
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const now = new Date().toISOString()
+    db.insert(projects)
+      .values({ id: 'p1', name: 'p', repoPath: '/tmp/p', config: {}, createdAt: now })
+      .run()
+    db.insert(objectives)
+      .values({
+        id: 'o1',
+        projectId: 'p1',
+        title: 't',
+        goalText: 'g',
+        status: 'idle',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run()
+    const row = db.select().from(objectives).where(eq(objectives.id, 'o1')).get()
+    expect(row?.baseSha).toBeNull()
+    expect(row?.integrateAction).toBeNull()
+  })
+
+  it('rejects an integrateAction outside the enum', () => {
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const now = new Date().toISOString()
+    db.insert(projects)
+      .values({ id: 'p1', name: 'p', repoPath: '/tmp/p', config: {}, createdAt: now })
+      .run()
+    expect(() =>
+      db
+        .insert(objectives)
+        .values({
+          id: 'o1',
+          projectId: 'p1',
+          title: 't',
+          goalText: 'g',
+          status: 'idle',
+          // biome-ignore lint/suspicious/noExplicitAny: proving the CHECK exists
+          integrateAction: 'merge' as any,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run(),
+    ).toThrow()
+  })
+
+  it('stores a childPid on an agent session', () => {
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const now = new Date().toISOString()
+    db.insert(projects)
+      .values({ id: 'p1', name: 'p', repoPath: '/tmp/p', config: {}, createdAt: now })
+      .run()
+    db.insert(objectives)
+      .values({
+        id: 'o1',
+        projectId: 'p1',
+        title: 't',
+        goalText: 'g',
+        status: 'idle',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run()
+    db.insert(agentSessions)
+      .values({
+        id: 's1',
+        objectiveId: 'o1',
+        acpSessionId: 'acp-1',
+        status: 'running',
+        childPid: 4242,
+        startedAt: now,
+      })
+      .run()
+    expect(db.select().from(agentSessions).where(eq(agentSessions.id, 's1')).get()?.childPid).toBe(
+      4242,
+    )
   })
 })

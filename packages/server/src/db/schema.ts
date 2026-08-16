@@ -18,6 +18,9 @@ export const projects = sqliteTable('projects', {
  * fails at the first insert. `setup_failed` (phase 4) is the same kind of thing
  * for a worktree whose A1 `setup` commands failed.
  */
+/** Amendment A8's `integrateAction` values (spec §7's `integrate` command). */
+export const INTEGRATE_ACTIONS = ['commit', 'keep', 'discard'] as const
+
 export const OBJECTIVE_STATUSES = [
   'creating',
   /**
@@ -66,6 +69,20 @@ export const objectives = sqliteTable(
     goalText: text('goal_text').notNull(),
     worktreePath: text('worktree_path'),
     branchName: text('branch_name'),
+    /**
+     * Amendment A8: the sha the worktree branched from, resolved immediately
+     * before `git worktree add`. Both `/diff` and `integrate: commit`'s squash
+     * mean "since this objective started", and nothing else records where it
+     * started. Null for rows created before this migration, and for the window
+     * between the `creating` insert and the worktree existing.
+     */
+    baseSha: text('base_sha'),
+    /**
+     * Amendment A8. The integration choice, so a `done` objective whose work
+     * was discarded is distinguishable from one whose work was committed
+     * without replaying the event log per row.
+     */
+    integrateAction: text('integrate_action', { enum: INTEGRATE_ACTIONS }),
     status: text('status').notNull(),
     /** D1's two paths. Fast Fix skips proposing/awaitingDecision, never verification. */
     mode: text('mode', { enum: ['standard', 'fastfix'] })
@@ -90,6 +107,13 @@ export const objectives = sqliteTable(
         sql`, `,
       )})`,
     ),
+    check(
+      'objectives_integrate_action_check',
+      sql`${t.integrateAction} in (${sql.join(
+        INTEGRATE_ACTIONS.map((a) => sql`${a}`),
+        sql`, `,
+      )})`,
+    ),
   ],
 )
 
@@ -100,6 +124,11 @@ export const agentSessions = sqliteTable('agent_sessions', {
     .references(() => objectives.id),
   acpSessionId: text('acp_session_id').notNull(),
   status: text('status').notNull(),
+  /**
+   * Amendment A8: the adapter child's pid, so `reconcileOnBoot` can kill an
+   * orphan left by a `kill -9` (design §12). Null until the child is spawned.
+   */
+  childPid: integer('child_pid'),
   startedAt: text('started_at').notNull(),
   endedAt: text('ended_at'),
 })
