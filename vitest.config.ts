@@ -19,7 +19,10 @@ export default defineConfig({
       {
         test: {
           name: 'web',
-          include: ['packages/web/test/**/*.test.tsx'],
+          // Both extensions: a `.test.ts` here (a pure-logic helper test with
+          // no JSX) was silently uncollected, and an uncollected suite is green
+          // by not running.
+          include: ['packages/web/test/**/*.test.{ts,tsx}'],
           environment: 'jsdom',
           setupFiles: ['packages/web/test/setup.ts'],
         },

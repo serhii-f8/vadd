@@ -1,8 +1,8 @@
-import type { MachineStateName } from '@vadd/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { type Aggregate, api } from '../api.js'
 import { EvidencePanel } from '../evidence/EvidencePanel.js'
+import { ClarificationPrompt } from '../focus/ClarificationPrompt.js'
 import { DecisionCard } from '../focus/DecisionCard.js'
 import { IntegrationChooser } from '../focus/IntegrationChooser.js'
 import { LiveTask } from '../focus/LiveTask.js'
@@ -12,7 +12,15 @@ import { primaryElementFor } from '../focus/primary.js'
 export function FocusView() {
   const { id } = useParams<{ id: string }>()
   const [aggregate, setAggregate] = useState<Aggregate | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  /**
+   * Two error kinds, deliberately separate. A load or stream error is transient
+   * and must clear the moment the next fetch succeeds; a refused command stays
+   * refused, and clearing it on the refetch the same handler fires would erase
+   * the only thing telling the user why. Only the next command clears that one.
+   */
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [commandError, setCommandError] = useState<string | null>(null)
+  const error = commandError ?? loadError
   /** Guards against a refetch storm when events arrive faster than the fetch. */
   const inFlight = useRef(false)
   const pending = useRef(false)
@@ -26,8 +34,9 @@ export function FocusView() {
     inFlight.current = true
     try {
       setAggregate(await api.getObjective(id))
+      setLoadError(null)
     } catch (e) {
-      setError((e as Error).message)
+      setLoadError((e as Error).message)
     } finally {
       inFlight.current = false
       if (pending.current) {
@@ -49,16 +58,19 @@ export function FocusView() {
     if (!id) return
     const es = new EventSource(`/api/events?objectiveId=${id}`)
     es.onmessage = () => {
+      // An event arriving *is* the connection working. `EventSource` reconnects
+      // on its own, so a banner left up after the blip is a lie.
+      setLoadError(null)
       void refetch()
     }
-    es.onerror = () => setError('SSE connection lost — retrying')
+    es.onerror = () => setLoadError('SSE connection lost — retrying')
     return () => es.close()
   }, [id, refetch])
 
   const onCommand = useCallback(
     async (body: Record<string, unknown>) => {
       if (!id) return
-      setError(null)
+      setCommandError(null)
       try {
         await api.command(id, body)
       } catch (e) {
@@ -66,7 +78,7 @@ export function FocusView() {
         // which names the state, verbatim — it's the only thing telling the
         // user *why* the command was refused, and trimming it would cost a
         // screen-reader user (who reaches the alert on its own) the reason.
-        setError((e as Error).message)
+        setCommandError((e as Error).message)
       }
       // Refetch unconditionally, success or failure. A successful command
       // does cause the machine to transition (and that transition's own SSE
@@ -91,7 +103,7 @@ export function FocusView() {
     )
   }
 
-  const state = aggregate.state as MachineStateName
+  const state = aggregate.state
   const primary = primaryElementFor(state)
   const terminal = primary === 'outcome'
   const decision = aggregate.decisions.find((d) => d.chosenId === null) ?? aggregate.decisions[0]
@@ -137,8 +149,25 @@ export function FocusView() {
         </p>
       )}
 
-      {primary === 'decision' && decision !== undefined && (
+      {/* Both are 'decision', and they are not interchangeable: a clarification
+          never writes a `decisions` row, so `clarifying` has to be told apart
+          by state rather than by whether a row happens to be present. */}
+      {primary === 'decision' && state === 'clarifying' && (
+        <ClarificationPrompt
+          question={aggregate.pendingClarification}
+          onCommand={(b) => void onCommand(b)}
+        />
+      )}
+      {primary === 'decision' && state !== 'clarifying' && decision !== undefined && (
         <DecisionCard decision={decision} onCommand={(b) => void onCommand(b)} />
+      )}
+      {primary === 'setup' && (
+        <section>
+          <h2 className="text-lg font-medium">Setting up</h2>
+          <p className="text-sm text-gray-600">
+            Installing this objective's dependencies in its worktree. Nothing to do yet.
+          </p>
+        </section>
       )}
       {primary === 'plan' && (
         <PlanApproval tasks={aggregate.tasks} onCommand={(b) => void onCommand(b)} />

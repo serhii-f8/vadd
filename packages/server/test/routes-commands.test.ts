@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import type { AgentEvent } from '@vadd/core'
 import { eq } from 'drizzle-orm'
@@ -6,7 +7,13 @@ import { describe, expect, it } from 'vitest'
 import type { PortFactory } from '../src/agent/registry.js'
 import { AgentRegistry } from '../src/agent/registry.js'
 import { createDb, type Db } from '../src/db/client.js'
-import { decisions, objectives, planTasks } from '../src/db/schema.js'
+import {
+  decisions,
+  evidenceItems,
+  machineSnapshots,
+  objectives,
+  planTasks,
+} from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { buildApp } from '../src/http/app.js'
 import { WorkflowRunner } from '../src/workflow/runner.js'
@@ -336,13 +343,32 @@ function queueStubFactory() {
 }
 
 /**
- * Drives a fresh objective all the way to `integrating` with a full green
- * evidence set, through the real turn/collector/machine pipeline — the same
- * path `workflow-verification.test.ts` uses to reach `integrating`, just
- * wired to this file's real HTTP app so the route under test sees the same
- * live actor and the same `baseSha` a real worktree creation stamps.
+ * Satisfies `verify.md`'s `expects` *and* the guard: naming a declared check id
+ * is what makes `recordEvidence` set `commandId` (amendment A6).
  */
-async function seedIntegratingObjectiveWithGreenEvidence() {
+const GREEN_CHECK_CLAIM: AgentEvent[] = [
+  {
+    type: 'evidence',
+    kind: 'check',
+    status: 'pass',
+    headline: 'Redirect reproduced and fixed',
+    summary: [],
+    checkId: 'check-0',
+  },
+]
+
+/**
+ * Drives a fresh objective to `awaitingReview` with a full green evidence set,
+ * through the real turn/collector/machine pipeline — the same path
+ * `workflow-verification.test.ts` uses, just wired to this file's real HTTP app
+ * so the route under test sees the same live actor and the same `baseSha` a
+ * real worktree creation stamps.
+ *
+ * With `checks`, `verifying` takes a verify turn as well, and the batch that
+ * answers it is queued up front: the collector is a real subprocess, so the
+ * verify prompt lands at an unpredictable moment and a later push could miss it.
+ */
+async function seedAwaitingReviewWithGreenEvidence(checks: string[] = []) {
   const home = withTempHome()
   const db = createDb(`${home}/vadd.db`)
   const bus = new EventBus(db)
@@ -368,7 +394,7 @@ async function seedIntegratingObjectiveWithGreenEvidence() {
       // A command that always passes, so the collector's real subprocess run
       // produces a green `evidence_items` row with `commandId: 'test'`.
       verificationOverrides: {
-        verify: { commands: [{ id: 'test', run: 'exit 0', required: true }] },
+        verify: { commands: [{ id: 'test', run: 'exit 0', required: true }], checks },
       },
     },
   })
@@ -394,6 +420,7 @@ async function seedIntegratingObjectiveWithGreenEvidence() {
     [GREEN_PLAN_EVENT],
     GREEN_EXECUTE_TASK_OK,
   )
+  if (checks.length > 0) queueEvents(GREEN_CHECK_CLAIM)
   runner.send(objectiveId, { type: 'START' })
   await settleFakeTurn() // explore -> proposing
   await settleFakeTurn() // propose -> awaitingDecision
@@ -409,14 +436,26 @@ async function seedIntegratingObjectiveWithGreenEvidence() {
   await until(() => promptCalls() >= 4)
   await settleFakeTurn() // execute-task -> verifying, which invokes the collector
 
+  if (checks.length > 0) {
+    // The verify turn only exists when the spec has checks, and it lands after
+    // the collector's real subprocess finishes.
+    await until(() => promptCalls() >= 5, 10_000)
+    await settleFakeTurn()
+  }
+
   // The collector runs a real subprocess, so the run to `awaitingReview`
   // finishes on its own time rather than on a settled prompt.
   await until(() => stateOf() === 'awaitingReview', 10_000)
 
-  runner.send(objectiveId, { type: 'APPROVE_TASK' })
-  await until(() => stateOf() === 'integrating')
+  return { app, db, bus, agents, runner, repo, objectiveId, worktreePath, stateOf }
+}
 
-  return { app, db, bus, agents, runner, objectiveId, worktreePath }
+/** As above, one `APPROVE_TASK` further on: the state the `integrate` route needs. */
+async function seedIntegratingObjectiveWithGreenEvidence() {
+  const seeded = await seedAwaitingReviewWithGreenEvidence()
+  seeded.runner.send(seeded.objectiveId, { type: 'APPROVE_TASK' })
+  await until(() => seeded.stateOf() === 'integrating')
+  return seeded
 }
 
 /**
@@ -462,7 +501,15 @@ async function seedExecutingObjective() {
   }
 
   runner.start(objectiveId)
-  queueEvents([GREEN_STATUS_EVENT], [GREEN_DECISION_EVENT], [GREEN_PLAN_EVENT])
+  // The fourth batch answers the execute-task turn that is deliberately left in
+  // flight. It exists so there is a real `evidence_items` row to survive the
+  // abandon — A9 keeps the evidence precisely when the code is thrown away.
+  queueEvents(
+    [GREEN_STATUS_EVENT],
+    [GREEN_DECISION_EVENT],
+    [GREEN_PLAN_EVENT],
+    [{ type: 'evidence', kind: 'test', status: 'fail', headline: 'Still red', summary: [] }],
+  )
   runner.send(objectiveId, { type: 'START' })
   await settleFakeTurn() // explore -> proposing
   await settleFakeTurn() // propose -> awaitingDecision
@@ -475,9 +522,15 @@ async function seedExecutingObjective() {
   runner.send(objectiveId, { type: 'APPROVE_PLAN' })
   // `checkpoint` is async and `sendPrompt` awaits it, so `executing`'s
   // execute-task prompt lands a tick after the transition — the same race
-  // `seedIntegratingObjectiveWithGreenEvidence` waits out. Deliberately not
-  // settled: the turn stays in flight, which is the scenario under test.
+  // `seedAwaitingReviewWithGreenEvidence` waits out. Deliberately not settled:
+  // the turn stays in flight, which is the scenario under test.
   await until(() => promptCalls() >= 4)
+  // The evidence event travels the whole pipeline before it is a row.
+  await until(
+    () =>
+      db.select().from(evidenceItems).where(eq(evidenceItems.objectiveId, objectiveId)).all()
+        .length > 0,
+  )
 
   return { app, db, bus, agents, runner, objectiveId, worktreePath }
 }
@@ -508,6 +561,82 @@ describe('integrate performs real git work', () => {
     )
     const row = db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()
     expect(row?.integrateAction).toBe('keep')
+  })
+
+  /**
+   * `can({type:'INTEGRATE'})` is unconditionally true from `integrating` —
+   * the transition is an array whose last branch is unguarded — so it says
+   * nothing about the evidence. The route has to evaluate `evidenceComplete`
+   * itself, *before* the git work: `commit` squashes and removes the worktree,
+   * and reporting that as success on an unproven objective is the exact lie
+   * spec §5 exists to prevent.
+   */
+  it('refuses an incomplete evidence set without touching the worktree or branch', async () => {
+    const { app, db, repo, objectiveId, worktreePath } =
+      await seedIntegratingObjectiveWithGreenEvidence()
+    const branch = db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()
+      ?.branchName as string
+
+    // The set going red between review and integration: exactly what
+    // `integrating`'s own EVIDENCE_RESULT handler exists for.
+    db.update(evidenceItems)
+      .set({ status: 'fail' })
+      .where(eq(evidenceItems.commandId, 'test'))
+      .run()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'integrate', action: 'commit' },
+    })
+    expect(res.statusCode).toBe(409)
+    // The status code alone would pass against the broken version too: what
+    // makes this test worth anything is that no destructive work happened.
+    expect(existsSync(worktreePath)).toBe(true)
+    expect(execFileSync('git', ['-C', repo, 'branch', '--list', branch]).toString()).toContain(
+      branch,
+    )
+    expect(db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()?.status).toBe(
+      'integrating',
+    )
+  })
+
+  /**
+   * The manual untick sends no `EVIDENCE_RESULT`, so the machine's
+   * `context.evidence` still holds the green snapshot taken in `verifying`.
+   * Reading the evidence from the database at integration time is what makes
+   * the user's own "this is not met" reach the guard — "done means proven, not
+   * claimed" applied to the one control the user drives by hand.
+   */
+  it('refuses to integrate a check the user has unticked', async () => {
+    const seeded = await seedAwaitingReviewWithGreenEvidence(['The redirect works'])
+    const { app, db, objectiveId, worktreePath } = seeded
+
+    const untick = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'tick_check', checkId: 'check-0', satisfied: false },
+    })
+    expect(untick.statusCode).toBe(202)
+
+    const approve = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'approve_task' },
+    })
+    expect(approve.statusCode).toBe(202)
+    await until(() => seeded.stateOf() === 'integrating')
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'integrate', action: 'commit' },
+    })
+    expect(res.statusCode).toBe(409)
+    expect(existsSync(worktreePath)).toBe(true)
+    expect(db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()?.status).toBe(
+      'integrating',
+    )
   })
 
   it('leaves the objective in integrating when the git work fails', async () => {
@@ -606,6 +735,23 @@ describe('abandon (amendment A9)', () => {
     expect(row).toBeDefined()
     expect(row?.worktreePath).toBeNull()
     expect(existsSync(worktreePath)).toBe(false)
+
+    // Survival across all five tables is A9's whole distinction from DELETE,
+    // whose mirror test asserts these four are empty. `seedExecutingObjective`
+    // drives the real machine through a decision and a plan, so they exist.
+    const where = eq(decisions.objectiveId, objectiveId)
+    expect(db.select().from(decisions).where(where).all().length).toBeGreaterThan(0)
+    expect(
+      db.select().from(planTasks).where(eq(planTasks.objectiveId, objectiveId)).all().length,
+    ).toBeGreaterThan(0)
+    expect(
+      db.select().from(evidenceItems).where(eq(evidenceItems.objectiveId, objectiveId)).all()
+        .length,
+    ).toBeGreaterThan(0)
+    expect(
+      db.select().from(machineSnapshots).where(eq(machineSnapshots.objectiveId, objectiveId)).all()
+        .length,
+    ).toBeGreaterThan(0)
   })
 
   it('409s on an objective that is already terminal', async () => {
@@ -671,6 +817,28 @@ describe('GET /api/objectives/:id', () => {
     expect(body.tasks[0].title).toBe('Write a failing test')
     expect(body.decisions).toEqual([])
     expect(body.evidence).toEqual([])
+  })
+
+  // A clarification writes no `decisions` row — the question exists only in the
+  // machine's context, so without this field `clarifying` has nothing to show.
+  it('exposes the open clarification question from the live actor', async () => {
+    const ctx = await withObjective()
+    await command(ctx, { type: 'start' })
+    ctx.runner.send(ctx.objectiveId, {
+      type: 'CLARIFICATION',
+      event: {
+        type: 'clarification',
+        question: 'Which environment does the redirect break in?',
+        suggestedAnswers: ['staging', 'production'],
+      },
+    })
+    ctx.runner.send(ctx.objectiveId, { type: 'TURN_FINISHED' })
+
+    const body = (
+      await ctx.app.inject({ method: 'GET', url: `/api/objectives/${ctx.objectiveId}` })
+    ).json()
+    expect(body.state).toBe('clarifying')
+    expect(body.pendingClarification).toBe('Which environment does the redirect break in?')
   })
 
   it('still 404s for an unknown objective', async () => {

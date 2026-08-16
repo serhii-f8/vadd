@@ -312,8 +312,13 @@ async function rollbackEffect(
  * Check rows are scoped to the **epoch** instead, so a user's manual tick
  * survives a re-verify while commands are re-proven every time. The most recent
  * row per `checkId` wins, which is what makes an untick supersede a tick.
+ *
+ * Exported because the `integrate` route needs it too: the machine's
+ * `context.evidence` is the snapshot taken in `verifying`, and a manual untick
+ * afterwards sends no `EVIDENCE_RESULT`. Re-reading the table is what makes the
+ * user's own "this is not met" reach the guard before any git work happens.
  */
-function currentEvidence(
+export function currentEvidence(
   db: Db,
   objectiveId: string,
   context: WorkflowContext,

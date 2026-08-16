@@ -74,6 +74,22 @@ describe('FocusView mirroring (spec §7: no client-side transitions)', () => {
     // the view mirrors the server, it does not predict it.
     expect(within(screen.getByRole('alert')).getByText(/executing/)).toBeTruthy()
   })
+
+  it('clears the stream banner once the stream recovers', async () => {
+    mockFetch({ 'GET /api/objectives/o1': { body: aggregate({ state: 'executing' }) } })
+    renderFocus()
+    await screen.findByText(/executing/)
+
+    // `EventSource` reconnects natively, so a banner that outlives the blip is
+    // a permanent lie about a connection that is fine.
+    FakeEventSource.instances[0]?.onerror?.()
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain('SSE connection lost'),
+    )
+
+    FakeEventSource.instances[0]?.push({ id: 1, objectiveId: 'o1', type: 'agent_event' })
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
 })
 
 describe('FocusView primary element by state', () => {
@@ -271,6 +287,72 @@ describe('FocusView primary element by state', () => {
     renderFocus()
     await userEvent.click(await screen.findByRole('button', { name: /abandon/i }))
     expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ type: 'abandon' })
+  })
+
+  // Neither of these is a machine state: both come from the `objectives.status`
+  // column the aggregate falls back to when no actor is live. Rendering nothing
+  // (or throwing) would hide the setup log `setup_failed` exists to preserve.
+  it('renders a setting-up element in creating rather than throwing', async () => {
+    mockFetch({
+      'GET /api/objectives/o1': {
+        body: aggregate({
+          state: 'creating',
+          objective: { ...aggregate().objective, status: 'creating' },
+        }),
+      },
+    })
+    renderFocus()
+    expect(await screen.findByText(/setting up/i)).toBeTruthy()
+  })
+
+  it('renders the failure evidence read-only in setup_failed', async () => {
+    mockFetch({
+      'GET /api/objectives/o1': {
+        body: aggregate({
+          state: 'setup_failed',
+          objective: { ...aggregate().objective, status: 'setup_failed' },
+          evidence: [
+            {
+              id: 'e1',
+              commandId: null,
+              kind: 'build',
+              status: 'fail',
+              headline: 'composer install failed',
+              summary: [],
+              artifactPath: '/tmp/setup.log',
+              decidedBy: null,
+              createdAt: '2026-08-16T10:00:00.000Z',
+            },
+          ],
+        }),
+      },
+      'GET /api/objectives/o1/diff': {
+        body: { files: [], totals: { files: 0, added: 0, removed: 0 } },
+      },
+    })
+    renderFocus()
+    expect(await screen.findByText('composer install failed')).toBeTruthy()
+  })
+
+  it('shows the pending clarification and posts the typed answer', async () => {
+    const { calls } = mockFetch({
+      'GET /api/objectives/o1': {
+        body: aggregate({
+          state: 'clarifying',
+          pendingClarification: 'Which environment does the redirect break in?',
+        }),
+      },
+      'POST /api/objectives/o1/events': { status: 202, body: { ok: true } },
+    })
+    renderFocus()
+    expect(await screen.findByText(/Which environment does the redirect break in\?/)).toBeTruthy()
+
+    await userEvent.type(screen.getByRole('textbox'), 'staging')
+    await userEvent.click(screen.getByRole('button', { name: /answer/i }))
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({
+      type: 'answer_clarification',
+      answer: 'staging',
+    })
   })
 
   it('shows the outcome read-only in a terminal state', async () => {

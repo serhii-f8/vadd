@@ -51,4 +51,12 @@ describe('primaryElementFor', () => {
     expect(primaryElementFor('idle')).toBe('resume')
     expect(primaryElementFor('paused')).toBe('resume')
   })
+
+  // `GET /api/objectives/:id` falls back to the `objectives.status` column when
+  // no live actor exists, and that column carries two values the machine never
+  // holds. They reach this function exactly as any other state does.
+  it('maps the two objective statuses that are not machine states', () => {
+    expect(primaryElementFor('creating')).toBe('setup')
+    expect(primaryElementFor('setup_failed')).toBe('outcome')
+  })
 })

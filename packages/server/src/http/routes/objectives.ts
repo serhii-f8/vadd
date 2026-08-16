@@ -3,6 +3,7 @@ import type { WorkflowEvent } from '@vadd/core'
 import {
   assertSpecAllowed,
   CreateObjectiveBody,
+  evidenceComplete,
   normalizeChecks,
   ObjectiveCommand,
   VerificationSpec,
@@ -24,6 +25,7 @@ import { createWorktree, removeWorktree } from '../../git/git-manager.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
 import { resolveVerification } from '../../verification/resolve.js'
 import { runSetup } from '../../verification/setup.js'
+import { currentEvidence } from '../../workflow/effects.js'
 import { runIntegration } from '../../workflow/integrate.js'
 import type { WorkflowRunner } from '../../workflow/runner.js'
 import { loadSnapshot } from '../../workflow/store.js'
@@ -293,6 +295,10 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     return {
       objective: row,
       state: actor ? String(actor.getSnapshot().value) : row.status,
+      // A clarification writes no `decisions` row — the question lives only in
+      // the machine's context, so `clarifying` has nothing to render without
+      // this. No live actor means no question to show.
+      pendingClarification: actor ? actor.getSnapshot().context.pendingClarification : null,
       tasks: db
         .select()
         .from(planTasks)
@@ -464,6 +470,26 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
           .send({ error: `Cannot integrate from state "${String(actor.getSnapshot().value)}"` })
       }
 
+      // `can()` answers "does a transition exist", never "did the guard pass" —
+      // and `integrating`'s INTEGRATE is an array whose last branch is
+      // unguarded, so it is true from `integrating` whatever the evidence says.
+      // The real guard has to be evaluated here, *before* the git work:
+      // `commit` squashes and removes the worktree and `discard` force-deletes
+      // the branch, and doing either on an unproven objective and answering 2xx
+      // is destructive work reported as success.
+      //
+      // Read from the table rather than from `context.evidence`, which is the
+      // snapshot `verifying` took: a manual untick since then sends no
+      // `EVIDENCE_RESULT`, so the context alone would never learn of it.
+      const context = actor.getSnapshot().context
+      if (!evidenceComplete(context.verificationSpec, currentEvidence(db, objective.id, context))) {
+        return reply.code(409).send({
+          error:
+            'The evidence set is not complete, so this objective cannot reach done. ' +
+            'Every required command must pass and every check must be satisfied.',
+        })
+      }
+
       // The git work happens here, between the guard check and the send. A
       // failure must claim nothing: the objective stays in `integrating` and
       // the user can retry. Doing this inside `finishObjective` instead would
@@ -486,7 +512,19 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       }
 
       runner.send(objective.id, event)
-      return reply.code(202).send({ ok: true, state: String(actor.getSnapshot().value) })
+      // Assert the outcome rather than assuming it. The machine re-evaluates
+      // `evidenceComplete` against its *own* context, which the checks above
+      // cannot speak for, and its unguarded fallback is `paused` — a silent
+      // `{ok:true}` there would report an objective as done that is not.
+      const settled = String(actor.getSnapshot().value)
+      if (settled !== 'done') {
+        return reply.code(409).send({
+          error:
+            `The "${action}" git work completed, but the objective settled in ` +
+            `"${settled}" rather than done. Resume and integrate again to finish.`,
+        })
+      }
+      return reply.code(202).send({ ok: true, state: settled })
     }
 
     if (parsed.data.type === 'abandon') {

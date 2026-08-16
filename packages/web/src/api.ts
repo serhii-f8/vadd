@@ -1,4 +1,5 @@
 import type { EvidenceRow } from './evidence/group.js'
+import type { ViewStateName } from './focus/primary.js'
 
 export type Project = { id: string; name: string; repoPath: string }
 
@@ -49,10 +50,16 @@ export type Decision = {
 /** `GET /api/objectives/:id` — spec §7's full aggregate. The only source of view state. */
 export type Aggregate = {
   objective: Objective
-  state: string
+  state: ViewStateName
   tasks: PlanTask[]
   decisions: Decision[]
   evidence: EvidenceRow[]
+  /**
+   * The open clarifying question, read from the live actor's context. A
+   * clarification writes no `decisions` row — this is the only place it exists,
+   * and without it `clarifying` is a dead end with nothing on screen.
+   */
+  pendingClarification: string | null
 }
 
 export type DiffFile = {

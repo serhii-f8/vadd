@@ -38,8 +38,8 @@ export function DiffList({ objectiveId }: { objectiveId: string }) {
   return (
     <section aria-label="Changed files" className="mt-4">
       <h3 className="text-sm font-medium">
-        {summary.totals.files} files changed ({summary.totals.added} added, {summary.totals.removed}{' '}
-        removed)
+        {summary.totals.files} file{summary.totals.files === 1 ? '' : 's'} changed (
+        {summary.totals.added} added, {summary.totals.removed} removed)
       </h3>
       <ul className="mt-2 divide-y text-sm">
         {summary.files.map((f) => (

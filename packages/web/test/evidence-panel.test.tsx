@@ -37,6 +37,7 @@ function agg(evidenceRows: unknown[], over: Record<string, unknown> = {}): Aggre
     tasks: [],
     decisions: [],
     evidence: evidenceRows,
+    pendingClarification: null,
     ...over,
   } as Aggregate
 }
@@ -190,6 +191,19 @@ describe('DiffList inside the panel', () => {
     expect(screen.getByText(/\+12/)).toBeTruthy()
     expect(screen.getByText(/−3|-3/)).toBeTruthy()
     expect(screen.queryByTestId('file-diff')).toBeNull()
+  })
+
+  it('says "1 file changed", not "1 files changed"', async () => {
+    mockFetch({
+      'GET /api/objectives/o1/diff': {
+        body: {
+          files: [{ path: 'app/Auth.php', added: 12, removed: 3, committed: true, dirty: false }],
+          totals: { files: 1, added: 12, removed: 3 },
+        },
+      },
+    })
+    render(<EvidencePanel aggregate={agg([])} onCommand={() => undefined} />)
+    expect(await screen.findByText(/1 file changed/)).toBeTruthy()
   })
 
   it('fetches and shows a file diff on click', async () => {
