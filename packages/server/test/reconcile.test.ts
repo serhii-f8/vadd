@@ -1,12 +1,15 @@
+import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { expect, test } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { describe, expect, it, test } from 'vitest'
 import { reconcileOnBoot } from '../src/boot/reconcile.js'
 import { createDb } from '../src/db/client.js'
 import { agentSessions, objectives, projects } from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { createWorktree, listWorktrees } from '../src/git/git-manager.js'
 import { worktreePathFor } from '../src/paths.js'
-import { makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
+import { makeObjectiveRow, makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
+import { until } from './fixtures/until.js'
 
 function seed() {
   withTempHome()
@@ -148,4 +151,91 @@ test('reconciliation emits an event describing what it did', async () => {
   const { db, bus } = seed()
   await reconcileOnBoot(db, bus)
   expect(bus.since(null, 0).map((e) => e.type)).toContain('boot_reconciled')
+})
+
+describe('adapter orphans (design §12)', () => {
+  it('kills a recorded child whose cmdline still names the adapter', async () => {
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const bus = new EventBus(db)
+    // A real long-lived process whose argv contains the adapter's name, so the
+    // cmdline check matches without spawning the actual adapter.
+    const child = spawn('node', ['-e', 'setTimeout(() => {}, 60000) // claude-code-acp'], {
+      stdio: 'ignore',
+    })
+    try {
+      const objectiveId = makeObjectiveRow(db, { status: 'idle' }).id
+      db.insert(agentSessions)
+        .values({
+          id: 's1',
+          objectiveId,
+          acpSessionId: 'acp-1',
+          status: 'running',
+          childPid: child.pid ?? 0,
+          startedAt: new Date().toISOString(),
+        })
+        .run()
+
+      const result = await reconcileOnBoot(db, bus)
+      expect(result.killedChildren).toBe(1)
+      // Killed via the bare pid (`process.kill`, not `child.kill()`), so
+      // `child.killed` never flips and a signal death leaves `exitCode` null —
+      // only `signalCode` reflects it. Confirmed by hand against this Node
+      // (v22.20.0): `child.kill()` itself leaves `exitCode` null too.
+      await until(() => child.exitCode !== null || child.signalCode !== null)
+    } finally {
+      // Safety net: if an assertion above threw before the kill landed, do not
+      // leave a stray node process behind.
+      if (child.exitCode === null) child.kill('SIGKILL')
+    }
+  })
+
+  it('does not kill a pid whose cmdline is something else — pid reuse', async () => {
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const bus = new EventBus(db)
+    const bystander = spawn('node', ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' })
+    try {
+      const objectiveId = makeObjectiveRow(db, { status: 'idle' }).id
+      db.insert(agentSessions)
+        .values({
+          id: 's1',
+          objectiveId,
+          acpSessionId: 'acp-1',
+          status: 'running',
+          childPid: bystander.pid ?? 0,
+          startedAt: new Date().toISOString(),
+        })
+        .run()
+
+      const result = await reconcileOnBoot(db, bus)
+      expect(result.killedChildren).toBe(0)
+      expect(bystander.exitCode).toBeNull()
+      expect(bus.since(null, 0).some((e) => e.type === 'orphan_kill_skipped')).toBe(true)
+    } finally {
+      bystander.kill('SIGKILL')
+    }
+  })
+
+  it('marks the session orphaned either way', async () => {
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const bus = new EventBus(db)
+    const objectiveId = makeObjectiveRow(db, { status: 'idle' }).id
+    db.insert(agentSessions)
+      .values({
+        id: 's1',
+        objectiveId,
+        acpSessionId: 'acp-1',
+        status: 'running',
+        childPid: null,
+        startedAt: new Date().toISOString(),
+      })
+      .run()
+
+    await reconcileOnBoot(db, bus)
+    expect(db.select().from(agentSessions).where(eq(agentSessions.id, 's1')).get()?.status).toBe(
+      'orphaned',
+    )
+  })
 })

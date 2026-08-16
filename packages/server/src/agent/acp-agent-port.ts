@@ -127,6 +127,16 @@ export class AcpAgentPort implements AgentPort {
 
   constructor(private readonly opts: AcpAgentPortOptions) {}
 
+  /**
+   * The adapter child's pid, or undefined before `start()`. Recorded on the
+   * `agent_sessions` row (amendment A8) so boot reconciliation can kill an
+   * orphan left by a `kill -9` — design §12 requires a crash-and-reboot leave
+   * none, and a hard crash never runs any shutdown path.
+   */
+  get pid(): number | undefined {
+    return this.#child?.pid
+  }
+
   async start(): Promise<void> {
     // Tests inject `command`/`args`; production resolves the pinned adapter.
     const command = this.opts.command ?? process.execPath

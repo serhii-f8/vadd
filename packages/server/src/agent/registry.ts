@@ -11,7 +11,10 @@ import type { ExitInfo, PermissionDecision } from './acp-agent-port.js'
 import { AcpAgentPort } from './acp-agent-port.js'
 import { ensureAgentProfile } from './profile.js'
 
-type PortWithExit = AgentPort & { onExit?(cb: (e: ExitInfo) => void): () => void }
+type PortWithExit = AgentPort & {
+  onExit?(cb: (e: ExitInfo) => void): () => void
+  readonly pid?: number
+}
 
 /**
  * `onPermission` is supplied by the registry, not chosen by the factory, so the
@@ -175,6 +178,8 @@ export class AgentRegistry {
         objectiveId: objective.id,
         acpSessionId: sessionId,
         status: 'running',
+        // A8: what `reconcileOnBoot` needs to clean up after a `kill -9`.
+        childPid: port.pid ?? null,
         startedAt: new Date().toISOString(),
         endedAt: null,
       })
