@@ -46,7 +46,13 @@ async function killIfAdapter(pid: number, bus: EventBus, objectiveId: string): P
   try {
     process.kill(pid, 'SIGKILL')
   } catch {
-    // Exited between the read and the kill. Nothing to do, and not a failure.
+    // Exited between the read and the kill. Nothing to do, and not a failure —
+    // but a decision not taken must still be visible, same as the two skips above.
+    bus.emit({
+      objectiveId,
+      type: 'orphan_kill_skipped',
+      payload: { pid, reason: 'process exited between the cmdline check and the kill' },
+    })
     return false
   }
   bus.emit({ objectiveId, type: 'orphan_killed', payload: { pid } })

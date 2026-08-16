@@ -217,6 +217,42 @@ describe('adapter orphans (design §12)', () => {
     }
   })
 
+  it('skips and reports a recorded pid that is already gone entirely', async () => {
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const bus = new EventBus(db)
+    // Spawned, then waited on to fully exit and be reaped before `reconcileOnBoot`
+    // ever runs — `/proc/<pid>` is confirmed gone by then (verified by hand:
+    // reading it right after the child's own `exit` event reliably ENOENTs on
+    // this platform), so this deterministically exercises the same skip-and-report
+    // branch the kill-race would, without depending on a race that this Node's
+    // own child-reaping makes impossible to land on from a spawned child of the
+    // test itself — see the report for why that path isn't covered here.
+    const gone = spawn('node', ['-e', 'process.exit(0)'], { stdio: 'ignore' })
+    const pid = gone.pid
+    if (pid === undefined) throw new Error('spawn did not report a pid')
+    await new Promise<void>((resolve) => gone.once('exit', () => resolve()))
+
+    const objectiveId = makeObjectiveRow(db, { status: 'idle' }).id
+    db.insert(agentSessions)
+      .values({
+        id: 's1',
+        objectiveId,
+        acpSessionId: 'acp-1',
+        status: 'running',
+        childPid: pid,
+        startedAt: new Date().toISOString(),
+      })
+      .run()
+
+    const result = await reconcileOnBoot(db, bus)
+    expect(result.killedChildren).toBe(0)
+    const skip = bus
+      .since(null, 0)
+      .find((e) => e.type === 'orphan_kill_skipped' && (e.payload as { pid: number }).pid === pid)
+    expect(skip?.payload).toMatchObject({ reason: 'process is gone or /proc is unreadable' })
+  })
+
   it('marks the session orphaned either way', async () => {
     const home = withTempHome()
     const db = createDb(`${home}/vadd.db`)
