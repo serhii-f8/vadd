@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
@@ -70,9 +70,9 @@ describe('FocusView mirroring (spec §7: no client-side transitions)', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert').textContent).toContain('is not accepted in state'),
     )
-    // The refusal is visible AND the state is untouched: the view mirrors the
-    // server, it does not predict it.
-    expect(screen.getByText(/executing/)).toBeTruthy()
+    // The refusal is visible AND names the state, verbatim from the server —
+    // the view mirrors the server, it does not predict it.
+    expect(within(screen.getByRole('alert')).getByText(/executing/)).toBeTruthy()
   })
 })
 
@@ -196,7 +196,11 @@ describe('FocusView primary element by state', () => {
     renderFocus()
     await userEvent.click(await screen.findByRole('radio', { name: /A/ }))
     await userEvent.click(screen.getByRole('button', { name: /choose/i }))
-    expect(calls.at(-1)?.body).toEqual({ type: 'decide', decisionId: 'd1', optionId: 'a' })
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({
+      type: 'decide',
+      decisionId: 'd1',
+      optionId: 'a',
+    })
   })
 
   it('shows the plan as an editable list in awaitingPlanApproval', async () => {
@@ -253,7 +257,10 @@ describe('FocusView primary element by state', () => {
     })
     renderFocus()
     await userEvent.click(await screen.findByRole('button', { name: /^commit/i }))
-    expect(calls.at(-1)?.body).toEqual({ type: 'integrate', action: 'commit' })
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({
+      type: 'integrate',
+      action: 'commit',
+    })
   })
 
   it('offers abandon, not the machine-less cancel, in the header', async () => {
@@ -263,7 +270,7 @@ describe('FocusView primary element by state', () => {
     })
     renderFocus()
     await userEvent.click(await screen.findByRole('button', { name: /abandon/i }))
-    expect(calls.at(-1)?.body).toEqual({ type: 'abandon' })
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ type: 'abandon' })
   })
 
   it('shows the outcome read-only in a terminal state', async () => {

@@ -3,11 +3,11 @@ import type { PlanTask } from '../api.js'
 /**
  * The current task, and nothing else. **No log stream** — the whole point of
  * the product is reading 10× less text, and the raw view is one header link
- * away for when that is not enough. `state` is part of the props shape (the
- * header already shows it) rather than repeated here — this component does
- * not re-render it, to avoid showing the same phase name twice on screen.
+ * away for when that is not enough. No `state` prop — the header already
+ * shows the machine state, so this component doesn't take it just to leave
+ * it unread.
  */
-export function LiveTask({ tasks }: { state: string; tasks: PlanTask[] }) {
+export function LiveTask({ tasks }: { tasks: PlanTask[] }) {
   const running =
     tasks.find((t) => t.status === 'running') ?? tasks.find((t) => t.status !== 'verified')
   return (

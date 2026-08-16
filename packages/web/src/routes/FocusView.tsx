@@ -9,17 +9,6 @@ import { LiveTask } from '../focus/LiveTask.js'
 import { PlanApproval } from '../focus/PlanApproval.js'
 import { primaryElementFor } from '../focus/primary.js'
 
-/**
- * The server's refusal messages repeat the *current* state (`Command "x" is
- * not accepted in state "y"`), and the header already shows that state a
- * line above. Trimming the trailing quoted repeat avoids saying the same
- * word twice on screen — the reason, not the already-visible state, is what
- * the banner adds.
- */
-function withoutRedundantState(message: string, state: string): string {
-  return message.replace(new RegExp(`\\s*"${state}"\\s*$`), '')
-}
-
 export function FocusView() {
   const { id } = useParams<{ id: string }>()
   const [aggregate, setAggregate] = useState<Aggregate | null>(null)
@@ -72,16 +61,18 @@ export function FocusView() {
       setError(null)
       try {
         await api.command(id, body)
-        // A successful command is a 202 — accepted, not applied. The
-        // resulting transition arrives through the SSE stream like any
-        // other change, and refetches there; refetching here too would
-        // just race an in-flight server-side transition.
       } catch (e) {
         // A refused command stays refused: show the server's own message,
-        // which names the state, and refetch to confirm nothing moved.
+        // which names the state, verbatim — it's the only thing telling the
+        // user *why* the command was refused, and trimming it would cost a
+        // screen-reader user (who reaches the alert on its own) the reason.
         setError((e as Error).message)
-        void refetch()
       }
+      // Refetch unconditionally, success or failure. A successful command
+      // does cause the machine to transition (and that transition's own SSE
+      // event will trigger a further refetch), but this one costs one cheap
+      // localhost request and is real insurance against a missed event.
+      void refetch()
     },
     [id, refetch],
   )
@@ -142,7 +133,7 @@ export function FocusView() {
 
       {error !== null && (
         <p role="alert" className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm">
-          {withoutRedundantState(error, state)}
+          {error}
         </p>
       )}
 
@@ -152,7 +143,7 @@ export function FocusView() {
       {primary === 'plan' && (
         <PlanApproval tasks={aggregate.tasks} onCommand={(b) => void onCommand(b)} />
       )}
-      {primary === 'live' && <LiveTask state={state} tasks={aggregate.tasks} />}
+      {primary === 'live' && <LiveTask tasks={aggregate.tasks} />}
       {primary === 'review' && (
         <>
           <EvidencePanel aggregate={aggregate} onCommand={(b) => void onCommand(b)} />
