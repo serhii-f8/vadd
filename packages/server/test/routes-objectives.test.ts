@@ -1,6 +1,9 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { eq } from 'drizzle-orm'
 import { expect, test } from 'vitest'
 import { createDb } from '../src/db/client.js'
+import { objectives } from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { listWorktrees } from '../src/git/git-manager.js'
 import { buildApp } from '../src/http/app.js'
@@ -115,4 +118,17 @@ test('errorMessage recovers a message from an ACP-style plain-object rejection',
   const message = errorMessage({ code: -32603, message: 'boom' })
   expect(message).toContain('boom')
   expect(message).not.toContain('[object Object]')
+})
+
+test('records the base sha at creation', async () => {
+  const { app, db, repo, projectId } = await withProject()
+  const res = await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/objectives`,
+    payload: { title: 't', goalText: 'g' },
+  })
+  expect(res.statusCode).toBe(201)
+  const head = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD']).toString().trim()
+  const row = db.select().from(objectives).where(eq(objectives.id, res.json().id)).get()
+  expect(row?.baseSha).toBe(head)
 })

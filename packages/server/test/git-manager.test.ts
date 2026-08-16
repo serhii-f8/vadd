@@ -1,7 +1,8 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { execa } from 'execa'
 import { beforeEach, describe, expect, it, test } from 'vitest'
 import {
@@ -110,5 +111,38 @@ describe('checkpointCommit', () => {
     await writeFile(join(wt, 'a.txt'), 'v2')
     await resetHard(wt, sha as string)
     expect(await readFile(join(wt, 'a.txt'), 'utf8')).toBe('v1')
+  })
+})
+
+describe('A8: base sha and optional branch deletion', () => {
+  it('createWorktree returns the sha it branched from', async () => {
+    const repo = makeTempRepo()
+    const head = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD']).toString().trim()
+    const wt = join(mkdtempSync(join(tmpdir(), 'vadd-wt-')), 'w')
+    const base = await createWorktree(repo, wt, 'vadd/test1')
+    expect(base).toBe(head)
+  })
+
+  it('removeWorktree with a null branch keeps the branch', async () => {
+    const repo = makeTempRepo()
+    const wt = join(mkdtempSync(join(tmpdir(), 'vadd-wt-')), 'w')
+    await createWorktree(repo, wt, 'vadd/keepme')
+    await removeWorktree(repo, wt, null)
+    const branches = execFileSync('git', ['-C', repo, 'branch', '--list', 'vadd/keepme'])
+      .toString()
+      .trim()
+    expect(branches).toContain('vadd/keepme')
+    expect(await listWorktrees(repo)).not.toContain(resolve(wt))
+  })
+
+  it('removeWorktree with a branch still deletes it', async () => {
+    const repo = makeTempRepo()
+    const wt = join(mkdtempSync(join(tmpdir(), 'vadd-wt-')), 'w')
+    await createWorktree(repo, wt, 'vadd/goodbye')
+    await removeWorktree(repo, wt, 'vadd/goodbye')
+    const branches = execFileSync('git', ['-C', repo, 'branch', '--list', 'vadd/goodbye'])
+      .toString()
+      .trim()
+    expect(branches).toBe('')
   })
 })

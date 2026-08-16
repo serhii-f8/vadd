@@ -224,8 +224,9 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       })
     }
 
+    let baseSha: string
     try {
-      await createWorktree(project.repoPath, path, branch)
+      baseSha = await createWorktree(project.repoPath, path, branch)
     } catch (err) {
       const message = errorMessage(err)
       db.delete(objectives).where(eq(objectives.id, id)).run()
@@ -241,6 +242,9 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       .set({
         worktreePath: path,
         branchName: branch,
+        // A8. Written here rather than in the `creating` insert: that insert
+        // runs before any git work and has no sha to write.
+        baseSha,
         // Stays `creating` while setup runs. A crash here leaves a `creating`
         // row that `reconcileOnBoot` deletes — correct, since no agent work,
         // evidence or worktree state worth recovering exists yet.

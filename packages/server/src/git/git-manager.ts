@@ -39,13 +39,23 @@ export async function validateRepo(repoPath: string): Promise<string> {
   }
 }
 
+/**
+ * Creates the worktree and returns the sha it branched from (amendment A8).
+ *
+ * The sha is read from the source repo immediately before `worktree add`, not
+ * derived afterwards: `/diff` and `integrate: commit`'s squash both mean
+ * "since this objective started", and a `merge-base` computed later changes
+ * its answer every time the base branch advances.
+ */
 export async function createWorktree(
   repoPath: string,
   worktreePath: string,
   branch: string,
-): Promise<void> {
+): Promise<string> {
+  const baseSha = (await git(repoPath, ['rev-parse', 'HEAD'])).trim()
   await mkdir(dirname(worktreePath), { recursive: true })
   await git(repoPath, ['worktree', 'add', '-b', branch, worktreePath])
+  return baseSha
 }
 
 /**
@@ -64,17 +74,20 @@ export async function createWorktree(
 export async function removeWorktree(
   repoPath: string,
   worktreePath: string,
-  branch: string,
+  /** `null` removes the worktree but keeps the branch — `integrate: commit`. */
+  branch: string | null,
 ): Promise<void> {
   try {
     await git(repoPath, ['worktree', 'remove', '--force', worktreePath])
   } catch {
     await pruneWorktrees(repoPath)
   }
-  try {
-    await git(repoPath, ['branch', '-D', branch])
-  } catch {
-    // Branch absent or already deleted — not an error for teardown.
+  if (branch !== null) {
+    try {
+      await git(repoPath, ['branch', '-D', branch])
+    } catch {
+      // Branch absent or already deleted — not an error for teardown.
+    }
   }
   await pruneWorktrees(repoPath)
 
