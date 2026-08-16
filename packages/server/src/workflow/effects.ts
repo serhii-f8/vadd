@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import type { WorkflowContext, WorkflowEvent } from '@vadd/core'
-import { workflowMachine } from '@vadd/core'
+import type { EvidenceItemLike, WorkflowContext, WorkflowEvent } from '@vadd/core'
+import { VerificationSpec, workflowMachine } from '@vadd/core'
 import { and, eq } from 'drizzle-orm'
+import { fromPromise } from 'xstate'
 import type { AgentRegistry } from '../agent/registry.js'
 import type { Db } from '../db/client.js'
 import { decisions, evidenceItems, objectives, planTasks } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
 import { checkpointCommit, resetHard } from '../git/git-manager.js'
+import { collectEvidence } from '../verification/collector.js'
 import { runTurn, type TurnOutcome } from './turn.js'
 
 type Deps = { db: Db; bus: EventBus; agents: AgentRegistry }
@@ -285,6 +287,63 @@ async function rollbackEffect(
 }
 
 /**
+ * The evidence set the guard is allowed to see right now (design §5.4).
+ *
+ * Command rows are scoped to the **current run**: verification evidence must be
+ * freshly produced, or a green run recorded before a `ROLLBACK` would still be
+ * sitting in the table to satisfy the guard after a later red one. The link is
+ * the log path — every collector row's log lives under
+ * `<artifacts>/<objectiveId>/<runId>/`, a denied command's included — so a row
+ * carries its own provenance and agent-emitted rows (which have no
+ * `artifactPath`) cannot match.
+ *
+ * Check rows are scoped to the **epoch** instead, so a user's manual tick
+ * survives a re-verify while commands are re-proven every time. The most recent
+ * row per `checkId` wins, which is what makes an untick supersede a tick.
+ */
+function currentEvidence(
+  db: Db,
+  objectiveId: string,
+  context: WorkflowContext,
+): EvidenceItemLike[] {
+  const rows = db
+    .select()
+    .from(evidenceItems)
+    .where(eq(evidenceItems.objectiveId, objectiveId))
+    .all()
+
+  const commandIds = new Set(context.verificationSpec?.verify.commands.map((c) => c.id) ?? [])
+  const epoch = context.verificationEpoch ?? ''
+  const runId = context.verificationRunId
+
+  const fromRun =
+    runId === null
+      ? []
+      : rows.filter(
+          (r) =>
+            r.commandId !== null &&
+            commandIds.has(r.commandId) &&
+            r.artifactPath?.includes(`/${runId}/`) === true,
+        )
+
+  // Most recent row per checkId, at or after the epoch.
+  const checks = new Map<string, (typeof rows)[number]>()
+  for (const row of rows) {
+    if (row.kind !== 'check' || row.commandId === null) continue
+    if (row.createdAt < epoch) continue
+    const seen = checks.get(row.commandId)
+    if (!seen || seen.createdAt <= row.createdAt) checks.set(row.commandId, row)
+  }
+
+  return [...fromRun, ...checks.values()].map((r) => ({
+    commandId: r.commandId,
+    kind: r.kind,
+    status: r.status,
+    taskId: r.taskId,
+  }))
+}
+
+/**
  * Binds the machine's seven named side effects (design §6.1: `core` names
  * them, the server implements them) plus the prompt-rendering seam Task 7
  * used as a temporary stand-in. `objective` is read once, at bind time, only
@@ -301,6 +360,39 @@ export function bindEffects(
   const gitGate = createGitGate()
 
   return workflowMachine.provide({
+    actors: {
+      /**
+       * EvidenceCollector, invoked by `verifying`. `signal` is xstate's own —
+       * it aborts when the state is exited, so a `PAUSE` mid-suite stops the
+       * commands instead of leaving them running against a worktree nobody is
+       * watching.
+       */
+      runVerification: fromPromise(
+        async ({
+          input,
+          signal,
+        }: {
+          input: { objectiveId: string; taskId: string | null }
+          signal: AbortSignal
+        }) => {
+          const row = loadObjective(deps.db, objectiveId)
+          const spec = VerificationSpec.safeParse(row.verificationSpec)
+          // An unresolved spec must not silently produce an empty — and so red,
+          // but explicable-looking — set. Failing here routes to `paused` via
+          // the invoke's onError, which is the honest outcome.
+          if (!spec.success) {
+            const message = 'No verification spec resolved for this objective'
+            deps.bus.emit({ objectiveId, type: 'verification_unresolved', payload: { message } })
+            throw new Error(message)
+          }
+          const result = await collectEvidence(deps, row, spec.data, {
+            taskId: input.taskId,
+            signal,
+          })
+          return { runId: result.runId }
+        },
+      ),
+    },
     actions: {
       sendPrompt: ({ context }, params: { phase: string }) => {
         // Fire-and-forget: xstate actions are synchronous, and the turn's own
@@ -405,6 +497,21 @@ export function bindEffects(
           deps.bus.emit({
             objectiveId,
             type: 'record_evidence_failed',
+            payload: { message: errorMessage(err) },
+          })
+        }
+      },
+
+      reconcileEvidence: ({ context }) => {
+        try {
+          runner.send(objectiveId, {
+            type: 'EVIDENCE_RESULT',
+            items: currentEvidence(deps.db, objectiveId, context),
+          })
+        } catch (err) {
+          deps.bus.emit({
+            objectiveId,
+            type: 'reconcile_evidence_failed',
             payload: { message: errorMessage(err) },
           })
         }

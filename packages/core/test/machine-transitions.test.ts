@@ -236,7 +236,7 @@ describe('verifying invokes the collector (phase 4)', () => {
 
   it('with no checks, reconciles without prompting the agent', async () => {
     const sent: string[] = []
-    const actor = startVerifying({ output: { runId: 'run-1' }, checks: [], sent })
+    startVerifying({ output: { runId: 'run-1' }, checks: [], sent })
     await settle()
     expect(sent).toEqual(['reconcile'])
   })

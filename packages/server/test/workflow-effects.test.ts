@@ -54,10 +54,12 @@ const PLAN_EVENT: AgentEvent = {
   ],
 }
 
+// `run` is a local no-op, not `npm test`: the collector is bound now, so
+// entering `verifying` really executes this in the temp worktree.
 const SAMPLE_SPEC: VerificationSpec = {
   verify: {
     setup: [],
-    commands: [{ id: 'test', run: 'npm test', required: true, allowWarn: false, cwd: '.' }],
+    commands: [{ id: 'test', run: 'exit 0', required: true, allowWarn: false, cwd: '.' }],
     checks: [],
     timeoutSec: 600,
   },
@@ -296,22 +298,17 @@ describe('bindEffects', () => {
     db.update(objectives).set({ verificationSpec: SAMPLE_SPEC }).where(eq(objectives.id, 'o')).run()
     await toExecuting(EXECUTE_TASK_OK)
 
-    queueEvents([
-      { type: 'evidence', kind: 'test', status: 'pass', headline: 'verified', summary: [] },
-    ])
-    await settleFakeTurn() // settles execute-task(task 0) -> verifying entry -> verify's prompt() called
-    await settleFakeTurn() // settles verify's prompt (TURN_FINISHED is a no-op transition in verifying)
+    // settles execute-task(task 0) -> verifying, which invokes the collector.
+    // The spec declares no checks, so there is no verify prompt: the collector
+    // finishes, reconcileEvidence sends EVIDENCE_RESULT, and a green set lands
+    // in awaitingReview without the agent being asked anything.
+    await settleFakeTurn()
+    await vi.waitFor(() => expect(runner.get('o')?.getSnapshot().value).toBe('awaitingReview'))
 
-    const task0 = db.select().from(planTasks).orderBy(planTasks.ord).all()[0]
-    if (!task0) throw new Error('expected a plan_tasks row for task 0')
-    runner.send('o', {
-      type: 'EVIDENCE_RESULT',
-      items: [{ commandId: 'test', kind: 'test', status: 'pass', taskId: task0.id }],
-    })
     // hasMoreTasks -> executing again, currentTaskIndex now 1 (task "Fix it")
     runner.send('o', { type: 'APPROVE_TASK' })
 
-    await vi.waitFor(() => expect(promptCalls()).toBeGreaterThanOrEqual(6))
+    await vi.waitFor(() => expect(promptCalls()).toBeGreaterThanOrEqual(5))
     expect(lastPromptText()).toContain('Fix it')
     expect(lastPromptText()).not.toContain('Write a failing test')
   })
@@ -374,10 +371,13 @@ describe('bindEffects', () => {
     expect(types).toContain('checkpoint_failed')
   })
 
-  it('a null verificationSpec never lets {{verificationCommands}} reach the agent', async () => {
-    // Objective 'o' keeps its default null verificationSpec.
+  it('a null verificationSpec pauses rather than running nothing and calling it green', async () => {
+    // Objective 'o' keeps its default null verificationSpec. The collector
+    // refuses to run against one, so the invoke's onError pauses — it never
+    // reports an empty set that would read as a real (red) verdict, and never
+    // renders a template whose placeholder has no value.
     await toExecuting(EXECUTE_TASK_OK)
-    await settleFakeTurn() // settles execute-task(task 0) -> verifying entry -> sendPrompt aborts before rendering
+    await settleFakeTurn() // settles execute-task(task 0) -> verifying entry -> the collector refuses
 
     await vi.waitFor(() => expect(runner.get('o')?.getSnapshot().value).toBe('paused'))
     const rows = db.select().from(events).all()
