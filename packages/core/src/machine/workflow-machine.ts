@@ -1,4 +1,4 @@
-import { assign, setup } from 'xstate'
+import { assign, fromPromise, setup } from 'xstate'
 // Workaround for a known xstate v5 typing issue (statelyai/xstate#5090): a
 // custom guard's inferred type references xstate's internal, unexported
 // `GuardArgs`, which TypeScript's declaration-emit portability check (TS2883)
@@ -30,6 +30,8 @@ export function initialContext(input: WorkflowInput): WorkflowContext {
     tasks: input.tasks ?? [],
     currentTaskIndex: 0,
     evidence: [],
+    verificationRunId: null,
+    verificationEpoch: null,
     approvals: [],
     pendingDecisionId: null,
     pendingClarification: null,
@@ -84,6 +86,21 @@ export const workflowMachine = setup({
     // task at all (e.g. paused from `exploring`/`proposing`/`planning`, before
     // any plan exists); it does not duplicate Task 8's null-ref check.
     hasCheckpoint: ({ context }) => context.tasks[context.currentTaskIndex] != null,
+    /** Design §6.2: with no checks there is no agent turn in `verifying` at all. */
+    hasChecks: ({ context }) => (context.verificationSpec?.verify.checks.length ?? 0) > 0,
+  },
+  actors: {
+    /**
+     * EvidenceCollector. Named here and implemented by the server (design
+     * §6.1), like every other effect. The stub throws rather than resolving:
+     * an unprovided collector must fail loudly, never report an empty — and
+     * therefore red — evidence set that looks like a real verdict.
+     */
+    runVerification: fromPromise<{ runId: string }, { objectiveId: string; taskId: string | null }>(
+      async () => {
+        throw new Error('runVerification is not implemented in core')
+      },
+    ),
   },
   actions: {
     /**
@@ -125,6 +142,7 @@ export const workflowMachine = setup({
     recordDecision: () => {},
     recordPlan: () => {},
     recordEvidence: () => {},
+    reconcileEvidence: () => {},
     finishObjective: (_, _params: { action: 'commit' | 'keep' | 'discard' }) => {},
   },
 }).createMachine({
@@ -284,7 +302,13 @@ export const workflowMachine = setup({
       entry: [
         { type: 'enter', params: { name: 'executing' } },
         'clearTurn',
-        assign({ evidence: () => [] }),
+        assign({
+          evidence: () => [],
+          // New work invalidates the previous verification generation: command
+          // rows and check rows alike (design §5.4).
+          verificationRunId: () => null,
+          verificationEpoch: () => new Date().toISOString(),
+        }),
         { type: 'checkpoint' },
         { type: 'sendPrompt', params: { phase: 'execute-task' } },
       ],
@@ -296,16 +320,49 @@ export const workflowMachine = setup({
     },
 
     verifying: {
-      entry: [
-        { type: 'enter', params: { name: 'verifying' } },
-        'clearTurn',
-        { type: 'sendPrompt', params: { phase: 'verify' } },
-      ],
+      entry: [{ type: 'enter', params: { name: 'verifying' } }, 'clearTurn'],
+      // An invoked actor rather than an entry action, so a `PAUSE` — which
+      // leaves this state — aborts a running suite through the signal xstate
+      // hands the actor, instead of leaving `phpunit` running unattended.
+      invoke: {
+        src: 'runVerification',
+        input: ({ context }) => ({
+          objectiveId: context.objectiveId,
+          // The collector stamps this on every row; the Evidence Panel groups
+          // by it. `fromPromise` sees only `input`, never context.
+          taskId: context.tasks[context.currentTaskIndex]?.id ?? null,
+        }),
+        onDone: [
+          {
+            guard: 'hasChecks',
+            actions: [
+              assign({ verificationRunId: ({ event }) => event.output.runId }),
+              // Commands are VADD's now; the agent is asked only for the one
+              // thing a command cannot produce — a judgement on the checks.
+              { type: 'sendPrompt', params: { phase: 'verify' } },
+            ],
+          },
+          {
+            actions: [
+              assign({ verificationRunId: ({ event }) => event.output.runId }),
+              'reconcileEvidence',
+            ],
+          },
+        ],
+        onError: {
+          target: 'paused',
+          actions: assign({
+            lastFailure: () => ({
+              headline: 'Verification could not run',
+              probableCause: 'EvidenceCollector failed before producing any evidence',
+            }),
+          }),
+        },
+      },
       on: {
         EVIDENCE: { actions: ['noteTurnEvent', { type: 'recordEvidence' }] },
-        // The turn closing is not the verdict. EvidenceCollector's result is
-        // (design §6.2), and until phase 4 the runner synthesises it.
-        TURN_FINISHED: {},
+        // The turn closing is not the verdict — the reconciled evidence set is.
+        TURN_FINISHED: { actions: 'reconcileEvidence' },
         EVIDENCE_RESULT: [
           {
             guard: 'evidenceComplete',

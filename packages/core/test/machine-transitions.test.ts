@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createActor } from 'xstate'
+import { createActor, fromPromise } from 'xstate'
 import type { WorkflowEvent } from '../src/machine/types.js'
 import { initialContext, workflowMachine } from '../src/machine/workflow-machine.js'
 import { VerificationSpec } from '../src/schemas/verification.js'
@@ -14,6 +14,10 @@ const rollbackToCheckpoint = vi.fn()
 
 const stubbed = workflowMachine.provide({
   actions: { sendPrompt, checkpoint, rollbackToCheckpoint },
+  // `verifying` invokes the collector (phase 4). `core`'s own implementation
+  // throws on purpose — an unprovided collector must fail loudly — so every
+  // test that passes through `verifying` provides an inert one here.
+  actors: { runVerification: fromPromise(async () => ({ runId: 'run-stub' })) },
 })
 
 function start(mode: 'standard' | 'fastfix' = 'standard') {
@@ -223,7 +227,137 @@ describe('the escapes', () => {
   })
 })
 
+describe('verifying invokes the collector (phase 4)', () => {
+  it('invokes runVerification and stores its runId', async () => {
+    const actor = startVerifying({ output: { runId: 'run-1' } })
+    await settle()
+    expect(actor.getSnapshot().context.verificationRunId).toBe('run-1')
+  })
+
+  it('with no checks, reconciles without prompting the agent', async () => {
+    const sent: string[] = []
+    const actor = startVerifying({ output: { runId: 'run-1' }, checks: [], sent })
+    await settle()
+    expect(sent).toEqual(['reconcile'])
+  })
+
+  it('with checks, prompts the agent and reconciles when the turn finishes', async () => {
+    const sent: string[] = []
+    const actor = startVerifying({
+      output: { runId: 'run-1' },
+      checks: ['Bug reproduced'],
+      sent,
+    })
+    await settle()
+    expect(sent).toEqual(['verify'])
+
+    actor.send({ type: 'TURN_FINISHED' })
+    expect(sent).toEqual(['verify', 'reconcile'])
+    expect(actor.getSnapshot().value).toBe('verifying')
+  })
+
+  it('a collector failure pauses rather than pretending the set is red', async () => {
+    const actor = startVerifying({
+      failWith: new Error('bad cwd'),
+    })
+    await settle()
+    expect(actor.getSnapshot().value).toBe('paused')
+    expect(actor.getSnapshot().context.lastFailure?.headline).toContain('Verification')
+  })
+
+  it('EVIDENCE_RESULT still routes on the guard, unchanged', async () => {
+    const actor = startVerifying({ output: { runId: 'r' } })
+    await settle()
+    actor.send({
+      type: 'EVIDENCE_RESULT',
+      items: [{ commandId: 'test', kind: 'test', status: 'pass', taskId: null }],
+    })
+    expect(actor.getSnapshot().value).toBe('awaitingReview')
+  })
+
+  it('executing entry stamps a fresh verificationEpoch and clears the runId', async () => {
+    const actor = startVerifying({ output: { runId: 'run-1' } })
+    await settle()
+    expect(actor.getSnapshot().context.verificationRunId).toBe('run-1')
+    const firstEpoch = actor.getSnapshot().context.verificationEpoch
+    expect(firstEpoch).toBeTruthy()
+
+    // A green set, approved, moves on to task 1 — a fresh `executing` entry.
+    actor.send({
+      type: 'EVIDENCE_RESULT',
+      items: [{ commandId: 'test', kind: 'test', status: 'pass', taskId: null }],
+    })
+    actor.send({ type: 'APPROVE_TASK' })
+    expect(actor.getSnapshot().value).toBe('executing')
+    // New work invalidates the previous verification generation.
+    expect(actor.getSnapshot().context.verificationRunId).toBeNull()
+    expect(actor.getSnapshot().context.verificationEpoch).not.toBeNull()
+  })
+})
+
 // --- helpers, defined last so the tests above read top-down ---
+
+/**
+ * Drives a purpose-built actor to `verifying`, with the collector actor and
+ * the two prompt/reconcile actions replaced by recorders.
+ *
+ * `start()` above cannot serve: these tests vary the spec's `checks` (which
+ * `hasChecks` reads) and need the invoked actor's outcome under their control.
+ */
+function startVerifying(opts: {
+  output?: { runId: string }
+  failWith?: Error
+  checks?: string[]
+  sent?: string[]
+}) {
+  const sent = opts.sent
+  const machine = workflowMachine.provide({
+    actors: {
+      runVerification: fromPromise(async () => {
+        if (opts.failWith) throw opts.failWith
+        return opts.output ?? { runId: 'run-stub' }
+      }),
+    },
+    actions: {
+      checkpoint,
+      sendPrompt: (_, params: { phase: string }) => {
+        if (params.phase === 'verify') sent?.push('verify')
+      },
+      reconcileEvidence: () => sent?.push('reconcile'),
+    },
+  })
+  const actor = createActor(machine, {
+    input: initialContext({
+      objectiveId: 'o1',
+      goalText: 'fix the bug',
+      mode: 'standard',
+      lowEnergy: false,
+      verificationSpec: VerificationSpec.parse({
+        verify: {
+          commands: [{ id: 'test', run: 'pnpm test', required: true }],
+          checks: opts.checks ?? [],
+        },
+      }),
+    }),
+  })
+  actor.start()
+  actor.send({ type: 'START' })
+  actor.send({ type: 'TURN_FINISHED' })
+  actor.send({ type: 'DECISION_NEEDED', event: decisionEvent })
+  actor.send({ type: 'TURN_FINISHED' })
+  actor.send({ type: 'DECIDE', decisionId: 'd1', optionId: 'a' })
+  actor.send({ type: 'PLAN', event: planEvent })
+  actor.send({ type: 'TURN_FINISHED' })
+  actor.send({ type: 'APPROVE_PLAN' })
+  actor.send({ type: 'TURN_FINISHED' })
+  return actor
+}
+
+/** Lets the invoked promise settle and xstate process its onDone/onError. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 25; i++) await Promise.resolve()
+  await new Promise((r) => setTimeout(r, 0))
+}
 
 function toAwaitingPlanApproval() {
   const actor = start()

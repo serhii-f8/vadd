@@ -54,6 +54,20 @@ export type WorkflowContext = {
   tasks: PlanTaskLike[]
   currentTaskIndex: number
   evidence: EvidenceItemLike[]
+  /**
+   * The EvidenceCollector run currently being reconciled. `reconcileEvidence`
+   * scopes command rows to it: verification evidence must be freshly produced,
+   * or a green run recorded before a ROLLBACK would satisfy the guard after a
+   * later red one (design §5.4).
+   */
+  verificationRunId: string | null
+  /**
+   * ISO timestamp stamped on every `executing` entry. Check rows created at or
+   * after it count; older ones do not. Check rows are deliberately *not* scoped
+   * to a run — a user's manual tick must survive a re-verify, while commands
+   * must be re-proven (design §5.4).
+   */
+  verificationEpoch: string | null
   /** `'plan'` and `` `task:${ord}` `` keys the user has explicitly approved. */
   approvals: string[]
   pendingDecisionId: string | null

@@ -95,6 +95,8 @@ const ctx = (over: Partial<WorkflowContext>): WorkflowContext =>
     tasks: [],
     currentTaskIndex: 0,
     evidence: [],
+    verificationRunId: null,
+    verificationEpoch: null,
     approvals: [],
     pendingDecisionId: null,
     pendingClarification: null,
