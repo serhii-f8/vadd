@@ -4,6 +4,7 @@ import type { Db } from '../db/client.js'
 import type { EventBus } from '../events/event-bus.js'
 import type { WorkflowRunner } from '../workflow/runner.js'
 import { registerEventRoutes } from './routes/events.js'
+import { registerEvidenceRoutes } from './routes/evidence.js'
 import { registerObjectiveRoutes } from './routes/objectives.js'
 import { registerProjectRoutes } from './routes/projects.js'
 
@@ -25,5 +26,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   registerProjectRoutes(app, deps)
   registerObjectiveRoutes(app, deps)
   registerEventRoutes(app, deps)
+  registerEvidenceRoutes(app, deps)
   return app
 }

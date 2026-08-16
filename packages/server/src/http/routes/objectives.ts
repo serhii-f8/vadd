@@ -327,6 +327,19 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     },
   )
 
+  // Spec §7's Level 3 escape hatch. The same shape the SSE stream emits, so
+  // the raw view and the debug page cannot disagree about what happened.
+  app.get<{ Params: { id: string }; Querystring: { since?: string } }>(
+    '/api/objectives/:id/raw',
+    async (req, reply) => {
+      const row = db.select().from(objectives).where(eq(objectives.id, req.params.id)).get()
+      if (!row) return reply.code(404).send({ error: 'Objective not found' })
+      const parsed = Number.parseInt(req.query.since ?? '0', 10)
+      const since = Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+      return bus.since(row.id, since)
+    },
+  )
+
   /**
    * The destructive delete. Separate from `integrate: discard`, which since
    * amendment A9 means "this was proven and I do not want it" and keeps every
