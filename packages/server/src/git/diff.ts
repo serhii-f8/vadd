@@ -42,6 +42,12 @@ function parseNumstat(out: string): Map<string, { added: number; removed: number
   return files
 }
 
+/** The paths `git diff --name-only <range>` reports as touched. */
+async function nameOnly(worktreePath: string, ...range: string[]): Promise<Set<string>> {
+  const out = await git(worktreePath, ['diff', '--name-only', ...range])
+  return new Set(out.split('\n').filter((p) => p.trim() !== ''))
+}
+
 /**
  * Spec §7's "stats + file list", spanning committed work and the working tree.
  *
@@ -49,33 +55,41 @@ function parseNumstat(out: string): Map<string, { added: number; removed: number
  * has uncommitted changes by definition — checkpoints are made on entry to
  * `executing`, not on exit — and a list that showed only committed work would
  * be silently missing the task in progress.
+ *
+ * Counts come from a single `git diff --numstat <baseSha>` — base commit
+ * straight to the working tree, no `..HEAD` — rather than summing a
+ * `baseSha..HEAD` segment with a `HEAD`-vs-worktree segment. Summing double
+ * counts any line touched by both: a checkpoint commit that adds a line the
+ * working tree later removes reports it as both an addition and a removal,
+ * when the true base→worktree diff shows nothing for it at all. This is also
+ * the same query `objectiveFileDiff` runs per-file, so the summary and the
+ * per-file diff cannot disagree. The `committed`/`dirty` flags are set from
+ * two cheap `--name-only` queries instead, which only need membership, not
+ * counts.
  */
 export async function objectiveDiff(worktreePath: string, baseSha: string): Promise<DiffSummary> {
-  const committed = parseNumstat(await git(worktreePath, ['diff', '--numstat', `${baseSha}..HEAD`]))
-  const unstaged = parseNumstat(await git(worktreePath, ['diff', '--numstat', 'HEAD']))
+  const net = parseNumstat(await git(worktreePath, ['diff', '--numstat', baseSha]))
+  const committedPaths = await nameOnly(worktreePath, `${baseSha}..HEAD`)
+  const dirtyPaths = await nameOnly(worktreePath, 'HEAD')
   const untracked = (await git(worktreePath, ['ls-files', '--others', '--exclude-standard']))
     .split('\n')
     .filter((p) => p.trim() !== '')
 
   const merged = new Map<string, DiffFile>()
-  for (const [path, counts] of committed) {
-    merged.set(path, { path, ...counts, committed: true, dirty: false })
-  }
-  for (const [path, counts] of unstaged) {
-    const prev = merged.get(path)
+  for (const [path, counts] of net) {
     merged.set(path, {
       path,
-      added: (prev?.added ?? 0) + counts.added,
-      removed: (prev?.removed ?? 0) + counts.removed,
-      committed: prev?.committed ?? false,
-      dirty: true,
+      ...counts,
+      committed: committedPaths.has(path),
+      dirty: dirtyPaths.has(path),
     })
   }
   for (const path of untracked) {
     if (merged.has(path)) continue
-    // An untracked file has no numstat. Counting its lines is the only way to
-    // show a size, and a new file is exactly the case a reviewer most wants to
-    // see the size of.
+    // An untracked file has no numstat — it never appears in a `git diff`
+    // against anything. Counting its lines is the only way to show a size,
+    // and a new file is exactly the case a reviewer most wants to see the
+    // size of.
     const added = await countLines(worktreePath, path)
     merged.set(path, { path, added, removed: 0, committed: false, dirty: true })
   }
