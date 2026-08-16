@@ -107,3 +107,41 @@ test('the checked-in JSON Schema matches what the code generates', () => {
   // Regenerate with `pnpm schema:export` when this fails.
   expect(checkedIn).toEqual(agentEventJsonSchema())
 })
+
+test('A6: evidence accepts an optional checkId', () => {
+  const withId = AgentEvent.safeParse({
+    type: 'evidence',
+    kind: 'check',
+    checkId: 'check-1',
+    status: 'pass',
+    headline: 'Reproduced by a failing-then-passing test',
+    summary: [],
+  })
+  expect(withId.success).toBe(true)
+  if (withId.success && withId.data.type === 'evidence') {
+    expect(withId.data.checkId).toBe('check-1')
+  }
+})
+
+test('A6: checkId is optional, so existing corpus events still parse', () => {
+  const without = AgentEvent.safeParse({
+    type: 'evidence',
+    kind: 'lint',
+    status: 'warn',
+    headline: '3 warnings, 0 errors',
+    summary: ['Two unused imports'],
+  })
+  expect(without.success).toBe(true)
+})
+
+test('A6: an over-long checkId is refused', () => {
+  const parsed = AgentEvent.safeParse({
+    type: 'evidence',
+    kind: 'check',
+    checkId: 'c'.repeat(41),
+    status: 'pass',
+    headline: 'x',
+    summary: [],
+  })
+  expect(parsed.success).toBe(false)
+})

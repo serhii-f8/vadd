@@ -92,6 +92,12 @@ export const AgentEvent = z.discriminatedUnion('type', [
     headline: z.string().max(120),
     summary: z.array(z.string().max(100)).max(6),
     artifactPath: z.string().optional(),
+    /**
+     * Amendment A6. The `check-<index>` id from `normalizeChecks()` this event
+     * satisfies. Optional: every other `kind` leaves it unset, and an
+     * unrecognised value is ignored rather than guessed at.
+     */
+    checkId: z.string().max(40).optional(),
   }),
   z.object({
     type: z.literal('failure'),

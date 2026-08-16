@@ -10,15 +10,25 @@ export const projects = sqliteTable('projects', {
 })
 
 /**
- * Spec §5's seventeen states, plus `creating`.
+ * Spec §5's seventeen states, plus two pre-machine ones.
  *
  * `creating` is not a machine state: a row is inserted with it *before*
  * `git worktree add` runs, and `reconcileOnBoot` deletes exactly those rows. No
  * actor ever observes it, but the CHECK has to allow it or objective creation
- * fails at the first insert.
+ * fails at the first insert. `setup_failed` (phase 4) is the same kind of thing
+ * for a worktree whose A1 `setup` commands failed.
  */
 export const OBJECTIVE_STATUSES = [
   'creating',
+  /**
+   * Pre-machine, like `creating`: amendment A1's `setup` commands failed, so
+   * the worktree is unusable and no actor is ever started. Deliberately *not*
+   * swept by `reconcileOnBoot` — unlike `creating`, this row owns an
+   * `evidence_items` row carrying the failure log, and deleting it would both
+   * lose the diagnostic and trip the same foreign key that broke
+   * `integrate: discard` in phase 3.
+   */
+  'setup_failed',
   'idle',
   'exploring',
   'clarifying',
@@ -167,5 +177,10 @@ export const evidenceItems = sqliteTable('evidence_items', {
   headline: text('headline').notNull(),
   summary: text('summary', { mode: 'json' }).$type<string[]>().notNull(),
   artifactPath: text('artifact_path'),
+  /**
+   * Amendment A7. `'user'` for a manual tick in the Evidence Panel (spec §6);
+   * null for everything VADD or the agent produces.
+   */
+  decidedBy: text('decided_by', { enum: ['user', 'policy'] }),
   createdAt: text('created_at').notNull(),
 })

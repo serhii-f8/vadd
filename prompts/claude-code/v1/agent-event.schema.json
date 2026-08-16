@@ -203,6 +203,10 @@
             },
             "artifactPath": {
               "type": "string"
+            },
+            "checkId": {
+              "type": "string",
+              "maxLength": 40
             }
           },
           "required": ["type", "kind", "status", "headline", "summary"],

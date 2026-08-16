@@ -15,6 +15,13 @@
       "when": 1786456072018,
       "tag": "0001_workflow_machine",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786868739361,
+      "tag": "0002_verification",
+      "breakpoints": true
     }
   ]
 }

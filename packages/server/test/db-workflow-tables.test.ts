@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { eq } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createDb, type Db } from '../src/db/client.js'
 import {
@@ -127,5 +128,62 @@ describe('phase 3 migration', () => {
     const row = db.select().from(objectives).all()[0]
     expect(row?.mode).toBe('standard')
     expect(row?.lowEnergy).toBe(false)
+  })
+})
+
+describe('phase 4 migration', () => {
+  const objectiveId = 'o-phase4'
+  beforeEach(() => {
+    seedObjective(objectiveId)
+  })
+
+  it('A7: evidence_items accepts decidedBy', () => {
+    db.insert(evidenceItems)
+      .values({
+        id: 'ev-1',
+        objectiveId,
+        taskId: null,
+        commandId: 'check-0',
+        kind: 'check',
+        status: 'pass',
+        headline: 'Ticked by the user',
+        summary: [],
+        artifactPath: null,
+        decidedBy: 'user',
+        createdAt: new Date().toISOString(),
+      })
+      .run()
+
+    const row = db.select().from(evidenceItems).where(eq(evidenceItems.id, 'ev-1')).get()
+    expect(row?.decidedBy).toBe('user')
+  })
+
+  it('A7: decidedBy is nullable for collector and agent rows', () => {
+    db.insert(evidenceItems)
+      .values({
+        id: 'ev-2',
+        objectiveId,
+        taskId: null,
+        commandId: 'test',
+        kind: 'test',
+        status: 'pass',
+        headline: 'OK (12 tests, 30 assertions)',
+        summary: [],
+        artifactPath: null,
+        createdAt: new Date().toISOString(),
+      })
+      .run()
+
+    const row = db.select().from(evidenceItems).where(eq(evidenceItems.id, 'ev-2')).get()
+    expect(row?.decidedBy).toBeNull()
+  })
+
+  it('objectives accepts the pre-machine setup_failed status', () => {
+    db.update(objectives)
+      .set({ status: 'setup_failed' })
+      .where(eq(objectives.id, objectiveId))
+      .run()
+    const row = db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()
+    expect(row?.status).toBe('setup_failed')
   })
 })
