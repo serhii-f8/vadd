@@ -21,6 +21,17 @@ export function worktreePathFor(projectId: string, objectiveId: string): string 
 }
 
 /**
+ * Spec: `~/.vadd/artifacts/<objectiveId>/<runId>/`.
+ *
+ * The `runId` segment is load-bearing, not just tidy: `reconcileEvidence`
+ * scopes a command row to the run that produced it by looking for `/<runId>/`
+ * in the row's `artifactPath` (design §5.4).
+ */
+export function artifactsDirFor(objectiveId: string, runId: string): string {
+  return join(vaddHome(), 'artifacts', objectiveId, runId)
+}
+
+/**
  * Branch names use the first 8 characters of the objective UUID.
  *
  * Lives here beside the worktree layout rather than in the HTTP routes: boot

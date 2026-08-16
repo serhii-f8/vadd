@@ -16,6 +16,7 @@ import {
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
 import { resolveVerification } from '../../verification/resolve.js'
+import { runSetup } from '../../verification/setup.js'
 import type { WorkflowRunner } from '../../workflow/runner.js'
 import { loadSnapshot } from '../../workflow/store.js'
 import { cancelOpenTurn, renderTurnPrompt, runTurn, TurnRejected } from '../../workflow/turn.js'
@@ -226,12 +227,18 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       return reply.code(500).send({ error: `Failed to create worktree: ${message}` })
     }
 
+    const spec = resolution.kind === 'resolved' ? resolution.spec : null
+    const hasSetup = (spec?.verify.setup.length ?? 0) > 0
+
     const row = db
       .update(objectives)
       .set({
         worktreePath: path,
         branchName: branch,
-        status: 'idle',
+        // Stays `creating` while setup runs. A crash here leaves a `creating`
+        // row that `reconcileOnBoot` deletes — correct, since no agent work,
+        // evidence or worktree state worth recovering exists yet.
+        status: hasSetup ? 'creating' : 'idle',
         updatedAt: new Date().toISOString(),
       })
       .where(eq(objectives.id, id))
@@ -239,6 +246,18 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       .get()
 
     bus.emit({ objectiveId: id, type: 'objective_created', payload: row })
+
+    if (hasSetup && spec) {
+      // Fire-and-forget: the 201 must not wait on `composer install`.
+      void runSetup({ db, bus }, row, spec).catch((err) =>
+        bus.emit({
+          objectiveId: id,
+          type: 'setup_failed',
+          payload: { message: errorMessage(err) },
+        }),
+      )
+    }
+
     return reply.code(201).send(row)
   })
 

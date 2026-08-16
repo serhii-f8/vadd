@@ -120,6 +120,30 @@ test('running sessions from a previous process are marked orphaned', async () =>
   expect(row?.endedAt).toBeTruthy()
 })
 
+test('a setup_failed objective is deliberately not swept', async () => {
+  const { db, bus, now } = seed()
+  db.insert(objectives)
+    .values({
+      id: 'o5',
+      projectId: 'p1',
+      title: 't',
+      goalText: 'g',
+      worktreePath: '/tmp/x',
+      branchName: 'vadd/o5',
+      status: 'setup_failed',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run()
+
+  const result = await reconcileOnBoot(db, bus)
+  // Unlike `creating`, this row owns the evidence_items row carrying the setup
+  // failure log. Deleting it would lose the diagnostic and trip the same
+  // foreign key that broke `integrate: discard` in phase 3.
+  expect(result.cleanedObjectives).toBe(0)
+  expect(db.select().from(objectives).all()).toHaveLength(1)
+})
+
 test('reconciliation emits an event describing what it did', async () => {
   const { db, bus } = seed()
   await reconcileOnBoot(db, bus)

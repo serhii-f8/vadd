@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -7,6 +8,7 @@ import type { FastifyInstance } from 'fastify'
 import { AcpAgentPort } from '../../src/agent/acp-agent-port.js'
 import { AgentRegistry } from '../../src/agent/registry.js'
 import { createDb, type Db } from '../../src/db/client.js'
+import { objectives, projects } from '../../src/db/schema.js'
 import { EventBus, type VaddEvent } from '../../src/events/event-bus.js'
 import { buildApp } from '../../src/http/app.js'
 import { until } from './until.js'
@@ -29,6 +31,53 @@ export function makeTempRepo(): string {
   git('add', '-A')
   git('commit', '-qm', 'init')
   return repo
+}
+
+/**
+ * Inserts a project and one `creating` objective whose `worktreePath` is a real
+ * directory, and returns the row.
+ *
+ * For the verification tests, which need an objective row and a `cwd` but no
+ * workflow, no agent and no HTTP app. `makeTempRepo()` supplies the directory:
+ * setup and the collector only need somewhere to run, but a real git repo costs
+ * nothing and keeps the fixture honest about what a worktree is.
+ */
+export function makeObjectiveRow(
+  db: Db,
+  overrides: Partial<typeof objectives.$inferInsert> = {},
+): typeof objectives.$inferSelect {
+  const now = new Date().toISOString()
+  const projectId = randomUUID()
+  const worktreePath = makeTempRepo()
+  db.insert(projects)
+    .values({
+      id: projectId,
+      name: 'p',
+      repoPath: makeTempRepo(),
+      config: {},
+      createdAt: now,
+    })
+    .run()
+  return db
+    .insert(objectives)
+    .values({
+      id: randomUUID(),
+      projectId,
+      title: 't',
+      goalText: 'g',
+      worktreePath,
+      branchName: 'vadd/test',
+      status: 'creating',
+      mode: 'standard',
+      verificationSpec: null,
+      lowEnergy: false,
+      setupAt: null,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    })
+    .returning()
+    .get()
 }
 
 const fakeAcpAgent = fileURLToPath(new URL('./fake-acp-agent.ts', import.meta.url))

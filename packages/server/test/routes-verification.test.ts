@@ -7,6 +7,7 @@ import { objectives } from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { buildApp } from '../src/http/app.js'
 import { makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
+import { until } from './fixtures/until.js'
 
 let db: Db
 let app: ReturnType<typeof buildApp>
@@ -109,5 +110,47 @@ describe('resolution at objective creation', () => {
     const res = await create({})
     expect(res.statusCode).toBe(400)
     expect(db.select().from(objectives).all()).toHaveLength(0)
+  })
+
+  it('returns 201 immediately and moves to idle when setup succeeds', async () => {
+    mkdirSync(join(repo, '.vadd'), { recursive: true })
+    writeFileSync(
+      join(repo, '.vadd', 'config.json'),
+      JSON.stringify({
+        verify: {
+          setup: [{ id: 'deps', run: 'echo installed > installed.txt' }],
+          commands: [{ id: 'test', run: 'true', required: true }],
+        },
+      }),
+    )
+    const res = await create({})
+    expect(res.statusCode).toBe(201)
+    expect(res.json().status).toBe('creating')
+
+    const id = res.json().id
+    await until(() => {
+      const row = db.select().from(objectives).where(eq(objectives.id, id)).get()
+      return row?.status === 'idle'
+    })
+    const row = db.select().from(objectives).where(eq(objectives.id, id)).get()
+    expect(row?.setupAt).toBeTruthy()
+  })
+
+  it('lands in setup_failed when a setup command fails', async () => {
+    mkdirSync(join(repo, '.vadd'), { recursive: true })
+    writeFileSync(
+      join(repo, '.vadd', 'config.json'),
+      JSON.stringify({
+        verify: {
+          setup: [{ id: 'deps', run: 'exit 1' }],
+          commands: [{ id: 'test', run: 'true', required: true }],
+        },
+      }),
+    )
+    const id = (await create({})).json().id
+    await until(() => {
+      const row = db.select().from(objectives).where(eq(objectives.id, id)).get()
+      return row?.status === 'setup_failed'
+    })
   })
 })
