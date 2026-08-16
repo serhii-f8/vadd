@@ -53,7 +53,7 @@ test('rejects a body with neither text nor phase', async () => {
 
 test('refuses to send a prompt that still carries an unsubstituted placeholder', async () => {
   // The route used to pass only { title, goalText }, so `verify.md` reached the
-  // agent with the literal string `{{verificationCommands}}` in it. Task 14
+  // agent with its verification placeholder in it as literal text. Task 14
   // records the corpus by driving exactly this phase; the kill-switch number
   // would have been measured against a broken prompt, and the low `evidence`
   // recall would have looked like a genuine failure of the product bet.
@@ -65,7 +65,7 @@ test('refuses to send a prompt that still carries an unsubstituted placeholder',
       payload: { type: 'prompt', phase: 'verify' },
     })
     expect(res.statusCode).toBe(400)
-    expect(res.json().error).toContain('{{verificationCommands}}')
+    expect(res.json().error).toContain('{{verificationChecks}}')
     // Nothing was sent: a rejected prompt must not appear in a transcript.
     expect(ctx.events().filter((e) => e.type === 'prompt_sent')).toHaveLength(0)
   } finally {
@@ -82,7 +82,7 @@ test('vars supplied by the caller satisfy the phases the objective row cannot', 
       payload: {
         type: 'prompt',
         phase: 'verify',
-        vars: { verificationCommands: 'pnpm test, pnpm lint' },
+        vars: { verificationChecks: 'check-0: Bug reproduced by a failing test' },
       },
     })
     expect(res.statusCode).toBe(202)
@@ -90,7 +90,7 @@ test('vars supplied by the caller satisfy the phases the objective row cannot', 
     const sent = ctx.events().find((e) => e.type === 'prompt_sent')
     const text = (sent?.payload as { text?: string } | undefined)?.text ?? ''
     expect(text).not.toContain('{{')
-    expect(text).toContain('pnpm test, pnpm lint')
+    expect(text).toContain('check-0: Bug reproduced by a failing test')
   } finally {
     await ctx.cleanup()
   }

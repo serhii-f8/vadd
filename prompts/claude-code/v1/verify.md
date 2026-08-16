@@ -3,25 +3,25 @@ version: 1
 phase: verify
 expects: [evidence]
 ---
-Run the verification commands for this objective and report what they produced.
+VADD has already run this objective's verification commands and recorded their
+results. Do not run them again.
 
-Run every command again now, even if you already ran it during execute-task —
-this turn's evidence must be freshly produced, not recalled from earlier.
+Judge each acceptance check below against the work as it stands, and report one
+`evidence` event per check.
 
-Commands (report each separately, even if you ran them together):
-{{verificationCommands}}
+Checks:
+{{verificationChecks}}
 
 Emit only: `evidence`.
 
-Emit one `evidence` event per command listed above — never fold two
-commands' output into one event, even if you ran them chained.
+Set `kind` to `check`, and `checkId` to the id shown beside the check. A check
+whose id you omit is counted as unsatisfied.
 
 ```vadd-event
-{"type":"evidence","kind":"lint","status":"warn","headline":"3 warnings, 0 errors","summary":["Two unused imports in ExportController"]}
+{"type":"evidence","kind":"check","checkId":"check-0","status":"pass","headline":"Reproduced by a failing-then-passing test","summary":["ExportTest covers the regression"]}
 ```
 
-Report failures as failures. A green claim without a matching command output is
-not evidence, and the workflow will not accept it.
+Report an unmet check as `"status":"fail"`. A pass you cannot point at evidence
+for is not a pass, and the workflow will not accept it.
 
-`summary` holds at most 6 items, each at most 100 characters. A longer item is
-rejected and the evidence is lost, so keep each one to a single short clause.
+`summary` holds at most 6 items, each at most 100 characters.

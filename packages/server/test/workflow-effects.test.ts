@@ -66,6 +66,12 @@ const SAMPLE_SPEC: VerificationSpec = {
   policy: { protectedGlobs: [], maxFastFixLines: 150 },
 }
 
+/** The same spec plus one acceptance check, so `check-0` is a declared id. */
+const SPEC_WITH_CHECK: VerificationSpec = {
+  ...SAMPLE_SPEC,
+  verify: { ...SAMPLE_SPEC.verify, checks: ['Bug is reproduced by a failing test'] },
+}
+
 const EXECUTE_TASK_OK: AgentEvent[] = [
   { type: 'evidence', kind: 'test', status: 'pass', headline: 'ok', summary: [] },
   { type: 'task_result', taskId: 'task-0', claim: 'done', evidenceRefs: ['ok'] },
@@ -338,6 +344,50 @@ describe('bindEffects', () => {
     const row = db.select().from(evidenceItems).all()[0]
     expect(row?.commandId).toBeNull() // amendment A5: agent claims close nothing
     expect(row?.taskId).not.toBeNull()
+  })
+
+  it('A6: a check evidence carrying a recognised checkId links to the check', async () => {
+    db.update(objectives)
+      .set({ verificationSpec: SPEC_WITH_CHECK })
+      .where(eq(objectives.id, 'o'))
+      .run()
+    await toExecuting()
+    emitFromPipeline(
+      'o',
+      evidenceEmission({
+        kind: 'check',
+        checkId: 'check-0',
+        status: 'pass',
+        headline: 'Reproduced',
+      }),
+    )
+    expect(db.select().from(evidenceItems).all()[0]?.commandId).toBe('check-0')
+  })
+
+  it('an unrecognised checkId is ignored, not guessed at', async () => {
+    db.update(objectives)
+      .set({ verificationSpec: SPEC_WITH_CHECK })
+      .where(eq(objectives.id, 'o'))
+      .run()
+    await toExecuting()
+    emitFromPipeline(
+      'o',
+      evidenceEmission({ kind: 'check', checkId: 'check-99', status: 'pass', headline: 'x' }),
+    )
+    expect(db.select().from(evidenceItems).all()[0]?.commandId).toBeNull()
+  })
+
+  it('a non-check kind never sets commandId, even with a checkId', async () => {
+    db.update(objectives)
+      .set({ verificationSpec: SPEC_WITH_CHECK })
+      .where(eq(objectives.id, 'o'))
+      .run()
+    await toExecuting()
+    emitFromPipeline(
+      'o',
+      evidenceEmission({ kind: 'test', checkId: 'check-0', status: 'pass', headline: 'x' }),
+    )
+    expect(db.select().from(evidenceItems).all()[0]?.commandId).toBeNull()
   })
 
   it('checkpoint commits the worktree and stores the sha on the task row', async () => {

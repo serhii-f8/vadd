@@ -125,6 +125,15 @@ test('every placeholder in every bundled template has a declared source', () => 
   }
 })
 
+test('verify.md asks for the checks, not the commands', () => {
+  // Phase 4 gave the commands to EvidenceCollector. The agent's verify turn now
+  // judges the acceptance checks — the one thing running a command cannot
+  // produce — so shipping `{{verificationCommands}}` would be asking it to
+  // re-run a suite VADD has already run and recorded.
+  const body = loadTemplate('verify').body
+  expect(placeholdersIn(body)).toEqual(['verificationChecks'])
+})
+
 test('the objective-derived vars alone leave three templates unsatisfied', () => {
   // Pins the fact the fix depends on: `verify` and `execute-task` genuinely
   // cannot be rendered from an objective row, so the route must reject them

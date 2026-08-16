@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { EvidenceItemLike, WorkflowContext, WorkflowEvent } from '@vadd/core'
-import { VerificationSpec, workflowMachine } from '@vadd/core'
+import { normalizeChecks, VerificationSpec, workflowMachine } from '@vadd/core'
 import { and, eq } from 'drizzle-orm'
 import { fromPromise } from 'xstate'
 import type { AgentRegistry } from '../agent/registry.js'
@@ -92,10 +92,19 @@ function executeTaskVars(
   return { taskTitle: task.title, taskDescription: description }
 }
 
-/** One `id: run` line per `verify.commands` entry, per the `verify.md` template. */
-function verificationCommandsVar(context: WorkflowContext): string | null {
+/**
+ * One `check-<index>: text` line per `verify.checks` entry, per `verify.md`.
+ *
+ * The commands are EvidenceCollector's now, so the agent's verify turn is asked
+ * only for what a command cannot produce: a judgement on the acceptance checks.
+ * Null when there is nothing to judge — the caller then sends no verify prompt
+ * at all rather than one with an empty list.
+ */
+function verificationChecksVar(context: WorkflowContext): string | null {
   if (!context.verificationSpec) return null
-  return context.verificationSpec.verify.commands.map((c) => `${c.id}: ${c.run}`).join('\n')
+  const checks = normalizeChecks(context.verificationSpec)
+  if (checks.length === 0) return null
+  return checks.map((c) => `${c.id}: ${c.text}`).join('\n')
 }
 
 async function sendPromptEffect(
@@ -132,17 +141,20 @@ async function sendPromptEffect(
     }
     vars = taskVars
   } else if (phase === 'verify') {
-    const verificationCommands = verificationCommandsVar(context)
-    // A null spec must never let the literal `{{verificationCommands}}`
-    // placeholder reach the agent — this repo has already shipped that bug
-    // once (CLAUDE.md's "Traps Task 14 paid for").
-    if (verificationCommands === null) {
-      const message = 'No verification spec resolved for this objective'
+    const verificationChecks = verificationChecksVar(context)
+    // A null spec, or one with no checks, must never let the literal
+    // `{{verificationChecks}}` placeholder reach the agent — this repo has
+    // already shipped that bug once with the commands placeholder (CLAUDE.md's
+    // "Traps Task 14 paid for"). The machine's `hasChecks` guard means this
+    // branch should be unreachable; it stays because "should be" is not a
+    // guarantee, and the failure mode is a silently broken prompt.
+    if (verificationChecks === null) {
+      const message = 'No verification checks resolved for this objective'
       deps.bus.emit({ objectiveId, type: 'verification_unresolved', payload: { message } })
       runner.send(objectiveId, { type: 'TURN_FAILED', reason: 'error', message })
       return
     }
-    vars = { verificationCommands }
+    vars = { verificationChecks }
   }
 
   const row = loadObjective(deps.db, objectiveId)
@@ -475,16 +487,26 @@ export function bindEffects(
         if (event.type !== 'EVIDENCE') return
         try {
           const task = context.tasks[context.currentTaskIndex]
+          // Amendment A6 narrows A5: a `check`-kind event naming a check the
+          // spec actually declares carries the link the guard joins on. Every
+          // other agent evidence stays unlinked — an unrecognised id is
+          // ignored, never guessed at, so a check nothing claims stays unmet.
+          const checks = context.verificationSpec
+            ? normalizeChecks(context.verificationSpec).map((c) => c.id)
+            : []
+          const checkId =
+            event.event.kind === 'check' &&
+            event.event.checkId !== undefined &&
+            checks.includes(event.event.checkId)
+              ? event.event.checkId
+              : null
           deps.db
             .insert(evidenceItems)
             .values({
               id: randomUUID(),
               objectiveId,
               taskId: task?.id ?? null,
-              // Amendment A5: agent-emitted evidence never closes a required
-              // verification item — only EvidenceCollector's real command run
-              // (phase 4) may set a non-null `commandId`.
-              commandId: null,
+              commandId: checkId,
               kind: event.event.kind,
               status: event.event.status,
               headline: event.event.headline,

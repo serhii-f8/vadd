@@ -120,18 +120,25 @@ export const AUTO_TEMPLATE_VARS = ['title', 'goalText'] as const
  * Placeholders with no source in this milestone phase, which the caller must
  * supply as `vars`.
  *
- * `verificationCommands` comes from the verification spec and `taskTitle` /
- * `taskDescription` from `plan_tasks` — phases 3 and 4. Until those exist, the
- * human driving corpus collection types them in. Naming them here rather than
- * leaving them implicit is the point: `verify.md` and `execute-task.md` are the
- * only two templates that solicit `evidence`, one of the two gated types, and
- * they shipped sending the literal string `{{verificationCommands}}` to the
- * agent because nothing checked that any caller could satisfy them.
+ * `verificationChecks` comes from the verification spec and `taskTitle` /
+ * `taskDescription` from `plan_tasks`; the machine supplies both from phase 4
+ * on, and a human driving corpus collection types them in. Naming them here
+ * rather than leaving them implicit is the point: `verify.md` and
+ * `execute-task.md` are the only two templates that solicit `evidence`, one of
+ * the two gated types, and they shipped sending the literal string
+ * `{{verificationCommands}}` to the agent because nothing checked that any
+ * caller could satisfy them.
+ *
+ * `verificationCommands` is kept alongside its replacement: phase 4 gave the
+ * commands to EvidenceCollector and rewrote `verify.md` to ask for the checks,
+ * but a user override in `~/.vadd/prompts/` may still be the older template,
+ * and dropping the name would turn that into an unsatisfiable placeholder.
  *
  * `missing` is `repair.md`'s: the human-readable list of unmet expect groups,
  * built by the caller from `ContractPipeline.unmetExpectations()`.
  */
 export const CALLER_TEMPLATE_VARS = [
+  'verificationChecks',
   'verificationCommands',
   'taskTitle',
   'taskDescription',
