@@ -77,6 +77,21 @@ test('creating an objective for an unknown project returns 404', async () => {
   expect(res.statusCode).toBe(404)
 })
 
+test('lists every objective newest first', async () => {
+  const { app, projectId } = await withProject()
+  for (const title of ['first', 'second']) {
+    await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/objectives`,
+      payload: { title, goalText: 'g' },
+    })
+  }
+  const rows = (await app.inject({ method: 'GET', url: '/api/objectives' })).json() as Array<{
+    title: string
+  }>
+  expect(rows.map((r) => r.title)).toEqual(['second', 'first'])
+})
+
 test('M1 commands are rejected in M0', async () => {
   const { app, projectId } = await withProject()
   const o = (

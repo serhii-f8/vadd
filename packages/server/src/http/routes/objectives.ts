@@ -7,7 +7,7 @@ import {
   ObjectiveCommand,
   VerificationSpec,
 } from '@vadd/core'
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db } from '../../db/client.js'
 import {
@@ -272,6 +272,13 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
 
     return reply.code(201).send(row)
   })
+
+  /** Spec §8's board, unstyled: every objective, newest first. Registered
+   * before `/api/objectives/:id` — a parameterised route registered first
+   * would shadow this literal path and treat "objectives" as an id. */
+  app.get('/api/objectives', async () =>
+    db.select().from(objectives).orderBy(desc(objectives.createdAt)).all(),
+  )
 
   // Spec §7's "full aggregate (state, decisions, tasks, evidence)". The Focus
   // View mirrors this and performs no client-side transitions, so `state` is

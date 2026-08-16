@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type Objective, type Project, type VaddEvent } from './api.js'
+import { api, type Objective, type Project, type VaddEvent } from '../api.js'
 
 // Mirrors packages/server/src/prompts/renderer.ts PROMPT_PHASES. The web
 // package has no dependency on the server package, so this list is
