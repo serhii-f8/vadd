@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import type { WorkflowEvent } from '@vadd/core'
-import { assertSpecAllowed, CreateObjectiveBody, ObjectiveCommand } from '@vadd/core'
+import {
+  assertSpecAllowed,
+  CreateObjectiveBody,
+  normalizeChecks,
+  ObjectiveCommand,
+  VerificationSpec,
+} from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db } from '../../db/client.js'
@@ -295,6 +301,45 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
 
     const objective = db.select().from(objectives).where(eq(objectives.id, req.params.id)).get()
     if (!objective) return reply.code(404).send({ error: 'Objective not found' })
+
+    // Spec §6's manual tick. Handled before anything reaches the actor: it is
+    // not a machine event at all, it writes a row the next reconciliation
+    // reads. An untick supersedes with a failing row rather than deleting, so
+    // `currentEvidence`'s most-recent-per-checkId rule flips the answer while
+    // the Evidence Panel keeps the history.
+    if (parsed.data.type === 'tick_check') {
+      const command = parsed.data
+      const spec = VerificationSpec.safeParse(objective.verificationSpec)
+      if (!spec.success) {
+        return reply.code(400).send({ error: 'Objective has no verification spec' })
+      }
+      const known = normalizeChecks(spec.data).some((c) => c.id === command.checkId)
+      if (!known) {
+        return reply.code(400).send({ error: `Unknown check '${command.checkId}'` })
+      }
+      db.insert(evidenceItems)
+        .values({
+          id: randomUUID(),
+          objectiveId: objective.id,
+          taskId: null,
+          commandId: command.checkId,
+          kind: 'check',
+          status: command.satisfied ? 'pass' : 'fail',
+          headline: command.satisfied ? 'Confirmed by the user' : 'Marked unmet by the user',
+          summary: [],
+          artifactPath: null,
+          // Amendment A7, spec §6's "recorded as decidedBy: user".
+          decidedBy: 'user',
+          createdAt: new Date().toISOString(),
+        })
+        .run()
+      bus.emit({
+        objectiveId: objective.id,
+        type: 'check_ticked',
+        payload: { checkId: command.checkId, satisfied: command.satisfied },
+      })
+      return reply.code(202).send({ ok: true })
+    }
 
     if (parsed.data.type === 'integrate' && parsed.data.action !== 'discard') {
       const { action } = parsed.data

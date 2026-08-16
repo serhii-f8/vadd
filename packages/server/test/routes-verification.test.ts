@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createDb, type Db } from '../src/db/client.js'
-import { objectives } from '../src/db/schema.js'
+import { evidenceItems, objectives } from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { buildApp } from '../src/http/app.js'
 import { makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
@@ -152,5 +152,78 @@ describe('resolution at objective creation', () => {
       const row = db.select().from(objectives).where(eq(objectives.id, id)).get()
       return row?.status === 'setup_failed'
     })
+  })
+})
+
+describe('POST /api/objectives/:id/events tick_check', () => {
+  let objectiveId: string
+  let objectiveIdWithNoSpec: string
+
+  beforeEach(async () => {
+    // A config with one check, so `check-0` is a declared id on this objective.
+    mkdirSync(join(repo, '.vadd'), { recursive: true })
+    writeFileSync(
+      join(repo, '.vadd', 'config.json'),
+      JSON.stringify({
+        verify: {
+          commands: [{ id: 'test', run: 'true', required: true }],
+          checks: ['Bug is reproduced by a failing test'],
+        },
+      }),
+    )
+    objectiveId = (await create({})).json().id
+
+    const bare = makeTempRepo()
+    const other = (
+      await app.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: bare } })
+    ).json().id
+    objectiveIdWithNoSpec = (
+      await app.inject({
+        method: 'POST',
+        url: `/api/projects/${other}/objectives`,
+        payload: { title: 't', goalText: 'g' },
+      })
+    ).json().id
+  })
+
+  it('records a tick as a check row with decidedBy user', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'tick_check', checkId: 'check-0', satisfied: true },
+    })
+    expect(res.statusCode).toBe(202)
+    const row = db.select().from(evidenceItems).all()[0]
+    expect(row?.commandId).toBe('check-0')
+    expect(row?.kind).toBe('check')
+    expect(row?.status).toBe('pass')
+    expect(row?.decidedBy).toBe('user')
+  })
+
+  it('an untick records a failing row, not a deletion', async () => {
+    await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'tick_check', checkId: 'check-0', satisfied: false },
+    })
+    expect(db.select().from(evidenceItems).all()[0]?.status).toBe('fail')
+  })
+
+  it('refuses a checkId the spec does not declare', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'tick_check', checkId: 'check-99', satisfied: true },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('refuses a tick on an objective with no verification spec', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveIdWithNoSpec}/events`,
+      payload: { type: 'tick_check', checkId: 'check-0', satisfied: true },
+    })
+    expect(res.statusCode).toBe(400)
   })
 })

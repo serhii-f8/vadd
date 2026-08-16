@@ -84,5 +84,12 @@ export const ObjectiveCommand = z.discriminatedUnion('type', [
   z.object({ type: z.literal('rollback') }),
   z.object({ type: z.literal('pause') }),
   z.object({ type: z.literal('resume') }),
+  // Spec §6's manual tick. Not a machine event: it writes a row, and the next
+  // reconciliation reads it.
+  z.object({
+    type: z.literal('tick_check'),
+    checkId: z.string().min(1).max(40),
+    satisfied: z.boolean(),
+  }),
 ])
 export type ObjectiveCommand = z.infer<typeof ObjectiveCommand>
