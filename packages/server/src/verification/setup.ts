@@ -3,11 +3,11 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { decideCommand, type VerificationSpec } from '@vadd/core'
 import { eq } from 'drizzle-orm'
-import { execa } from 'execa'
 import type { Db } from '../db/client.js'
 import { evidenceItems, objectives } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
 import { artifactsDirFor } from '../paths.js'
+import { runCommand } from './run-command.js'
 
 type Deps = { db: Db; bus: EventBus }
 type ObjectiveRow = typeof objectives.$inferSelect
@@ -62,17 +62,16 @@ export async function runSetup(
       output = `Refused by the command policy: ${decision.reason}\n`
     } else {
       try {
-        const result = await execa(command.run, {
-          shell: true,
-          cwd: resolve(worktree, command.cwd),
-          all: true,
-          reject: false,
-          timeout: spec.verify.timeoutSec * 1000,
-        })
-        output = result.all ?? ''
+        const result = await runCommand(
+          command.run,
+          resolve(worktree, command.cwd),
+          spec.verify.timeoutSec * 1000,
+        )
+        output = result.output
         status = result.exitCode === 0 ? 'pass' : 'fail'
-        headline =
-          status === 'pass'
+        headline = result.timedOut
+          ? clip(`${command.id} timed out after ${spec.verify.timeoutSec}s`, 120)
+          : status === 'pass'
             ? clip(`${command.id} ok`, 120)
             : clip(`${command.id} failed — exit ${result.exitCode}`, 120)
       } catch (err) {
