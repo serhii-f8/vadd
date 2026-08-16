@@ -7,6 +7,7 @@ import { registerEventRoutes } from './routes/events.js'
 import { registerEvidenceRoutes } from './routes/evidence.js'
 import { registerObjectiveRoutes } from './routes/objectives.js'
 import { registerProjectRoutes } from './routes/projects.js'
+import { registerSettingsRoutes } from './routes/settings.js'
 
 export type AppDeps = {
   db: Db
@@ -27,5 +28,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   registerObjectiveRoutes(app, deps)
   registerEventRoutes(app, deps)
   registerEvidenceRoutes(app, deps)
+  registerSettingsRoutes(app, deps)
   return app
 }
