@@ -88,6 +88,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@vadd/core':
+        specifier: workspace:*
+        version: link:../core
       react:
         specifier: ^19.2.8
         version: 19.2.8
