@@ -482,7 +482,8 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       // snapshot `verifying` took: a manual untick since then sends no
       // `EVIDENCE_RESULT`, so the context alone would never learn of it.
       const context = actor.getSnapshot().context
-      if (!evidenceComplete(context.verificationSpec, currentEvidence(db, objective.id, context))) {
+      const items = currentEvidence(db, objective.id, context)
+      if (!evidenceComplete(context.verificationSpec, items)) {
         return reply.code(409).send({
           error:
             'The evidence set is not complete, so this objective cannot reach done. ' +
@@ -511,6 +512,16 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
         })
       }
 
+      // Hand the machine the same set this route just judged, so its own
+      // `evidenceComplete` evaluates the table rather than the snapshot
+      // `verifying` took. Without this the two agree only by an argument about
+      // reachability — that `awaitingReview` is entered through a guarded
+      // transition, so the context is green on arrival, and `tick_check` can
+      // only make the table worse than the context, never better. That
+      // argument holds today, but it is a fragile thing to rest a squash and a
+      // worktree removal on. `integrating` has this handler for exactly this
+      // reason: "the set can go red between review and integration".
+      runner.send(objective.id, { type: 'EVIDENCE_RESULT', items })
       runner.send(objective.id, event)
       // Assert the outcome rather than assuming it. The machine re-evaluates
       // `evidenceComplete` against its *own* context, which the checks above

@@ -369,3 +369,79 @@ describe('FocusView primary element by state', () => {
     expect(screen.queryByRole('button', { name: /abandon/i })).toBeNull()
   })
 })
+
+describe('FocusView: no header actions while setup runs', () => {
+  it('offers neither Pause nor Abandon in creating', async () => {
+    mockFetch({ 'GET /api/objectives/o1': { body: aggregate({ state: 'creating' }) } })
+    renderFocus()
+    // The setup element is what confirms the page rendered rather than threw.
+    // Scoped to the heading: a bare /setting up|installing/ matches both it and
+    // the body copy below it.
+    expect(await screen.findByRole('heading', { name: /setting up/i })).toBeTruthy()
+    // `runSetup` is fire-and-forget in the worktree Abandon would remove, and
+    // it writes the status again when it finishes — so an Abandon here races a
+    // running `composer install` and then has its `cancelled` overwritten.
+    expect(screen.queryByRole('button', { name: /abandon/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /pause/i })).toBeNull()
+  })
+
+  it('still offers them in a live state', async () => {
+    mockFetch({ 'GET /api/objectives/o1': { body: aggregate({ state: 'executing' }) } })
+    renderFocus()
+    expect(await screen.findByRole('button', { name: /abandon/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /pause/i })).toBeTruthy()
+  })
+})
+
+describe('FocusView: paused shows the evidence that paused it', () => {
+  const redSet = [
+    {
+      id: 'e1',
+      commandId: 'check-0',
+      kind: 'check' as const,
+      status: 'fail' as const,
+      headline: 'Looks right in the UI',
+      summary: [],
+      artifactPath: null,
+      decidedBy: null,
+      createdAt: '2026-08-16T10:00:00.000Z',
+    },
+  ]
+
+  it('renders the evidence panel alongside resume', async () => {
+    mockFetch({
+      'GET /api/objectives/o1': { body: aggregate({ state: 'paused', evidence: redSet }) },
+      'GET /api/objectives/o1/diff': { status: 409, body: { error: 'no worktree' } },
+    })
+    renderFocus()
+    // A red set is exactly why `verifying` drops to `paused` — without the
+    // panel the user cannot see which check failed, only that something did.
+    expect(await screen.findByText('Looks right in the UI')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /resume/i })).toBeTruthy()
+  })
+
+  it('lets a check be ticked from paused, which is the only rescue path', async () => {
+    const { calls } = mockFetch({
+      'GET /api/objectives/o1': { body: aggregate({ state: 'paused', evidence: redSet }) },
+      'GET /api/objectives/o1/diff': { status: 409, body: { error: 'no worktree' } },
+      'POST /api/objectives/o1/events': { status: 202, body: { ok: true } },
+    })
+    renderFocus()
+    await userEvent.click(await screen.findByRole('checkbox', { name: /Looks right in the UI/ }))
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({
+      type: 'tick_check',
+      checkId: 'check-0',
+      satisfied: true,
+    })
+  })
+
+  it('keeps the panel read-only once terminal', async () => {
+    mockFetch({
+      'GET /api/objectives/o1': { body: aggregate({ state: 'cancelled', evidence: redSet }) },
+      'GET /api/objectives/o1/diff': { status: 409, body: { error: 'no worktree' } },
+    })
+    renderFocus()
+    expect(await screen.findByText('Looks right in the UI')).toBeTruthy()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+  })
+})

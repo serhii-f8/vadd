@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import type { AgentEvent } from '@vadd/core'
 import { eq } from 'drizzle-orm'
@@ -561,6 +562,64 @@ describe('integrate performs real git work', () => {
     )
     const row = db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()
     expect(row?.integrateAction).toBe('keep')
+  })
+
+  /**
+   * The route and the machine both evaluate `evidenceComplete`, but from
+   * different sources: the route reads the `evidence_items` table, the machine
+   * reads `context.evidence` — the snapshot `verifying` took. They agree today
+   * only by an argument about reachability, which is a fragile thing to rest a
+   * destructive operation on.
+   *
+   * Sending `EVIDENCE_RESULT` with the same items the route just judged makes
+   * them agree by construction instead. `integrating` has that handler for
+   * exactly this reason — its own comment says "the set can go red between
+   * review and integration".
+   */
+  it('refreshes the machine context from the table before integrating', async () => {
+    const { app, db, runner, objectiveId } = await seedIntegratingObjectiveWithGreenEvidence()
+
+    const before = runner.get(objectiveId)?.getSnapshot().context.evidence ?? []
+    // A row the `verifying` snapshot cannot know about: written straight to the
+    // table after the context was captured, which is what a manual tick does.
+    db.insert(evidenceItems)
+      .values({
+        id: randomUUID(),
+        objectiveId,
+        taskId: null,
+        commandId: 'check-0',
+        kind: 'check',
+        status: 'pass',
+        headline: 'Confirmed by the user',
+        summary: [],
+        artifactPath: null,
+        decidedBy: 'user',
+        createdAt: new Date().toISOString(),
+      })
+      .run()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'integrate', action: 'keep' },
+    })
+    expect(res.statusCode).toBe(202)
+
+    // Read the persisted snapshot, not the live actor: reaching `done` is
+    // terminal, and the runner drops the actor on a terminal state.
+    const persisted = db
+      .select()
+      .from(machineSnapshots)
+      .where(eq(machineSnapshots.objectiveId, objectiveId))
+      .get()
+    const after = (
+      persisted?.snapshot as { context?: { evidence?: { commandId: string | null }[] } }
+    )?.context?.evidence
+
+    // The context grew to match the table rather than staying at the snapshot
+    // `verifying` took.
+    expect(after?.length ?? 0).toBeGreaterThan(before.length)
+    expect(after?.some((e) => e.commandId === 'check-0')).toBe(true)
   })
 
   /**

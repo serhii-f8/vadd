@@ -105,7 +105,16 @@ export function FocusView() {
 
   const state = aggregate.state
   const primary = primaryElementFor(state)
-  const terminal = primary === 'outcome'
+  /**
+   * Pause and Abandon are offered only where they mean something.
+   *
+   * `outcome` is terminal — nothing left to pause or abandon. `setup` is the
+   * window where `runSetup` is installing dependencies **into the worktree
+   * Abandon would remove**, fire-and-forget, and it writes the objective's
+   * status again when it finishes — so an Abandon here races a live
+   * `composer install` and then has its `cancelled` status overwritten.
+   */
+  const headerActions = primary !== 'outcome' && primary !== 'setup'
   const decision = aggregate.decisions.find((d) => d.chosenId === null) ?? aggregate.decisions[0]
 
   return (
@@ -119,7 +128,7 @@ export function FocusView() {
           <p className="text-sm text-gray-600">{state}</p>
         </div>
         <div className="flex gap-2">
-          {!terminal && (
+          {headerActions && (
             <>
               <button
                 type="button"
@@ -215,15 +224,30 @@ export function FocusView() {
         </section>
       )}
       {primary === 'resume' && (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="rounded border px-3 py-1"
-            onClick={() => void onCommand({ type: state === 'paused' ? 'resume' : 'start' })}
-          >
-            {state === 'paused' ? 'Resume' : 'Start'}
-          </button>
-        </div>
+        <>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="rounded border px-3 py-1"
+              onClick={() => void onCommand({ type: state === 'paused' ? 'resume' : 'start' })}
+            >
+              {state === 'paused' ? 'Resume' : 'Start'}
+            </button>
+          </div>
+          {/*
+            A red evidence set is *why* `verifying` drops to `paused` — spec §5
+            forbids it entering `awaitingReview` — so this is exactly where the
+            user needs to see which check failed, and it is the only place they
+            can tick one to satisfy it by hand (spec §6). Without the panel
+            here, that tick control is only ever mounted in `awaitingReview`,
+            where every check is already green, and its sole live function is
+            unticking. `RESUME` re-enters `verifying`, which reconciles and
+            picks the tick up.
+          */}
+          {state === 'paused' && (
+            <EvidencePanel aggregate={aggregate} onCommand={(b) => void onCommand(b)} />
+          )}
+        </>
       )}
 
       {/* Secondary strip: the task list as Level 0 dots. */}
