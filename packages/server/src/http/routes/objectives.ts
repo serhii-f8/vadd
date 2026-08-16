@@ -19,6 +19,7 @@ import {
   planTasks,
   projects,
 } from '../../db/schema.js'
+import { objectiveDiff, objectiveFileDiff } from '../../git/diff.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
 import { resolveVerification } from '../../verification/resolve.js'
@@ -295,6 +296,36 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       evidence: db.select().from(evidenceItems).where(eq(evidenceItems.objectiveId, row.id)).all(),
     }
   })
+
+  // Spec §7: "stats + file list; ?file= returns unified diff".
+  app.get<{ Params: { id: string }; Querystring: { file?: string } }>(
+    '/api/objectives/:id/diff',
+    async (req, reply) => {
+      const row = db.select().from(objectives).where(eq(objectives.id, req.params.id)).get()
+      if (!row) return reply.code(404).send({ error: 'Objective not found' })
+      if (!row.worktreePath || !row.baseSha) {
+        // An objective that has been committed, discarded or predates
+        // amendment A8 has nothing to diff. Saying so beats an empty list,
+        // which reads as "no changes".
+        return reply
+          .code(409)
+          .send({ error: 'Objective has no worktree or no recorded base commit' })
+      }
+
+      const summary = await objectiveDiff(row.worktreePath, row.baseSha)
+      const wanted = req.query.file
+      if (wanted === undefined) return summary
+
+      // Matched against the list rather than interpolated into a git
+      // invocation: a path that is not in the list 404s, so nothing
+      // user-supplied reaches the command line.
+      if (!summary.files.some((f) => f.path === wanted)) {
+        return reply.code(404).send({ error: `No such file in this objective's diff: ${wanted}` })
+      }
+      const text = await objectiveFileDiff(row.worktreePath, row.baseSha, wanted)
+      return reply.type('text/plain; charset=utf-8').send(text)
+    },
+  )
 
   /**
    * The destructive delete. Separate from `integrate: discard`, which since
