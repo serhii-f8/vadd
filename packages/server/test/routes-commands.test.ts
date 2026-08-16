@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import type { AgentEvent } from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import type { LightMyRequestResponse } from 'fastify'
 import { describe, expect, it } from 'vitest'
@@ -248,6 +250,225 @@ async function driveToAwaitingDecision(ctx: Awaited<ReturnType<typeof withObject
   ctx.settleNext()
   await until(() => statusOf(ctx.db, ctx.objectiveId) === 'awaitingDecision')
 }
+
+/** An idle objective with a real worktree on disk, and nothing else driven. */
+async function seedIdleObjective() {
+  const ctx = await withObjective()
+  const row = ctx.db.select().from(objectives).where(eq(objectives.id, ctx.objectiveId)).get()
+  if (!row?.worktreePath) throw new Error('expected a worktree path')
+  return { ...ctx, worktreePath: row.worktreePath }
+}
+
+const GREEN_STATUS_EVENT: AgentEvent = {
+  type: 'status',
+  phase: 'exploring',
+  headline: 'Looking around',
+}
+const GREEN_DECISION_EVENT: AgentEvent = {
+  type: 'decision_needed',
+  question: 'Which approach?',
+  options: [
+    { id: 'a', label: 'A', pros: [], cons: [], reversibility: 'high', verification: 'tests pass' },
+    { id: 'b', label: 'B', pros: [], cons: [], reversibility: 'high', verification: 'tests pass' },
+  ],
+  recommendedId: 'a',
+}
+const GREEN_PLAN_EVENT: AgentEvent = {
+  type: 'plan',
+  tasks: [{ title: 'Fix it', description: 'Make the failing test pass' }],
+}
+const GREEN_EXECUTE_TASK_OK: AgentEvent[] = [
+  { type: 'evidence', kind: 'test', status: 'pass', headline: 'ok', summary: [] },
+  { type: 'task_result', taskId: '0', claim: 'done', evidenceRefs: ['ok'] },
+]
+
+/**
+ * Modelled on workflow-verification.test.ts's `stubFactory`: batches are
+ * consumed in `prompt()` call order rather than matched on prompt text, which
+ * is what lets one stub answer explore, propose, plan and execute-task turns
+ * in sequence.
+ */
+function queueStubFactory() {
+  let promptCount = 0
+  let onUpdate: ((u: unknown) => void) | undefined
+  const resolvers: Array<(v: { stopReason: string }) => void> = []
+  const eventQueue: AgentEvent[][] = []
+
+  const factory: PortFactory = () => {
+    const port = {
+      async start() {},
+      async newSession() {
+        return { sessionId: 'session-1' }
+      },
+      async prompt(sessionId: string) {
+        promptCount += 1
+        const batch = eventQueue.shift() ?? []
+        for (const e of batch) {
+          onUpdate?.({
+            sessionId,
+            receivedAt: new Date().toISOString(),
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: `\`\`\`vadd-event\n${JSON.stringify(e)}\n\`\`\`\n` },
+            },
+          })
+        }
+        return new Promise<{ stopReason: string }>((resolve) => {
+          resolvers.push(resolve)
+        })
+      },
+      async cancel() {},
+      async stop() {},
+      onUpdate: (cb: (u: unknown) => void) => {
+        onUpdate = cb
+        return () => {
+          onUpdate = undefined
+        }
+      },
+      onExit: () => () => {},
+    }
+    return port as unknown as ReturnType<PortFactory>
+  }
+
+  return {
+    factory,
+    promptCalls: () => promptCount,
+    queueEvents: (...batches: AgentEvent[][]) => eventQueue.push(...batches),
+    settleNext: () => {
+      const resolve = resolvers.shift()
+      if (!resolve) throw new Error('no pending fake prompt to settle')
+      resolve({ stopReason: 'end_turn' })
+    },
+  }
+}
+
+/**
+ * Drives a fresh objective all the way to `integrating` with a full green
+ * evidence set, through the real turn/collector/machine pipeline — the same
+ * path `workflow-verification.test.ts` uses to reach `integrating`, just
+ * wired to this file's real HTTP app so the route under test sees the same
+ * live actor and the same `baseSha` a real worktree creation stamps.
+ */
+async function seedIntegratingObjectiveWithGreenEvidence() {
+  const home = withTempHome()
+  const db = createDb(`${home}/vadd.db`)
+  const bus = new EventBus(db)
+  const repo = makeTempRepo()
+  const { factory, promptCalls, queueEvents, settleNext } = queueStubFactory()
+
+  let runner!: WorkflowRunner
+  const agents = new AgentRegistry(db, bus, factory, (objectiveId, emission) => {
+    runner.ingest(objectiveId, emission)
+  })
+  runner = new WorkflowRunner({ db, bus, agents })
+  const app = buildApp({ db, bus, agents, runner })
+
+  const projectId = (
+    await app.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: repo } })
+  ).json().id as string
+  const created = await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/objectives`,
+    payload: {
+      title: 't',
+      goalText: 'g',
+      // A command that always passes, so the collector's real subprocess run
+      // produces a green `evidence_items` row with `commandId: 'test'`.
+      verificationOverrides: {
+        verify: { commands: [{ id: 'test', run: 'exit 0', required: true }] },
+      },
+    },
+  })
+  const objectiveId = created.json().id as string
+  const row0 = db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()
+  if (!row0?.worktreePath) throw new Error('expected a worktree path')
+  const worktreePath = row0.worktreePath
+
+  await agents.ensure({ id: objectiveId, worktreePath })
+
+  async function settleFakeTurn(): Promise<void> {
+    settleNext()
+    for (let i = 0; i < 25; i++) await Promise.resolve()
+    await new Promise((r) => setTimeout(r, 0))
+  }
+
+  const stateOf = () => String(runner.get(objectiveId)?.getSnapshot().value)
+
+  runner.start(objectiveId)
+  queueEvents(
+    [GREEN_STATUS_EVENT],
+    [GREEN_DECISION_EVENT],
+    [GREEN_PLAN_EVENT],
+    GREEN_EXECUTE_TASK_OK,
+  )
+  runner.send(objectiveId, { type: 'START' })
+  await settleFakeTurn() // explore -> proposing
+  await settleFakeTurn() // propose -> awaitingDecision
+
+  const decision = db.select().from(decisions).all()[0]
+  if (!decision) throw new Error('expected a decisions row before DECIDE')
+  runner.send(objectiveId, { type: 'DECIDE', decisionId: decision.id, optionId: 'a' })
+  await settleFakeTurn() // plan -> awaitingPlanApproval
+
+  runner.send(objectiveId, { type: 'APPROVE_PLAN' })
+  // `checkpoint` is async and `sendPrompt` awaits it, so `executing` is
+  // reached before the execute-task turn exists to be settled.
+  await until(() => promptCalls() >= 4)
+  await settleFakeTurn() // execute-task -> verifying, which invokes the collector
+
+  // The collector runs a real subprocess, so the run to `awaitingReview`
+  // finishes on its own time rather than on a settled prompt.
+  await until(() => stateOf() === 'awaitingReview', 10_000)
+
+  runner.send(objectiveId, { type: 'APPROVE_TASK' })
+  await until(() => stateOf() === 'integrating')
+
+  return { app, db, bus, agents, runner, objectiveId, worktreePath }
+}
+
+describe('integrate performs real git work', () => {
+  it('refuses from a state the machine will not accept, doing no git work', async () => {
+    const { app, objectiveId, worktreePath } = await seedIdleObjective()
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'integrate', action: 'commit' },
+    })
+    expect(res.statusCode).toBe(409)
+    expect(existsSync(worktreePath)).toBe(true)
+  })
+
+  it('stamps integrateAction when the machine reaches done', async () => {
+    const { app, db, objectiveId } = await seedIntegratingObjectiveWithGreenEvidence()
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'integrate', action: 'keep' },
+    })
+    expect(res.statusCode).toBe(202)
+    await until(
+      () =>
+        db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()?.status === 'done',
+    )
+    const row = db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()
+    expect(row?.integrateAction).toBe('keep')
+  })
+
+  it('leaves the objective in integrating when the git work fails', async () => {
+    const { app, db, objectiveId } = await seedIntegratingObjectiveWithGreenEvidence()
+    // A baseSha that does not resolve is the cheapest real git failure.
+    db.update(objectives).set({ baseSha: 'notasha' }).where(eq(objectives.id, objectiveId)).run()
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/objectives/${objectiveId}/events`,
+      payload: { type: 'integrate', action: 'commit' },
+    })
+    expect(res.statusCode).toBe(500)
+    expect(db.select().from(objectives).where(eq(objectives.id, objectiveId)).get()?.status).toBe(
+      'integrating',
+    )
+  })
+})
 
 describe('commands the machine refuses', () => {
   it('answers 409 and names the current state rather than silently ignoring', async () => {

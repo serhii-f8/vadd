@@ -541,9 +541,15 @@ export function bindEffects(
 
       finishObjective: (_, params: { action: 'commit' | 'keep' | 'discard' }) => {
         try {
-          // The real commit/keep/discard mechanics are phase 5 work. This
-          // phase's job is to leave a durable record that the objective
-          // finished and how — never to drop the event silently.
+          // The git mechanics live in `workflow/integrate.ts` and have already
+          // run by the time this fires — the route does them between the
+          // machine's guard check and the send. This action's whole job is the
+          // durable record: what happened, and how.
+          deps.db
+            .update(objectives)
+            .set({ integrateAction: params.action, updatedAt: new Date().toISOString() })
+            .where(eq(objectives.id, objectiveId))
+            .run()
           deps.bus.emit({
             objectiveId,
             type: 'objective_finished',

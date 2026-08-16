@@ -10,19 +10,12 @@ import {
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db } from '../../db/client.js'
-import {
-  agentSessions,
-  decisions,
-  evidenceItems,
-  machineSnapshots,
-  objectives,
-  planTasks,
-  projects,
-} from '../../db/schema.js'
-import { createWorktree, removeWorktree } from '../../git/git-manager.js'
+import { decisions, evidenceItems, objectives, planTasks, projects } from '../../db/schema.js'
+import { createWorktree } from '../../git/git-manager.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
 import { resolveVerification } from '../../verification/resolve.js'
 import { runSetup } from '../../verification/setup.js'
+import { runIntegration } from '../../workflow/integrate.js'
 import type { WorkflowRunner } from '../../workflow/runner.js'
 import { loadSnapshot } from '../../workflow/store.js'
 import { cancelOpenTurn, renderTurnPrompt, runTurn, TurnRejected } from '../../workflow/turn.js'
@@ -345,7 +338,7 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       return reply.code(202).send({ ok: true })
     }
 
-    if (parsed.data.type === 'integrate' && parsed.data.action !== 'discard') {
+    if (parsed.data.type === 'integrate') {
       const { action } = parsed.data
       if (action === 'pr' || action === 'merge') {
         // Accepted by the schema only so this message can say why — spec §8.1
@@ -358,6 +351,9 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       const runner = deps.runner
       if (!runner) return reply.code(500).send({ error: 'Workflow runner is not configured' })
 
+      const project = db.select().from(projects).where(eq(projects.id, objective.projectId)).get()
+      if (!project) return reply.code(500).send({ error: 'Objective has no project' })
+
       const actor = ensureActor(runner, db, objective.id)
       const event: WorkflowEvent = { type: 'INTEGRATE', action }
       if (!actor.getSnapshot().can(event)) {
@@ -365,47 +361,30 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
           .code(409)
           .send({ error: `Cannot integrate from state "${String(actor.getSnapshot().value)}"` })
       }
+
+      // The git work happens here, between the guard check and the send. A
+      // failure must claim nothing: the objective stays in `integrating` and
+      // the user can retry. Doing this inside `finishObjective` instead would
+      // mean `done` is reached before the worktree is dealt with.
+      const outcome = await runIntegration({ db, bus }, objective, project, action)
+      if (!outcome.ok) {
+        return reply.code(500).send({ error: outcome.message })
+      }
+
+      // A PAUSE can land during the git work. Report both halves rather than
+      // presenting either as the whole — the "never drop silently" rule
+      // applied to a window that genuinely exists.
+      if (!actor.getSnapshot().can(event)) {
+        return reply.code(409).send({
+          error:
+            `The "${action}" git work completed, but the objective moved to ` +
+            `"${String(actor.getSnapshot().value)}" and did not advance to done. ` +
+            'Resume and integrate again to finish.',
+        })
+      }
+
       runner.send(objective.id, event)
       return reply.code(202).send({ ok: true, state: String(actor.getSnapshot().value) })
-    }
-
-    if (parsed.data.type === 'integrate') {
-      const project = db.select().from(projects).where(eq(projects.id, objective.projectId)).get()
-      if (!project) return reply.code(500).send({ error: 'Objective has no project' })
-
-      // The machine is stopped before the rows go: an actor left running on a
-      // deleted objective would still hold a binding whose next turn writes to
-      // rows that no longer exist.
-      deps.runner?.stop(objective.id)
-      await deps.agents?.stop(objective.id)
-
-      if (objective.worktreePath && objective.branchName) {
-        await removeWorktree(project.repoPath, objective.worktreePath, objective.branchName)
-      }
-      // Every one of these tables has a foreign key on objectives.id with no
-      // cascade, so each must be cleared before the objective row itself or
-      // the delete fails the constraint. `evidence_items` goes first because it
-      // also references `plan_tasks`.
-      //
-      // Phase 3 added the four machine tables and this list did not grow with
-      // them: against the real server, discarding an objective that had ever
-      // been driven removed the worktree and then 500'd on the FOREIGN KEY,
-      // leaving a row pointing at a directory that no longer existed. One
-      // transaction so a failure part-way through cannot repeat that.
-      db.transaction((tx) => {
-        tx.delete(evidenceItems).where(eq(evidenceItems.objectiveId, objective.id)).run()
-        tx.delete(planTasks).where(eq(planTasks.objectiveId, objective.id)).run()
-        tx.delete(decisions).where(eq(decisions.objectiveId, objective.id)).run()
-        tx.delete(machineSnapshots).where(eq(machineSnapshots.objectiveId, objective.id)).run()
-        tx.delete(agentSessions).where(eq(agentSessions.objectiveId, objective.id)).run()
-        tx.delete(objectives).where(eq(objectives.id, objective.id)).run()
-      })
-      bus.emit({
-        objectiveId: objective.id,
-        type: 'objective_discarded',
-        payload: { id: objective.id },
-      })
-      return reply.code(200).send({ ok: true })
     }
 
     // Everything except `prompt`, `cancel` and `integrate` is a machine command.
@@ -418,8 +397,9 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     // `CANCEL` would destroy an objective every time a recording session
     // stopped a turn. The turn meaning is kept; reaching the machine's
     // `CANCEL` is left to phase 5's Focus View, which has room for both.
-    // (`integrate` is already fully handled above, in both its machine and its
-    // discard form, so it cannot reach here — TS narrows it out.)
+    // (`integrate` is already fully handled above — every action, `discard`
+    // included, now goes through the machine — so it cannot reach here; TS
+    // narrows it out.)
     if (parsed.data.type !== 'prompt' && parsed.data.type !== 'cancel') {
       const runner = deps.runner
       if (!runner) return reply.code(500).send({ error: 'Workflow runner is not configured' })
