@@ -46,6 +46,45 @@ export const VerificationSpec = z
 export type VerificationSpec = z.infer<typeof VerificationSpec>
 
 /**
+ * Spec §6's per-objective override — the third resolution source, merged over
+ * repo config or auto-detection and winning leaf by leaf (design §3.3).
+ *
+ * Deliberately **not** `VerificationSpec` itself: that schema's defaults fill
+ * `setup`/`commands`/`checks` with `[]`, so an override meaning only "raise the
+ * timeout" would arrive carrying three empty arrays and the leaf-replacing
+ * merge would erase everything config or detection had found. Every leaf here
+ * is optional, and absent means "no opinion" rather than "empty".
+ *
+ * The individual commands still carry `Command`'s own defaults, so an override
+ * that supplies commands supplies them whole.
+ */
+export const VerificationOverride = z.object({
+  verify: z
+    .object({
+      setup: z.array(SetupCommand).optional(),
+      commands: z
+        .array(Command)
+        // Same reason as the spec's own refinement: two rows claiming one id
+        // make `evidenceComplete` ambiguous. Commands replace wholesale, so
+        // checking the override's own array is enough.
+        .refine((c) => new Set(c.map((x) => x.id)).size === c.length, {
+          message: 'verify.commands[].id must be unique',
+        })
+        .optional(),
+      checks: z.array(z.string().min(1).max(300)).optional(),
+      timeoutSec: z.number().int().positive().max(3600).optional(),
+    })
+    .optional(),
+  policy: z
+    .object({
+      protectedGlobs: z.array(z.string()).optional(),
+      maxFastFixLines: z.number().int().positive().optional(),
+    })
+    .optional(),
+})
+export type VerificationOverride = z.infer<typeof VerificationOverride>
+
+/**
  * Spec §6 keeps `checks` a list of strings. Amendment A5 derives their ids
  * positionally, so a check can be linked to the `evidence_items` row that
  * satisfies it without changing the spec's format.

@@ -27,6 +27,11 @@ export {
   LEVEL_1_WORD_LIMIT,
   LEVEL_2_WORD_LIMIT,
 } from './policies/reading-budget.js'
+export {
+  assertSpecAllowed,
+  mergeSpec,
+  type SpecAllowed,
+} from './policies/verification-resolution.js'
 export type { AgentPort, RawAgentUpdate } from './ports/agent-port.js'
 export {
   AGENT_EVENT_TYPES,
@@ -45,6 +50,7 @@ export { contractReference } from './schemas/contract-reference.js'
 export { agentEventJsonSchema } from './schemas/json-schema.js'
 export {
   normalizeChecks,
+  VerificationOverride,
   VerificationSpec,
   type VerifyCommand,
 } from './schemas/verification.js'

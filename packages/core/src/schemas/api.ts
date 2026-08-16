@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { VerificationSpec } from './verification.js'
+import { VerificationOverride } from './verification.js'
 
 export const RegisterProjectBody = z.object({
   repoPath: z.string().min(1),
@@ -13,11 +13,16 @@ export const CreateObjectiveBody = z.object({
   /** D1's two paths (spec §7). Fast Fix skips proposing/awaitingDecision only. */
   mode: z.enum(['standard', 'fastfix']).default('standard'),
   /**
-   * Spec §6's per-objective override, stored on the objective row and winning
-   * over repo config and auto-detection. Phase 4 adds the two it wins over; a
-   * caller can supply it directly until then.
+   * Spec §6's per-objective override, merged over repo config or
+   * auto-detection at creation and winning leaf by leaf.
+   *
+   * `VerificationOverride`, not `VerificationSpec`: the full schema's defaults
+   * would turn "raise the timeout" into an override carrying three empty
+   * arrays, and `mergeSpec` replaces leaves — so it would silently erase the
+   * commands resolution had just found. A caller supplying a whole spec still
+   * parses, because every leaf is optional rather than absent.
    */
-  verificationOverrides: VerificationSpec.optional(),
+  verificationOverrides: VerificationOverride.optional(),
 })
 export type CreateObjectiveBody = z.infer<typeof CreateObjectiveBody>
 
