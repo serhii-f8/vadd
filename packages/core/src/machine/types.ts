@@ -35,6 +35,26 @@ export type PlanTaskLike = {
 }
 
 /**
+ * A plan task's identity, and the reason it is not just its position.
+ *
+ * `plan_tasks.id` is a single-column primary key, and until phase 6 the machine
+ * filled it with the task's ordinal — `'0'`, `'1'`, `'2'`. That is unique
+ * within one objective and globally unique nowhere, so the *second* objective
+ * in any database that ever reached `planning` failed its `recordPlan` insert
+ * with `UNIQUE constraint failed: plan_tasks.id` and went on to
+ * `awaitingPlanApproval` with no rows behind it. Scoping the id by objective is
+ * what makes the ordinal meaningful again.
+ *
+ * Chosen over a composite `(objective_id, ord)` primary key because
+ * `evidence_items.task_id` is a single-column foreign key onto this one:
+ * a composite key would have to be mirrored into that table (and into every
+ * join through it) to buy exactly the same uniqueness this buys for free.
+ */
+export function planTaskId(objectiveId: string, ord: number): string {
+  return `${objectiveId}:${ord}`
+}
+
+/**
  * The subset of an `evidence_items` row the guard reads. Deliberately not the
  * Drizzle row type: `core` must not import from `server`.
  */

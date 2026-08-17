@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { check, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { check, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(),
@@ -170,22 +170,37 @@ export const decisions = sqliteTable('decisions', {
   createdAt: text('created_at').notNull(),
 })
 
-export const planTasks = sqliteTable('plan_tasks', {
-  id: text('id').primaryKey(),
-  objectiveId: text('objective_id')
-    .notNull()
-    .references(() => objectives.id),
-  ord: integer('ord').notNull(),
-  title: text('title').notNull(),
-  description: text('description').notNull(),
-  status: text('status', {
-    enum: ['pending', 'running', 'verifying', 'verified', 'failed', 'skipped'],
-  }).notNull(),
-  /** The `vadd-checkpoint:` commit made before this task's first `executing` entry. */
-  checkpointRef: text('checkpoint_ref'),
-  startedAt: text('started_at'),
-  finishedAt: text('finished_at'),
-})
+/**
+ * `id` is `planTaskId(objectiveId, ord)` — objective-scoped, never the bare
+ * ordinal. The ordinal alone is a primary key that only one objective per
+ * database can ever hold, which is exactly the shipped defect phase 6 found:
+ * every objective after the first failed its `recordPlan` insert.
+ *
+ * The unique index makes that invariant structural rather than a convention the
+ * id-building helper is trusted to keep. It would have failed the very first
+ * duplicate insert loudly instead of letting one objective's checkpoint write
+ * land on another objective's row.
+ */
+export const planTasks = sqliteTable(
+  'plan_tasks',
+  {
+    id: text('id').primaryKey(),
+    objectiveId: text('objective_id')
+      .notNull()
+      .references(() => objectives.id),
+    ord: integer('ord').notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    status: text('status', {
+      enum: ['pending', 'running', 'verifying', 'verified', 'failed', 'skipped'],
+    }).notNull(),
+    /** The `vadd-checkpoint:` commit made before this task's first `executing` entry. */
+    checkpointRef: text('checkpoint_ref'),
+    startedAt: text('started_at'),
+    finishedAt: text('finished_at'),
+  },
+  (t) => [uniqueIndex('plan_tasks_objective_ord_unique').on(t.objectiveId, t.ord)],
+)
 
 export const evidenceItems = sqliteTable('evidence_items', {
   id: text('id').primaryKey(),

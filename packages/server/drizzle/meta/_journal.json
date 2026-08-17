@@ -29,6 +29,13 @@
       "when": 1786880079965,
       "tag": "0003_integrate",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786987430754,
+      "tag": "0004_plan_task_identity",
+      "breakpoints": true
     }
   ]
 }

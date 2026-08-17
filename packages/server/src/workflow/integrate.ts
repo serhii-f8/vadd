@@ -1,3 +1,4 @@
+import { protectedPaths, VerificationSpec } from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import { execa } from 'execa'
 import type { Db } from '../db/client.js'
@@ -20,6 +21,49 @@ function errorMessage(err: unknown): string {
 async function git(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await execa('git', ['-C', cwd, ...args])
   return stdout
+}
+
+/**
+ * Un-stages everything the resolved spec's `policy.protectedGlobs` protects,
+ * restoring each path's index entry to its `baseSha` state (which, for a path
+ * that did not exist at `baseSha`, means removing it from the index entirely).
+ * The working tree is untouched — `reset` with pathspecs never touches it — and
+ * the worktree is removed straight afterwards anyway.
+ *
+ * This is the enforcement point `protectedGlobs` never had. Before phase 6 the
+ * field was resolved, merged, stored and read by nothing: the exit run's
+ * `backend/.env*` entry did not stop amendment A1's `setup` from rewriting the
+ * tracked `backend/.env.testing`, `git add -A` from staging it, or the squash
+ * from carrying it onto the branch.
+ *
+ * The excluded paths are announced rather than dropped quietly — a squash that
+ * silently omits a file the agent believed it had changed is the same class of
+ * lie as an evidence set that silently goes missing.
+ */
+async function excludeProtected(
+  deps: Deps,
+  objective: ObjectiveRow,
+  worktreePath: string,
+  baseSha: string,
+): Promise<void> {
+  const spec = VerificationSpec.safeParse(objective.verificationSpec)
+  const globs = spec.success ? spec.data.policy.protectedGlobs : []
+  if (globs.length === 0) return
+
+  // `-z` because a path may contain anything a filesystem allows, and git
+  // quotes non-ASCII names in the newline-separated form.
+  const staged = (await git(worktreePath, ['diff', '--cached', '--name-only', '-z']))
+    .split('\0')
+    .filter((p) => p !== '')
+  const excluded = protectedPaths(staged, globs)
+  if (excluded.length === 0) return
+
+  await git(worktreePath, ['reset', '-q', baseSha, '--', ...excluded])
+  deps.bus.emit({
+    objectiveId: objective.id,
+    type: 'integrate_protected_excluded',
+    payload: { paths: excluded },
+  })
 }
 
 /**
@@ -90,6 +134,7 @@ export async function runIntegration(
     // `vadd-checkpoint:` commits collapse into it.
     await git(worktreePath, ['add', '-A'])
     await git(worktreePath, ['reset', '--soft', baseSha])
+    await excludeProtected(deps, objective, worktreePath, baseSha)
 
     const empty = await execa('git', ['-C', worktreePath, 'diff', '--cached', '--quiet'], {
       reject: false,
