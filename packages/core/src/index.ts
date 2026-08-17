@@ -9,6 +9,7 @@ export {
   MACHINE_STATES,
   type MachineStateName,
   type PlanTaskLike,
+  planTaskId,
   TERMINAL_STATES,
   toMachineEvent,
   type WorkflowContext,
@@ -20,6 +21,7 @@ export {
   workflowMachine,
 } from './machine/workflow-machine.js'
 export { type CommandDecision, decideCommand } from './policies/command-policy.js'
+export { isProtectedPath, protectedPaths } from './policies/protected-paths.js'
 export {
   type BudgetViolation,
   countWords,

@@ -8,7 +8,13 @@ import { assign, fromPromise, setup } from 'xstate'
 import 'xstate/guards'
 import type { VerificationSpec } from '../schemas/verification.js'
 import { evidenceComplete, isFastFix as isFastFixGuard } from './guards.js'
-import type { MachineStateName, PlanTaskLike, WorkflowContext, WorkflowEvent } from './types.js'
+import {
+  type MachineStateName,
+  type PlanTaskLike,
+  planTaskId,
+  type WorkflowContext,
+  type WorkflowEvent,
+} from './types.js'
 
 export type WorkflowInput = {
   objectiveId: string
@@ -263,10 +269,13 @@ export const workflowMachine = setup({
           actions: [
             'noteTurnEvent',
             assign({
-              tasks: ({ event }) =>
+              // `planTaskId`, never the bare ordinal: `plan_tasks.id` is a
+              // global primary key, so positional ids collided across
+              // objectives (see `planTaskId`'s comment).
+              tasks: ({ context, event }) =>
                 event.type === 'PLAN'
                   ? event.event.tasks.map((t, ord) => ({
-                      id: `${ord}`,
+                      id: planTaskId(context.objectiveId, ord),
                       ord,
                       title: t.title,
                       description: t.description,

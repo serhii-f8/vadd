@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -78,6 +78,35 @@ test('removeWorktree throws rather than silently leaking a stuck worktree', asyn
 
   await expect(removeWorktree(repo, wt, 'vadd/stuck123')).rejects.toMatchObject({ code: 'EGIT' })
   expect(await listWorktrees(repo)).toHaveLength(2)
+})
+
+test('removeWorktree throws when the directory survives a deregistered removal', async () => {
+  const repo = makeTempRepo()
+  const wt = join(mkdtempSync(join(tmpdir(), 'vadd-wt-')), 'objective')
+  await createWorktree(repo, wt, 'vadd/undeletable')
+
+  // The real case: an in-container `composer install` leaves `backend/vendor`
+  // owned by root:root, so the invoking user's unlink fails with EACCES. Taking
+  // write permission off the *parent* directory reproduces exactly that errno
+  // for this user without needing root — unlink is authorised by the containing
+  // directory, not by the file. `git worktree remove --force` then fails
+  // partway, after it has already dropped the admin entry, so both the
+  // registration check and a prune see a worktree that no longer exists while
+  // the files stay on disk.
+  const stuck = join(wt, 'vendor', 'pkg')
+  mkdirSync(stuck, { recursive: true })
+  writeFileSync(join(stuck, 'installed.txt'), 'x')
+  chmodSync(stuck, 0o555)
+  try {
+    await expect(removeWorktree(repo, wt, 'vadd/undeletable')).rejects.toMatchObject({
+      code: 'EGIT',
+    })
+    expect(existsSync(wt)).toBe(true)
+  } finally {
+    // Restore before rm, or the fixture itself becomes the leak it tests for.
+    chmodSync(stuck, 0o755)
+    rmSync(wt, { recursive: true, force: true })
+  }
 })
 
 test('GitError is thrown, not a raw execa error', async () => {

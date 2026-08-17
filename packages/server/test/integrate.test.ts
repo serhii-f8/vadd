@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -162,5 +162,120 @@ describe('runIntegration: discard', () => {
     expect(row).toBeDefined()
     expect(row?.worktreePath).toBeNull()
     expect(row?.branchName).toBeNull()
+  })
+})
+
+/**
+ * Amendment A1's `setup` commands run real shell inside the worktree, and the
+ * exit run's did what the `flexpick.net` trap says it must: rewrote the
+ * *tracked* `backend/.env.testing` so the suite talks to host-exposed ports
+ * instead of Sail's. Every `vadd-checkpoint:` commit swept that up with
+ * `git add -A`, and the squash carried it onto the branch. `protectedGlobs`
+ * named the file and stopped nothing, because until now nothing read the field.
+ */
+describe('runIntegration: commit and policy.protectedGlobs', () => {
+  const SPEC = {
+    verify: { setup: [], commands: [], checks: [], timeoutSec: 600 },
+    policy: {
+      protectedGlobs: ['backend/.env*', 'backend/vendor/**', '**/migrations/**'],
+      maxFastFixLines: 150,
+    },
+  }
+
+  /** A repo with a tracked `backend/.env.testing`, and a worktree that changed it. */
+  async function seedProtected(spec: unknown = SPEC) {
+    const now = new Date().toISOString()
+    mkdirSync(join(repo, 'backend'), { recursive: true })
+    writeFileSync(join(repo, 'backend/.env.testing'), 'DB_HOST=mysql\nDB_PORT=3306\n')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'add env')
+
+    db.insert(projects)
+      .values({ id: 'p1', name: 'p', repoPath: repo, config: {}, createdAt: now })
+      .run()
+    const wt = join(home, 'wt')
+    const baseSha = await createWorktree(repo, wt, 'vadd/prot1234')
+
+    // What `setup` did: a tracked file rewritten for the host, plus a vendored
+    // tree and a migration nobody asked this objective to touch.
+    writeFileSync(join(wt, 'backend/.env.testing'), 'DB_HOST=127.0.0.1\nDB_PORT=33061\n')
+    mkdirSync(join(wt, 'backend/vendor'), { recursive: true })
+    writeFileSync(join(wt, 'backend/vendor/autoload.php'), '<?php // installed\n')
+    mkdirSync(join(wt, 'backend/database/migrations'), { recursive: true })
+    writeFileSync(join(wt, 'backend/database/migrations/0001_x.php'), '<?php // schema\n')
+    // The actual fix.
+    mkdirSync(join(wt, 'backend/app'), { recursive: true })
+    writeFileSync(join(wt, 'backend/app/Collector.php'), '<?php // the bugfix\n')
+    git(wt, 'add', '-A')
+    git(wt, 'commit', '-qm', 'vadd-checkpoint: task 1')
+
+    db.insert(objectives)
+      .values({
+        id: 'o1',
+        projectId: 'p1',
+        title: 'Fix the collector',
+        goalText: 'the goal',
+        status: 'integrating',
+        worktreePath: wt,
+        branchName: 'vadd/prot1234',
+        baseSha,
+        verificationSpec: spec as Record<string, unknown>,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run()
+    const project = db.select().from(projects).where(eq(projects.id, 'p1')).get()
+    const objective = db.select().from(objectives).where(eq(objectives.id, 'o1')).get()
+    if (!project || !objective) throw new Error('seed failed')
+    return { project, objective, wt, baseSha }
+  }
+
+  it('keeps protected paths out of the squashed commit', async () => {
+    const { project, objective, baseSha } = await seedProtected()
+    const out = await runIntegration({ db, bus }, objective, project, 'commit')
+    expect(out).toEqual({ ok: true, committed: true })
+
+    const files = git(repo, 'diff', '--name-only', `${baseSha}..vadd/prot1234`).split('\n')
+    expect(files).toEqual(['backend/app/Collector.php'])
+    // The tracked file is not merely absent from the diff — the committed tree
+    // still holds the repo's own version of it.
+    expect(git(repo, 'show', 'vadd/prot1234:backend/.env.testing')).toContain('DB_HOST=mysql')
+  })
+
+  it('says which paths it excluded rather than dropping them silently', async () => {
+    const { project, objective } = await seedProtected()
+    await runIntegration({ db, bus }, objective, project, 'commit')
+    const excluded = bus.since('o1', 0).find((e) => e.type === 'integrate_protected_excluded')
+    expect((excluded?.payload as { paths: string[] } | undefined)?.paths.sort()).toEqual([
+      'backend/.env.testing',
+      'backend/database/migrations/0001_x.php',
+      'backend/vendor/autoload.php',
+    ])
+  })
+
+  it('commits the protected paths when no glob claims them', async () => {
+    const { project, objective, baseSha } = await seedProtected({
+      verify: { setup: [], commands: [], checks: [], timeoutSec: 600 },
+      policy: { protectedGlobs: [], maxFastFixLines: 150 },
+    })
+    await runIntegration({ db, bus }, objective, project, 'commit')
+    const files = git(repo, 'diff', '--name-only', `${baseSha}..vadd/prot1234`).split('\n')
+    expect(files.sort()).toEqual([
+      'backend/.env.testing',
+      'backend/app/Collector.php',
+      'backend/database/migrations/0001_x.php',
+      'backend/vendor/autoload.php',
+    ])
+  })
+
+  it('emits integrate_empty when every changed path is protected', async () => {
+    const { project, objective, wt } = await seedProtected()
+    // Undo the one unprotected change, so nothing but protected paths is left.
+    git(wt, 'rm', '-q', 'backend/app/Collector.php')
+    git(wt, 'commit', '-qm', 'vadd-checkpoint: task 2')
+
+    const out = await runIntegration({ db, bus }, objective, project, 'commit')
+    expect(out).toEqual({ ok: true, committed: false })
+    expect(bus.since('o1', 0).map((e) => e.type)).toContain('integrate_empty')
   })
 })

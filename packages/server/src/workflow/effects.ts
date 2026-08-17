@@ -244,7 +244,13 @@ async function checkpointEffect(
     deps.db
       .update(planTasks)
       .set({ checkpointRef: sha, status: 'running', startedAt: new Date().toISOString() })
-      .where(eq(planTasks.id, task.id))
+      // Scoped by objective as well as by task id, for the same reason
+      // `recordDecisionChoice` is: `task.id` comes out of the actor's context,
+      // which a rehydrated or hand-edited snapshot can carry from anywhere.
+      // While ids were bare ordinals this write really did land on a different
+      // objective's row — it is the reason `plan_tasks` now has an
+      // objective-scoped identity at all, and the scope stays regardless.
+      .where(and(eq(planTasks.id, task.id), eq(planTasks.objectiveId, objectiveId)))
       .run()
     return true
   } catch (err) {
@@ -267,7 +273,11 @@ async function rollbackEffect(
   // nothing in the machine ever updates it — `checkpoint`'s real sha only
   // ever lands in the `plan_tasks` row, so that is the source of truth here.
   const taskRow = task
-    ? deps.db.select().from(planTasks).where(eq(planTasks.id, task.id)).get()
+    ? deps.db
+        .select()
+        .from(planTasks)
+        .where(and(eq(planTasks.id, task.id), eq(planTasks.objectiveId, objectiveId)))
+        .get()
     : undefined
   const ref = taskRow?.checkpointRef ?? null
   if (!ref) {
@@ -480,11 +490,15 @@ export function bindEffects(
             }
           })
         } catch (err) {
-          deps.bus.emit({
-            objectiveId,
-            type: 'record_plan_failed',
-            payload: { message: errorMessage(err) },
-          })
+          const message = errorMessage(err)
+          deps.bus.emit({ objectiveId, type: 'record_plan_failed', payload: { message } })
+          // A plan the database refused is not a plan. Emitting and returning
+          // let the machine walk on to `awaitingPlanApproval` and offer the
+          // user an empty task list to approve — which is what shipped, and
+          // what turned a `UNIQUE constraint failed` into a silently empty
+          // plan. `TURN_FAILED` routes to `paused` with the reason attached,
+          // the same way a failed checkpoint does.
+          runner.send(objectiveId, { type: 'TURN_FAILED', reason: 'error', message })
         }
       },
 

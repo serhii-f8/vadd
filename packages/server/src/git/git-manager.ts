@@ -63,13 +63,25 @@ export async function createWorktree(
  * been deleted, so a prune-and-retry covers the crash-between-steps case; the
  * branch delete is best-effort because the branch may never have been created.
  *
- * `pruneWorktrees` only clears admin entries whose working directories are
- * already gone — it is a no-op if `remove` failed for any other reason (a
- * stale `.git/worktrees/<name>/locked` file, a permissions error, ...). Left
- * unchecked, this function would then resolve successfully while the
- * worktree stayed registered and on disk, silently violating the leak-free
- * lifecycle guarantee. The post-condition check below turns that into a
- * loud `EGIT` failure instead.
+ * Two post-conditions, because git-level success and filesystem-level success
+ * are different facts and the leak-free lifecycle guarantee (spec §10) needs
+ * both:
+ *
+ * 1. Still *registered*. `pruneWorktrees` only clears admin entries whose
+ *    working directories are already gone, so it is a no-op when `remove`
+ *    failed for a reason that left the directory intact — a stale
+ *    `.git/worktrees/<name>/locked` file, say.
+ * 2. Still *on disk*. `worktree remove --force` deletes the `.git` link file
+ *    early and can then fail partway through the recursive delete — which is
+ *    what a root-owned `vendor/` written by an in-container install does. The
+ *    missing link file is precisely what makes prune deregister the worktree,
+ *    so after that failure check 1 passes: git has forgotten a directory that
+ *    is still there. This is not hypothetical; it leaked ~1.7GB across five
+ *    directories under `~/.vadd/worktrees` while every teardown reported
+ *    success.
+ *
+ * Either one is a loud `EGIT` failure. Nothing here retries the delete: if the
+ * invoking user could not unlink those files, neither can we.
  */
 export async function removeWorktree(
   repoPath: string,
@@ -96,6 +108,16 @@ export async function removeWorktree(
     throw new GitError(
       `Worktree still registered after removal: ${worktreePath}. ` +
         'Check for a stale lock in .git/worktrees or a permissions problem.',
+      'EGIT',
+    )
+  }
+  if (existsSync(target)) {
+    throw new GitError(
+      `Worktree directory still on disk after removal: ${worktreePath}. ` +
+        'Git has deregistered it, so nothing will retry this. Most likely it ' +
+        'holds files this user cannot unlink (a root-owned vendor/ or ' +
+        'node_modules/ written by an in-container install); check ownership ' +
+        'and remove it by hand.',
       'EGIT',
     )
   }

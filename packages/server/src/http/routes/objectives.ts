@@ -6,6 +6,7 @@ import {
   evidenceComplete,
   normalizeChecks,
   ObjectiveCommand,
+  planTaskId,
   VerificationSpec,
 } from '@vadd/core'
 import { desc, eq } from 'drizzle-orm'
@@ -120,11 +121,12 @@ function toWorkflowEvent(
       return {
         event: {
           type: 'APPROVE_PLAN',
-          // `id: String(ord)` matches the machine's own convention when it
-          // builds tasks from a `plan` event; an edited list that numbered its
-          // tasks differently would not line up with the `plan_tasks` rows.
+          // `planTaskId` matches the machine's own convention when it builds
+          // tasks from a `plan` event; an edited list that numbered its tasks
+          // differently would not line up with the `plan_tasks` rows, and a
+          // bare ordinal here would no longer line up with them at all.
           tasks: command.edits?.map((t, ord) => ({
-            id: String(ord),
+            id: planTaskId(objectiveId, ord),
             ord,
             title: t.title,
             description: t.description,
