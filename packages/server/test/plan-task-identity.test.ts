@@ -213,6 +213,25 @@ describe('plan task identity', () => {
     expect(runner.get('obj-b')?.getSnapshot().value).toBe('awaitingPlanApproval')
   })
 
+  it('APPROVE_PLAN edits reach plan_tasks, not just machine context', async () => {
+    await planObjective('obj-a', 'Original one', 'Original two')
+
+    runner.send('obj-a', {
+      type: 'APPROVE_PLAN',
+      tasks: [
+        {
+          id: planTaskId('obj-a', 0),
+          ord: 0,
+          title: 'Edited one',
+          description: 'do Edited one',
+          checkpointRef: null,
+        },
+      ],
+    })
+
+    expect(tasksOf('obj-a').map((r) => r.title)).toEqual(['Edited one'])
+  })
+
   it("a checkpoint on one objective leaves the other objective's rows alone", async () => {
     await planObjective('obj-a', 'A one', 'A two')
     await planObjective('obj-b', 'B one', 'B two')

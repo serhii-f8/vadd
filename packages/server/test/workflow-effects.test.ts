@@ -326,6 +326,25 @@ describe('bindEffects', () => {
     expect(rows.every((r) => r.status === 'pending')).toBe(true)
   })
 
+  it('A10: REVISE from awaitingPlanApproval re-prompts planning with the note, and records the re-plan', async () => {
+    await toAwaitingPlanApproval()
+
+    queueEvents([
+      { type: 'plan', tasks: [{ title: 'Split part one', description: 'do part one' }] },
+    ])
+    runner.send('o', { type: 'REVISE', instruction: 'Split task one into two' })
+    expect(runner.get('o')?.getSnapshot().value).toBe('planning')
+
+    await vi.waitFor(() => expect(promptCalls()).toBeGreaterThanOrEqual(4))
+    expect(lastPromptText()).toContain('Split task one into two')
+
+    await settleFakeTurn() // plan settles -> awaitingPlanApproval
+    expect(runner.get('o')?.getSnapshot().value).toBe('awaitingPlanApproval')
+    expect(runner.get('o')?.getSnapshot().context.reviseInstruction).toBeNull()
+    const rows = db.select().from(planTasks).orderBy(planTasks.ord).all()
+    expect(rows.map((r) => r.title)).toEqual(['Split part one'])
+  })
+
   it('recordDecision writes a decisions row, and DECIDE fills in the choice', async () => {
     await toAwaitingDecision()
     const before = db.select().from(decisions).all()[0]

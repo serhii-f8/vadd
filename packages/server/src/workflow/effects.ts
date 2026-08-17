@@ -140,6 +140,12 @@ async function sendPromptEffect(
       return
     }
     vars = taskVars
+  } else if (phase === 'plan' && context.reviseInstruction) {
+    // Amendment A10: a REVISE from awaitingPlanApproval re-enters `planning`,
+    // whose template only has `{{goalText}}` — override the default merge
+    // (`renderTurnPrompt` spreads `turn.vars` after it) rather than adding a
+    // new placeholder, the same reuse `executeTaskVars` already relies on.
+    vars = { goalText: `${context.goalText}\n\nRevision note: ${context.reviseInstruction}` }
   } else if (phase === 'verify') {
     const verificationChecks = verificationChecksVar(context)
     // A null spec, or one with no checks, must never let the literal

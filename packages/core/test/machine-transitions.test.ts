@@ -11,9 +11,10 @@ const spec = VerificationSpec.parse({
 const sendPrompt = vi.fn()
 const checkpoint = vi.fn()
 const rollbackToCheckpoint = vi.fn()
+const recordPlan = vi.fn()
 
 const stubbed = workflowMachine.provide({
-  actions: { sendPrompt, checkpoint, rollbackToCheckpoint },
+  actions: { sendPrompt, checkpoint, rollbackToCheckpoint, recordPlan },
   // `verifying` invokes the collector (phase 4). `core`'s own implementation
   // throws on purpose — an unprovided collector must fail loudly — so every
   // test that passes through `verifying` provides an inert one here.
@@ -56,6 +57,7 @@ beforeEach(() => {
   sendPrompt.mockClear()
   checkpoint.mockClear()
   rollbackToCheckpoint.mockClear()
+  recordPlan.mockClear()
 })
 
 describe('the happy path', () => {
@@ -118,6 +120,34 @@ describe('the happy path', () => {
     actor.send({ type: 'APPROVE_PLAN' })
     expect(actor.getSnapshot().value).toBe('executing')
     expect(checkpoint).toHaveBeenCalledTimes(1)
+  })
+
+  it('APPROVE_PLAN re-records the plan, so an edited list reaches plan_tasks too', () => {
+    const actor = toAwaitingPlanApproval()
+    recordPlan.mockClear() // toAwaitingPlanApproval's own PLAN event already recorded once
+    actor.send({
+      type: 'APPROVE_PLAN',
+      tasks: [
+        { id: 'o1-0', ord: 0, title: 'Edited title', description: 'edited', checkpointRef: null },
+      ],
+    })
+    expect(actor.getSnapshot().context.tasks).toEqual([
+      { id: 'o1-0', ord: 0, title: 'Edited title', description: 'edited', checkpointRef: null },
+    ])
+    expect(recordPlan).toHaveBeenCalledTimes(1)
+  })
+
+  it('REVISE from awaitingPlanApproval re-plans instead of being refused', () => {
+    const actor = toAwaitingPlanApproval()
+    actor.send({ type: 'REVISE', instruction: 'Split task one into two' })
+    expect(actor.getSnapshot().value).toBe('planning')
+    expect(actor.getSnapshot().context.reviseInstruction).toBe('Split task one into two')
+    // The re-plan turn's own PLAN/TURN_FINISHED clears it once consumed, the
+    // same way `revising`'s post-execution turn does.
+    actor.send({ type: 'PLAN', event: planEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    expect(actor.getSnapshot().value).toBe('awaitingPlanApproval')
+    expect(actor.getSnapshot().context.reviseInstruction).toBeNull()
   })
 
   it('executing → verifying, and verifying → awaitingReview only on a green set', () => {

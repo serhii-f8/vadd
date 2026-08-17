@@ -286,7 +286,17 @@ export const workflowMachine = setup({
             { type: 'recordPlan' },
           ],
         },
-        TURN_FINISHED: [{ guard: 'sawPlan', target: 'awaitingPlanApproval' }, { target: 'paused' }],
+        TURN_FINISHED: [
+          {
+            guard: 'sawPlan',
+            target: 'awaitingPlanApproval',
+            // Amendment A10: a REVISE-triggered re-plan set this; a fresh
+            // plan from awaitingDecision never did, so clearing it here is
+            // always correct rather than only sometimes a no-op.
+            actions: assign({ reviseInstruction: () => null }),
+          },
+          { target: 'paused', actions: assign({ reviseInstruction: () => null }) },
+        ],
       },
     },
 
@@ -295,11 +305,26 @@ export const workflowMachine = setup({
       on: {
         APPROVE_PLAN: {
           target: 'executing',
+          actions: [
+            assign({
+              approvals: ({ context }) => [...context.approvals, 'plan'],
+              tasks: ({ context, event }) =>
+                event.type === 'APPROVE_PLAN' && event.tasks ? event.tasks : context.tasks,
+              currentTaskIndex: () => 0,
+            }),
+            // Amendment A10: an edited list must reach `plan_tasks`, not just
+            // context — the stored plan otherwise diverges from the one the
+            // machine executes.
+            { type: 'recordPlan' },
+          ],
+        },
+        // Amendment A10: "the plan is wrong, think again" is cheapest right
+        // here, before any work starts. Re-enters `planning`, whose entry
+        // sends the `plan` phase prompt again.
+        REVISE: {
+          target: 'planning',
           actions: assign({
-            approvals: ({ context }) => [...context.approvals, 'plan'],
-            tasks: ({ context, event }) =>
-              event.type === 'APPROVE_PLAN' && event.tasks ? event.tasks : context.tasks,
-            currentTaskIndex: () => 0,
+            reviseInstruction: ({ event }) => (event.type === 'REVISE' ? event.instruction : null),
           }),
         },
       },
