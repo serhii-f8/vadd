@@ -24,5 +24,11 @@ jobs:
       # VADD_E2E is unset, so the real-adapter tests stay skipped: CI has no
       # Claude Code credentials and must not need any.
       - run: pnpm test
-      # `pnpm eval` is added by the corpus task. Wiring it before a corpus
-      # exists would give a green gate for scoring nothing.
+      # Report-only: the gate currently fails by design (evidence precision
+      # 75.0% against a 90% bar — see CLAUDE.md), and closing that gap is
+      # human relabeling work, not something a PR's diff can fix. A blocking
+      # step here would make every PR red for a reason unrelated to its own
+      # change. `continue-on-error` keeps the score visible without that.
+      # Revisit once the gate clears (docs/superpowers/notes/m1-post-exit-cleanup.md §1).
+      - run: pnpm eval
+        continue-on-error: true
