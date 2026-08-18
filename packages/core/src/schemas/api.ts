@@ -83,7 +83,14 @@ export const ObjectiveCommand = z.discriminatedUnion('type', [
     type: z.literal('approve_plan'),
     /** Spec §8's PlanApproval list is editable; absent means "approve as proposed". */
     edits: z
-      .array(z.object({ title: z.string().min(1).max(80), description: z.string().max(300) }))
+      .array(
+        z.object({
+          title: z.string().min(1).max(80),
+          description: z.string().max(300),
+          /** Amendment A11 — see the `plan` event's field of the same name. */
+          expectFailing: z.array(z.string().max(40)).max(5).optional(),
+        }),
+      )
       .min(1)
       .max(12)
       .optional(),

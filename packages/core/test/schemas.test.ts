@@ -24,6 +24,10 @@ test('ObjectiveCommand carries the M0 commands plus spec §7s machine commands',
     { type: 'answer_clarification', answer: 'sqlite' },
     { type: 'approve_plan' },
     { type: 'approve_plan', edits: [{ title: 'Fix it', description: 'patch' }] },
+    {
+      type: 'approve_plan',
+      edits: [{ title: 'Fix it', description: 'patch', expectFailing: ['test'] }],
+    },
     { type: 'approve_task' },
     { type: 'revise', instruction: 'also handle null' },
     { type: 'rollback' },
@@ -33,6 +37,16 @@ test('ObjectiveCommand carries the M0 commands plus spec §7s machine commands',
     { type: 'integrate', action: 'keep' },
   ]) {
     expect(ObjectiveCommand.safeParse(command).success, JSON.stringify(command)).toBe(true)
+  }
+
+  // Verify that the `expectFailing` field is preserved through parsing
+  const editedWithExemption = ObjectiveCommand.safeParse({
+    type: 'approve_plan',
+    edits: [{ title: 'Fix it', description: 'patch', expectFailing: ['test'] }],
+  })
+  expect(editedWithExemption.success).toBe(true)
+  if (editedWithExemption.success && editedWithExemption.data.type === 'approve_plan') {
+    expect(editedWithExemption.data.edits?.[0]?.expectFailing).toEqual(['test'])
   }
 
   // `pr` and `merge` parse so the route can refuse them with a message naming

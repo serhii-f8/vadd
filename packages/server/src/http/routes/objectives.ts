@@ -131,6 +131,7 @@ function toWorkflowEvent(
             title: t.title,
             description: t.description,
             checkpointRef: null,
+            expectFailing: t.expectFailing,
           })),
         },
       }
