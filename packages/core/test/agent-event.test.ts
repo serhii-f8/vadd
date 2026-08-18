@@ -145,3 +145,43 @@ test('A6: an over-long checkId is refused', () => {
   })
   expect(parsed.success).toBe(false)
 })
+
+test('A11: a plan task accepts an optional expectFailing naming verification command ids', () => {
+  const result = AgentEvent.safeParse({
+    type: 'plan',
+    tasks: [
+      {
+        title: 'Add a failing test for the empty backspace',
+        description: 'Cover the reported case before changing behaviour.',
+        expectFailing: ['test'],
+      },
+      { title: 'Fix it', description: 'patch' },
+    ],
+  })
+  expect(result.success).toBe(true)
+  if (result.success && result.data.type === 'plan') {
+    expect(result.data.tasks[0]?.expectFailing).toEqual(['test'])
+    expect(result.data.tasks[1]?.expectFailing).toBeUndefined()
+  }
+})
+
+test('A11: expectFailing is capped at 5 ids of 40 chars each, and existing plans without it still parse', () => {
+  expect(
+    AgentEvent.safeParse({
+      type: 'plan',
+      tasks: [{ title: 'x', description: 'y' }],
+    }).success,
+  ).toBe(true)
+  expect(
+    AgentEvent.safeParse({
+      type: 'plan',
+      tasks: [{ title: 'x', description: 'y', expectFailing: Array(6).fill('a') }],
+    }).success,
+  ).toBe(false)
+  expect(
+    AgentEvent.safeParse({
+      type: 'plan',
+      tasks: [{ title: 'x', description: 'y', expectFailing: ['a'.repeat(41)] }],
+    }).success,
+  ).toBe(false)
+})

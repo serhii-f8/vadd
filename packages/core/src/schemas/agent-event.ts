@@ -75,7 +75,19 @@ export const AgentEvent = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('plan'),
     tasks: z
-      .array(z.object({ title: z.string().max(80), description: z.string().max(300) }))
+      .array(
+        z.object({
+          title: z.string().max(80),
+          description: z.string().max(300),
+          /**
+           * Amendment A11: `verify.commands[].id`s this task is allowed to leave
+           * failing — a deliberate TDD "red" step. Absent or empty means today's
+           * behaviour: every required command must pass. Scoped to the specific
+           * command, never a blanket "this task may fail anything."
+           */
+          expectFailing: z.array(z.string().max(40)).max(5).optional(),
+        }),
+      )
       .min(1)
       .max(12),
   }),

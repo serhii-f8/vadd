@@ -32,6 +32,8 @@ export type PlanTaskLike = {
   title: string
   description: string
   checkpointRef: string | null
+  /** Amendment A11. Optional — absent means no exemption, same as an empty array. */
+  expectFailing?: string[]
 }
 
 /**
