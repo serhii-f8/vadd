@@ -495,6 +495,26 @@ export function bindEffects(
           .run()
       },
 
+      // Amendment A12. Fires only when `autoApproveTaskIfLowRisk` /
+      // `autoApprovePlanIfSimple` actually raised — never on an ordinary
+      // human-approved task or plan. `GET /api/objectives/:id` reads this
+      // back as `lastAutoApproval` (Task 8) — the UI never inspects SSE
+      // payloads (spec §7: no client-side transitions), so this is the only
+      // way the fact reaches the Focus View at all, since the raise means
+      // `awaitingReview`/`awaitingPlanApproval` are never actually rendered.
+      noteAutoApprovedTask: ({ context }) => {
+        const task = context.tasks[context.currentTaskIndex]
+        deps.bus.emit({
+          objectiveId,
+          type: 'task_auto_approved',
+          payload: { taskId: task?.id ?? null, ord: task?.ord ?? null },
+        })
+      },
+
+      noteAutoApprovedPlan: () => {
+        deps.bus.emit({ objectiveId, type: 'plan_auto_approved', payload: {} })
+      },
+
       recordDecision: ({ event }) => {
         if (event.type !== 'DECISION_NEEDED') return
         try {

@@ -653,4 +653,46 @@ describe('bindEffects', () => {
     // transition.
     expect(tolerated?.payload).toEqual({ taskId: task?.id ?? null, commandIds: ['test'] })
   })
+
+  it('amendment A12: auto-approving a task emits task_auto_approved on the event log', async () => {
+    db.update(objectives)
+      .set({ verificationSpec: SAMPLE_SPEC, lowEnergy: true })
+      .where(eq(objectives.id, 'o'))
+      .run()
+
+    // Same real drive as Task 4's test (toExecuting/toAwaitingPlanApproval),
+    // but with a single-task plan driven inline — PLAN_EVENT (the shared
+    // fixture toAwaitingPlanApproval queues) has two tasks, so an auto-approve
+    // off the first would land back in `executing` for the second rather
+    // than proving the drive all the way through. A single task means
+    // `hasMoreTasks` is false, so the auto-approve's raised `APPROVE_TASK`
+    // lands on `integrating` instead.
+    await toAwaitingDecision()
+    queueEvents([{ type: 'plan', tasks: [{ title: 'Only task', description: 'the only task' }] }])
+    const decision = db.select().from(decisions).all()[0]
+    if (!decision) throw new Error('expected a decision row before DECIDE')
+    runner.send('o', { type: 'DECIDE', decisionId: decision.id, optionId: decision.recommendedId })
+    await settleFakeTurn() // plan settles -> awaitingPlanApproval
+
+    writeFileSync(join(wt, 'touched.txt'), 'original')
+    queueEvents(EXECUTE_TASK_OK)
+    runner.send('o', { type: 'APPROVE_PLAN' })
+    await vi.waitFor(() => expect(promptCalls()).toBeGreaterThanOrEqual(4))
+
+    // execute-task(the only task) settles -> verifying -> collector runs the
+    // (passing, low-risk) command -> reconcileEvidence -> awaitingReview,
+    // whose entry auto-approves since lowEnergy && taskRisk === 'low', and
+    // with no more tasks the raised APPROVE_TASK lands on `integrating`.
+    await settleFakeTurn()
+    await vi.waitFor(() => expect(runner.get('o')?.getSnapshot().value).toBe('integrating'))
+
+    const rows = db
+      .select()
+      .from(events)
+      .where(eq(events.objectiveId, 'o'))
+      .all()
+      .filter((e) => e.type === 'task_auto_approved')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.payload).toMatchObject({ ord: 0 })
+  })
 })
