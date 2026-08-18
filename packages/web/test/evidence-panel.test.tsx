@@ -241,17 +241,35 @@ describe('DiffList inside the panel', () => {
     expect(await screen.findByText(/1 file changed/)).toBeTruthy()
   })
 
-  it('fetches and shows a file diff on click', async () => {
+  it('fetches and shows a file diff on click, with real added/removed lines', async () => {
+    const unifiedDiff = [
+      'diff --git a/app/Auth.php b/app/Auth.php',
+      'index 1111111..2222222 100644',
+      '--- a/app/Auth.php',
+      '+++ b/app/Auth.php',
+      '@@ -1,3 +1,3 @@',
+      ' function login() {',
+      '-    return false;',
+      '+    return true;',
+      ' }',
+      '',
+    ].join('\n')
+
     mockFetch({
       'GET /api/objectives/o1/diff': () => ({
         body: {
-          files: [{ path: 'app/Auth.php', added: 1, removed: 0, committed: true, dirty: false }],
-          totals: { files: 1, added: 1, removed: 0 },
+          files: [{ path: 'app/Auth.php', added: 1, removed: 1, committed: true, dirty: false }],
+          totals: { files: 1, added: 1, removed: 1 },
         },
       }),
+      'GET /api/objectives/o1/diff?file=app%2FAuth.php': {
+        body: unifiedDiff,
+        contentType: 'text/plain',
+      },
     })
     render(<EvidencePanel aggregate={agg([])} onCommand={() => undefined} />)
     await userEvent.click(await screen.findByRole('button', { name: /app\/Auth.php/ }))
-    await waitFor(() => expect(screen.getByTestId('file-diff')).toBeTruthy())
+    expect(await screen.findByText(/return false;/)).toBeTruthy()
+    expect(await screen.findByText(/return true;/)).toBeTruthy()
   })
 })

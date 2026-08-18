@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { api, type DiffSummary } from '../api.js'
 
+const DiffViewer = lazy(() => import('./DiffViewer.js'))
+
 /**
- * A collapsed per-file list. Click a path to fetch its unified diff.
- *
- * No syntax highlighting and no `react-diff-view`: D12 assigns the lazy viewer
- * to M2, and the endpoint plus the list are what M1 design §8.2 asks for.
+ * A collapsed per-file list. Click a path to fetch its unified diff and
+ * render it with `react-diff-view` (lazy-loaded — see DiffViewer.tsx).
  */
 export function DiffList({ objectiveId }: { objectiveId: string }) {
   const [summary, setSummary] = useState<DiffSummary | null>(null)
@@ -56,9 +56,9 @@ export function DiffList({ objectiveId }: { objectiveId: string }) {
               </span>
             </button>
             {open === f.path && (
-              <pre data-testid="file-diff" className="mt-1 overflow-x-auto bg-gray-50 p-2 text-xs">
-                {text}
-              </pre>
+              <Suspense fallback={<p className="mt-1 text-xs text-gray-600">Loading diff…</p>}>
+                <DiffViewer diffText={text} />
+              </Suspense>
             )}
           </li>
         ))}
