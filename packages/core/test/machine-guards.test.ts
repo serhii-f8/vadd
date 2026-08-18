@@ -85,6 +85,50 @@ describe('evidenceComplete', () => {
   })
 })
 
+describe('evidenceComplete with a declared expectFailing (A11)', () => {
+  it('tolerates a fail on exactly the declared command id', () => {
+    const items = [
+      item({ commandId: 'test', kind: 'test', status: 'fail' }),
+      item({ commandId: 'lint', kind: 'lint', status: 'pass' }),
+      item({ commandId: 'check-0', kind: 'check', status: 'pass' }),
+    ]
+    expect(evidenceComplete(spec, items, ['test'])).toBe(true)
+  })
+
+  it('still refuses when a DIFFERENT required command fails, even with an exemption declared', () => {
+    const items = [
+      item({ commandId: 'test', kind: 'test', status: 'fail' }),
+      item({ commandId: 'lint', kind: 'lint', status: 'fail' }),
+      item({ commandId: 'check-0', kind: 'check', status: 'pass' }),
+    ]
+    // Only "test" was declared expected-red; "lint" failing is unexpected.
+    expect(evidenceComplete(spec, items, ['test'])).toBe(false)
+  })
+
+  it('has no effect when omitted — today\'s strict behaviour is unchanged', () => {
+    const items = [
+      item({ commandId: 'test', kind: 'test', status: 'fail' }),
+      item({ commandId: 'lint', kind: 'lint', status: 'pass' }),
+      item({ commandId: 'check-0', kind: 'check', status: 'pass' }),
+    ]
+    expect(evidenceComplete(spec, items)).toBe(false)
+    expect(evidenceComplete(spec, items, [])).toBe(false)
+  })
+
+  it('does not let expectFailing substitute for allowWarn, or vice versa', () => {
+    // "lint" has allowWarn: true in the shared `spec` fixture. A `fail` status
+    // on it is not the same as a `warn` status, and declaring it in
+    // expectFailing is what makes a fail tolerated — allowWarn alone does not.
+    const items = [
+      item({ commandId: 'test', kind: 'test', status: 'pass' }),
+      item({ commandId: 'lint', kind: 'lint', status: 'fail' }),
+      item({ commandId: 'check-0', kind: 'check', status: 'pass' }),
+    ]
+    expect(evidenceComplete(spec, items)).toBe(false)
+    expect(evidenceComplete(spec, items, ['lint'])).toBe(true)
+  })
+})
+
 const ctx = (over: Partial<WorkflowContext>): WorkflowContext =>
   ({
     objectiveId: 'o',

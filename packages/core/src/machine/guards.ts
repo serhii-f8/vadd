@@ -4,7 +4,16 @@ import type { EvidenceItemLike, WorkflowContext } from './types.js'
 
 /**
  * Spec §5: every `required` verificationSpec item has an evidence item with
- * status `pass`, or `warn` where the item sets `allowWarn`.
+ * status `pass`, or `warn` where the item sets `allowWarn`, or `fail` where
+ * the *current task* declared that exact command id in `expectFailing`
+ * (amendment A11 — a deliberate TDD "red" step, scoped to the one command it
+ * named, never a blanket exemption).
+ *
+ * `expectFailing` must be passed **only** from the `verifying` state's own
+ * per-task guard. `integrating`'s `INTEGRATE` guard and the route's
+ * pre-git-work check call this with no third argument on purpose — see
+ * `workflow-machine.ts`'s `evidenceComplete` guard closure — so a plan whose
+ * *last* task carries an exemption still cannot reach `done` on red evidence.
  *
  * Two refusals are deliberate and both come from spec §6's "detecting nothing
  * is an explicit outcome, never an empty — and therefore trivially green —
@@ -20,6 +29,7 @@ import type { EvidenceItemLike, WorkflowContext } from './types.js'
 export function evidenceComplete(
   spec: VerificationSpec | null,
   items: readonly EvidenceItemLike[],
+  expectFailing: readonly string[] = [],
 ): boolean {
   if (!spec) return false
 
@@ -32,6 +42,7 @@ export function evidenceComplete(
     if (!item) return false
     if (item.status === 'pass') continue
     if (item.status === 'warn' && command.allowWarn) continue
+    if (item.status === 'fail' && expectFailing.includes(command.id)) continue
     return false
   }
 
