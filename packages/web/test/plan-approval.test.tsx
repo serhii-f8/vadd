@@ -76,4 +76,17 @@ describe('PlanApproval — A11 expectFailing', () => {
       ],
     })
   })
+
+  it('posts revise with a canned instruction when the plan is rejected outright', async () => {
+    const onCommand = vi.fn()
+    const user = userEvent.setup()
+    render(<PlanApproval tasks={[task()]} onCommand={onCommand} />)
+
+    await user.click(screen.getByRole('button', { name: /ask for a different plan/i }))
+
+    expect(onCommand).toHaveBeenCalledWith({
+      type: 'revise',
+      instruction: 'The plan is wrong — propose a different approach.',
+    })
+  })
 })

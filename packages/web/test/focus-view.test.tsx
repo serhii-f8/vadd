@@ -435,6 +435,44 @@ describe('FocusView: paused shows the evidence that paused it', () => {
     })
   })
 
+  it('offers Roll back from paused when a plan exists', async () => {
+    const { calls } = mockFetch({
+      'GET /api/objectives/o1': {
+        body: aggregate({
+          state: 'paused',
+          evidence: redSet,
+          tasks: [
+            {
+              id: 't1',
+              ord: 0,
+              title: 'A task',
+              description: 'd',
+              status: 'running',
+              expectFailing: null,
+            },
+          ],
+        }),
+      },
+      'GET /api/objectives/o1/diff': { status: 409, body: { error: 'no worktree' } },
+      'POST /api/objectives/o1/events': { status: 202, body: { ok: true } },
+    })
+    renderFocus()
+    await userEvent.click(await screen.findByRole('button', { name: /roll back/i }))
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ type: 'rollback' })
+  })
+
+  it('does not offer Roll back from paused before any plan exists', async () => {
+    mockFetch({
+      'GET /api/objectives/o1': {
+        body: aggregate({ state: 'paused', evidence: redSet, tasks: [] }),
+      },
+      'GET /api/objectives/o1/diff': { status: 409, body: { error: 'no worktree' } },
+    })
+    renderFocus()
+    await screen.findByRole('button', { name: /resume/i })
+    expect(screen.queryByRole('button', { name: /roll back/i })).toBeNull()
+  })
+
   it('keeps the panel read-only once terminal', async () => {
     mockFetch({
       'GET /api/objectives/o1': { body: aggregate({ state: 'cancelled', evidence: redSet }) },

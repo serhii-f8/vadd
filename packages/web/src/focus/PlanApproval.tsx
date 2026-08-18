@@ -97,22 +97,36 @@ export function PlanApproval({
           )
         })}
       </ol>
-      <button
-        type="button"
-        className="mt-4 rounded border px-3 py-1"
-        onClick={() =>
-          onCommand({
-            type: 'approve_plan',
-            edits: edits.map((e) => ({
-              title: e.title,
-              description: e.description,
-              expectFailing: parseCommandIds(e.expectFailingText),
-            })),
-          })
-        }
-      >
-        Approve plan
-      </button>
+      <div className="mt-4 flex gap-2">
+        <button
+          type="button"
+          className="rounded border px-3 py-1"
+          onClick={() =>
+            onCommand({
+              type: 'approve_plan',
+              edits: edits.map((e) => ({
+                title: e.title,
+                description: e.description,
+                expectFailing: parseCommandIds(e.expectFailingText),
+              })),
+            })
+          }
+        >
+          Approve plan
+        </button>
+        <button
+          type="button"
+          className="rounded border px-3 py-1"
+          onClick={() =>
+            onCommand({
+              type: 'revise',
+              instruction: 'The plan is wrong — propose a different approach.',
+            })
+          }
+        >
+          Ask for a different plan
+        </button>
+      </div>
     </section>
   )
 }

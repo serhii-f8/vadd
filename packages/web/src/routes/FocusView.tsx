@@ -233,6 +233,18 @@ export function FocusView() {
             >
               {state === 'paused' ? 'Resume' : 'Start'}
             </button>
+            {/* Only once a plan exists — `paused` before any task has a
+                checkpoint to roll back to, and the machine's own ROLLBACK
+                guard would refuse it. */}
+            {state === 'paused' && aggregate.tasks.length > 0 && (
+              <button
+                type="button"
+                className="rounded border px-3 py-1"
+                onClick={() => void onCommand({ type: 'rollback' })}
+              >
+                Roll back
+              </button>
+            )}
           </div>
           {/*
             A red evidence set is *why* `verifying` drops to `paused` — spec §5
