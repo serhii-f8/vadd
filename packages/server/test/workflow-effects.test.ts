@@ -54,6 +54,18 @@ const PLAN_EVENT: AgentEvent = {
   ],
 }
 
+/** A11: task 0 declares the exemption up front, agent-side. */
+const PLAN_EVENT_EXPECT_FAILING: AgentEvent = {
+  type: 'plan',
+  tasks: [
+    {
+      title: 'Write a failing test',
+      description: 'Add a failing test for the bug',
+      expectFailing: ['test'],
+    },
+  ],
+}
+
 // `run` is a local no-op, not `npm test`: the collector is bound now, so
 // entering `verifying` really executes this in the temp worktree.
 const SAMPLE_SPEC: VerificationSpec = {
@@ -70,6 +82,15 @@ const SAMPLE_SPEC: VerificationSpec = {
 const SPEC_WITH_CHECK: VerificationSpec = {
   ...SAMPLE_SPEC,
   verify: { ...SAMPLE_SPEC.verify, checks: ['Bug is reproduced by a failing test'] },
+}
+
+/** A11: the one required command genuinely fails, for the tolerated-red tests. */
+const SPEC_WITH_FAILING_COMMAND: VerificationSpec = {
+  ...SAMPLE_SPEC,
+  verify: {
+    ...SAMPLE_SPEC.verify,
+    commands: [{ id: 'test', run: 'exit 1', required: true, allowWarn: false, cwd: '.' }],
+  },
 }
 
 const EXECUTE_TASK_OK: AgentEvent[] = [
@@ -348,7 +369,7 @@ describe('bindEffects', () => {
   it('A11: the plan prompt lists the resolved verification command ids', async () => {
     db.update(objectives).set({ verificationSpec: SAMPLE_SPEC }).where(eq(objectives.id, 'o')).run()
     await toAwaitingPlanApproval()
-    expect(lastPromptText()).toContain('test')
+    expect(lastPromptText()).toContain('Available verification commands: test')
   })
 
   it('A11: a REVISE re-plan still carries the command ids alongside the revision note', async () => {
@@ -362,7 +383,7 @@ describe('bindEffects', () => {
 
     await vi.waitFor(() => expect(promptedPhases().filter((p) => p === 'plan').length).toBe(2))
     expect(lastPromptText()).toContain('Split task one into two')
-    expect(lastPromptText()).toContain('test')
+    expect(lastPromptText()).toContain('Available verification commands: test')
   })
 
   it('A11: plan phase renders with no unresolved placeholder when no verificationSpec is set', async () => {
@@ -483,5 +504,51 @@ describe('bindEffects', () => {
         (r) => r.type === 'prompt_sent' && (r.payload as { phase?: string }).phase === 'verify',
       ),
     ).toBe(false)
+  })
+
+  it('A11: a genuinely-tolerated red required command emits expected_failure_tolerated', async () => {
+    db.update(objectives)
+      .set({ verificationSpec: SPEC_WITH_FAILING_COMMAND })
+      .where(eq(objectives.id, 'o'))
+      .run()
+
+    await toAwaitingDecision()
+    queueEvents([PLAN_EVENT_EXPECT_FAILING])
+    const decision = db.select().from(decisions).all()[0]
+    if (!decision) throw new Error('expected a decision row before DECIDE')
+    runner.send('o', { type: 'DECIDE', decisionId: decision.id, optionId: decision.recommendedId })
+    await settleFakeTurn() // plan settles -> awaitingPlanApproval
+
+    writeFileSync(join(wt, 'touched.txt'), 'original')
+    queueEvents(EXECUTE_TASK_OK)
+    runner.send('o', { type: 'APPROVE_PLAN' })
+    // explore, propose, plan, execute-task(task 0) — checkpoint gates the
+    // last of these, same as toExecuting.
+    await vi.waitFor(() => expect(promptCalls()).toBeGreaterThanOrEqual(4))
+    // execute-task settles -> verifying, which invokes the collector; the
+    // one required command really fails, but task 0 declared it in
+    // expectFailing, so evidenceComplete lets it through to awaitingReview.
+    await settleFakeTurn()
+    await vi.waitFor(() => expect(runner.get('o')?.getSnapshot().value).toBe('awaitingReview'))
+
+    const rows = db.select().from(events).all()
+    const tolerated = rows.find((r) => r.type === 'expected_failure_tolerated')
+    expect(tolerated).toBeDefined()
+    const task = db.select().from(planTasks).orderBy(planTasks.ord).all()[0]
+    expect(tolerated?.payload).toEqual({ taskId: task?.id ?? null, commandIds: ['test'] })
+  })
+
+  it('A11: an ordinary all-green pass never emits expected_failure_tolerated', async () => {
+    db.update(objectives).set({ verificationSpec: SAMPLE_SPEC }).where(eq(objectives.id, 'o')).run()
+    await toExecuting(EXECUTE_TASK_OK)
+
+    // settles execute-task(task 0) -> verifying -> collector runs the
+    // (passing) command -> reconcileEvidence -> awaitingReview. Nothing here
+    // declared expectFailing, and nothing failed, so nothing was tolerated.
+    await settleFakeTurn()
+    await vi.waitFor(() => expect(runner.get('o')?.getSnapshot().value).toBe('awaitingReview'))
+
+    const rows = db.select().from(events).all()
+    expect(rows.some((r) => r.type === 'expected_failure_tolerated')).toBe(false)
   })
 })

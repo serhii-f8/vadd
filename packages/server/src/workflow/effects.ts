@@ -585,6 +585,34 @@ export function bindEffects(
         }
       },
 
+      // Amendment A11's durable record: `evidenceComplete` already let a red
+      // required command through because the *current task* named it in
+      // `expectFailing` (design, `guards.ts`). Nothing distinguished that from
+      // an ordinary green pass anywhere in the `events` table. Follows
+      // `integrate.ts`'s `integrate_protected_excluded` shape exactly: emit
+      // only when something was actually tolerated, never on the ordinary
+      // all-green case, so this can't turn into log noise.
+      noteToleratedFailures: ({ context, event }) => {
+        if (event.type !== 'EVIDENCE_RESULT') return
+        const task = context.tasks[context.currentTaskIndex]
+        const expectFailing = task?.expectFailing ?? []
+        if (expectFailing.length === 0) return
+        const commandIds = event.items
+          .filter(
+            (item) =>
+              item.status === 'fail' &&
+              item.commandId !== null &&
+              expectFailing.includes(item.commandId),
+          )
+          .map((item) => item.commandId as string)
+        if (commandIds.length === 0) return
+        deps.bus.emit({
+          objectiveId,
+          type: 'expected_failure_tolerated',
+          payload: { taskId: task?.id ?? null, commandIds },
+        })
+      },
+
       finishObjective: (_, params: { action: 'commit' | 'keep' | 'discard' }) => {
         try {
           // The git mechanics live in `workflow/integrate.ts` and have already

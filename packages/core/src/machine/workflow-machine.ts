@@ -158,6 +158,7 @@ export const workflowMachine = setup({
     recordEvidence: () => {},
     reconcileEvidence: () => {},
     finishObjective: (_, _params: { action: 'commit' | 'keep' | 'discard' }) => {},
+    noteToleratedFailures: () => {},
   },
 }).createMachine({
   id: 'workflow',
@@ -410,9 +411,12 @@ export const workflowMachine = setup({
           {
             guard: 'evidenceComplete',
             target: 'awaitingReview',
-            actions: assign({
-              evidence: ({ event }) => (event.type === 'EVIDENCE_RESULT' ? event.items : []),
-            }),
+            actions: [
+              assign({
+                evidence: ({ event }) => (event.type === 'EVIDENCE_RESULT' ? event.items : []),
+              }),
+              { type: 'noteToleratedFailures' },
+            ],
           },
           {
             // Spec §5 forbids a red set from entering awaitingReview. `paused`

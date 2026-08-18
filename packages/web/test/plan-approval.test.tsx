@@ -60,4 +60,20 @@ describe('PlanApproval — A11 expectFailing', () => {
       edits: [{ title: 'Write a failing test', description: 'repro', expectFailing: ['test'] }],
     })
   })
+
+  it('lets a human type a second command id via the keyboard, one character at a time', async () => {
+    const onCommand = vi.fn()
+    const user = userEvent.setup()
+    render(<PlanApproval tasks={[task()]} onCommand={onCommand} />)
+
+    await user.type(screen.getByLabelText('Task 1 expected failing commands'), 'test, lint')
+    await user.click(screen.getByRole('button', { name: /approve plan/i }))
+
+    expect(onCommand).toHaveBeenCalledWith({
+      type: 'approve_plan',
+      edits: [
+        { title: 'Write a failing test', description: 'repro', expectFailing: ['test', 'lint'] },
+      ],
+    })
+  })
 })

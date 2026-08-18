@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { PlanTask } from '../api.js'
 
-type Edit = { title: string; description: string; expectFailing: string[] }
+type Edit = { title: string; description: string; expectFailingText: string }
 
 function parseCommandIds(text: string): string[] {
   return text
@@ -21,7 +21,7 @@ export function PlanApproval({
     tasks.map((t) => ({
       title: t.title,
       description: t.description,
-      expectFailing: t.expectFailing ?? [],
+      expectFailingText: (t.expectFailing ?? []).join(', '),
     })),
   )
 
@@ -37,62 +37,65 @@ export function PlanApproval({
     <section>
       <h2 className="mb-3 text-lg font-medium">Plan</h2>
       <ol className="space-y-2">
-        {edits.map((e, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional here
-          <li key={i} className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <input
-                className="flex-1 rounded border px-2 py-1"
-                value={e.title}
-                aria-label={`Task ${i + 1} title`}
-                onChange={(ev) =>
-                  setEdits(edits.map((x, j) => (i === j ? { ...x, title: ev.target.value } : x)))
-                }
-              />
-              <button
-                type="button"
-                aria-label={`Move task ${i + 1} up`}
-                onClick={() => move(i, i - 1)}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                aria-label={`Move task ${i + 1} down`}
-                onClick={() => move(i, i + 1)}
-              >
-                ↓
-              </button>
-              <button
-                type="button"
-                aria-label={`Remove task ${i + 1}`}
-                onClick={() => setEdits(edits.filter((_, j) => j !== i))}
-              >
-                ✕
-              </button>
-            </div>
-            {e.expectFailing.length > 0 && (
-              <p className="text-xs text-amber-700">
-                expects failing: {e.expectFailing.join(', ')}
-              </p>
-            )}
-            <label className="text-xs text-gray-600">
-              Task {i + 1} expected failing commands
-              <input
-                className="ml-2 rounded border px-1 py-0.5 text-xs"
-                value={e.expectFailing.join(', ')}
-                aria-label={`Task ${i + 1} expected failing commands`}
-                onChange={(ev) =>
-                  setEdits(
-                    edits.map((x, j) =>
-                      i === j ? { ...x, expectFailing: parseCommandIds(ev.target.value) } : x,
-                    ),
-                  )
-                }
-              />
-            </label>
-          </li>
-        ))}
+        {edits.map((e, i) => {
+          const parsedExpectFailing = parseCommandIds(e.expectFailingText)
+          return (
+            // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional here
+            <li key={i} className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <input
+                  className="flex-1 rounded border px-2 py-1"
+                  value={e.title}
+                  aria-label={`Task ${i + 1} title`}
+                  onChange={(ev) =>
+                    setEdits(edits.map((x, j) => (i === j ? { ...x, title: ev.target.value } : x)))
+                  }
+                />
+                <button
+                  type="button"
+                  aria-label={`Move task ${i + 1} up`}
+                  onClick={() => move(i, i - 1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Move task ${i + 1} down`}
+                  onClick={() => move(i, i + 1)}
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Remove task ${i + 1}`}
+                  onClick={() => setEdits(edits.filter((_, j) => j !== i))}
+                >
+                  ✕
+                </button>
+              </div>
+              {parsedExpectFailing.length > 0 && (
+                <p className="text-xs text-amber-700">
+                  expects failing: {parsedExpectFailing.join(', ')}
+                </p>
+              )}
+              <label className="text-xs text-gray-600">
+                Task {i + 1} expected failing commands
+                <input
+                  className="ml-2 rounded border px-1 py-0.5 text-xs"
+                  value={e.expectFailingText}
+                  aria-label={`Task ${i + 1} expected failing commands`}
+                  onChange={(ev) =>
+                    setEdits(
+                      edits.map((x, j) =>
+                        i === j ? { ...x, expectFailingText: ev.target.value } : x,
+                      ),
+                    )
+                  }
+                />
+              </label>
+            </li>
+          )
+        })}
       </ol>
       <button
         type="button"
@@ -103,7 +106,7 @@ export function PlanApproval({
             edits: edits.map((e) => ({
               title: e.title,
               description: e.description,
-              expectFailing: e.expectFailing,
+              expectFailing: parseCommandIds(e.expectFailingText),
             })),
           })
         }
