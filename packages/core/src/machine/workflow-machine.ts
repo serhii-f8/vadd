@@ -1,4 +1,4 @@
-import { assign, fromPromise, setup } from 'xstate'
+import { assign, enqueueActions, fromPromise, setup } from 'xstate'
 // Workaround for a known xstate v5 typing issue (statelyai/xstate#5090): a
 // custom guard's inferred type references xstate's internal, unexported
 // `GuardArgs`, which TypeScript's declaration-emit portability check (TS2883)
@@ -6,6 +6,7 @@ import { assign, fromPromise, setup } from 'xstate'
 // declares it makes the type reachable/nameable; nothing from this import is
 // used at runtime.
 import 'xstate/guards'
+import { fastFixPlanLooksSimple } from '../policies/fast-fix-plan.js'
 import type { VerificationSpec } from '../schemas/verification.js'
 import { evidenceComplete, isFastFix as isFastFixGuard } from './guards.js'
 import {
@@ -162,6 +163,14 @@ export const workflowMachine = setup({
     finishObjective: (_, _params: { action: 'commit' | 'keep' | 'discard' }) => {},
     noteToleratedFailures: () => {},
     markTaskVerified: () => {},
+    // Amendment A12. Real implementation in `effects.ts` (Task 7): emits
+    // `task_auto_approved` / `plan_auto_approved` on the event log, which
+    // `GET /api/objectives/:id` reads back as `lastAutoApproval` for the UI.
+    // These stay named + `.provide()`-able, unlike the two auto-approve
+    // decisions themselves — see the comment on `autoApproveTaskIfLowRisk`
+    // below for why those are inline rather than living in this map.
+    noteAutoApprovedTask: () => {},
+    noteAutoApprovedPlan: () => {},
   },
 }).createMachine({
   id: 'workflow',
@@ -327,7 +336,41 @@ export const workflowMachine = setup({
     },
 
     awaitingPlanApproval: {
-      entry: { type: 'enter', params: { name: 'awaitingPlanApproval' } },
+      entry: [
+        { type: 'enter', params: { name: 'awaitingPlanApproval' } },
+        /**
+         * Amendment A12. Dispatches the exact event a human's click would
+         * send — `APPROVE_PLAN`'s existing handler runs unmodified.
+         * `enqueue.raise` processes synchronously within the same macrostep
+         * that entered this state, so a snapshot-mirroring frontend never
+         * renders `awaitingPlanApproval` here; `noteAutoApprovedPlan` is how
+         * the fact still reaches the UI.
+         *
+         * Deliberately *inline* rather than a named entry in `setup()`'s
+         * `actions:` map (statelyai/xstate#4820, confirmed upstream and
+         * still open on 5.20.1): `enqueue({ type: <name> })` referencing a
+         * sibling action defined in that same map makes the map's own
+         * self-referential `TAction` inference collapse — every other named
+         * action's `params` type widens to `unknown`, breaking `enter`'s
+         * `params: { name: MachineStateName }` a few lines above. Declaring
+         * the `enqueueActions(...)` call inline at the entry site — as
+         * xstate's own maintainers recommend as the workaround — sidesteps
+         * the self-reference entirely while `enqueue({ type:
+         * 'noteAutoApprovedPlan' })` still resolves through the *named*,
+         * `.provide()`-able action below, so Task 7 can bind a real
+         * effect server-side exactly as it would for any other named
+         * action. Neither this action nor `autoApproveTaskIfLowRisk` in
+         * `awaitingReview` below is itself named or provided — the decision
+         * is pure domain logic, same as `evidenceComplete` and every other
+         * guard, and never needs a server-side override.
+         */
+        enqueueActions(({ context, enqueue }) => {
+          if (isFastFixGuard(context) && fastFixPlanLooksSimple(context.tasks)) {
+            enqueue({ type: 'noteAutoApprovedPlan' })
+            enqueue.raise({ type: 'APPROVE_PLAN' })
+          }
+        }),
+      ],
       on: {
         APPROVE_PLAN: {
           target: 'executing',
@@ -455,7 +498,16 @@ export const workflowMachine = setup({
     },
 
     awaitingReview: {
-      entry: { type: 'enter', params: { name: 'awaitingReview' } },
+      entry: [
+        { type: 'enter', params: { name: 'awaitingReview' } },
+        /** Amendment A12. Same pattern and rationale as `awaitingPlanApproval`'s inline `enqueueActions` above. */
+        enqueueActions(({ context, enqueue }) => {
+          if (context.lowEnergy && context.taskRisk === 'low') {
+            enqueue({ type: 'noteAutoApprovedTask' })
+            enqueue.raise({ type: 'APPROVE_TASK' })
+          }
+        }),
+      ],
       on: {
         APPROVE_TASK: [
           {

@@ -13,6 +13,8 @@ const checkpoint = vi.fn()
 const rollbackToCheckpoint = vi.fn()
 const recordPlan = vi.fn()
 const markTaskVerified = vi.fn()
+const noteAutoApprovedTask = vi.fn()
+const noteAutoApprovedPlan = vi.fn()
 
 const stubbed = workflowMachine.provide({
   actions: { sendPrompt, checkpoint, rollbackToCheckpoint, recordPlan, markTaskVerified },
@@ -77,6 +79,8 @@ beforeEach(() => {
   rollbackToCheckpoint.mockClear()
   recordPlan.mockClear()
   markTaskVerified.mockClear()
+  noteAutoApprovedTask.mockClear()
+  noteAutoApprovedPlan.mockClear()
 })
 
 describe('the happy path', () => {
@@ -552,6 +556,192 @@ function toAwaitingReview() {
   })
   return actor
 }
+
+function startWithLowEnergy(taskRisk: 'low' | 'high') {
+  const machine = workflowMachine.provide({
+    actions: {
+      sendPrompt,
+      checkpoint,
+      rollbackToCheckpoint,
+      recordPlan,
+      markTaskVerified,
+      noteAutoApprovedTask,
+      noteAutoApprovedPlan,
+    },
+    actors: { runVerification: fromPromise(async () => ({ runId: 'run-stub', taskRisk })) },
+  })
+  const actor = createActor(machine, {
+    input: initialContext({
+      objectiveId: 'o1',
+      goalText: 'fix the bug',
+      mode: 'standard',
+      lowEnergy: true,
+      verificationSpec: spec,
+    }),
+  })
+  actor.start()
+  return actor
+}
+
+const oneTaskPlanEvent = {
+  type: 'plan',
+  tasks: [{ title: 'Fix it', description: 'patch' }],
+} satisfies Extract<WorkflowEvent, { type: 'PLAN' }>['event']
+
+/**
+ * A single-task plan, deliberately not the shared two-task `planEvent`: this
+ * drives to `awaitingReview` for what is *also* the plan's last task, so a
+ * `'low'` risk auto-approval lands on `integrating`, not `executing` — the
+ * interesting new behavior here is whether the raise fires at all, and
+ * `APPROVE_TASK`'s own `hasMoreTasks` branch is already covered by pre-existing
+ * tests exercising it manually.
+ */
+async function toAwaitingReviewWithRisk(taskRisk: 'low' | 'high') {
+  const actor = startWithLowEnergy(taskRisk)
+  actor.send({ type: 'START' })
+  actor.send({ type: 'TURN_FINISHED' })
+  actor.send({ type: 'DECISION_NEEDED', event: decisionEvent })
+  actor.send({ type: 'TURN_FINISHED' })
+  actor.send({ type: 'DECIDE', decisionId: 'd1', optionId: 'a' })
+  actor.send({ type: 'PLAN', event: oneTaskPlanEvent })
+  actor.send({ type: 'TURN_FINISHED' })
+  actor.send({ type: 'APPROVE_PLAN' })
+  actor.send({ type: 'TURN_FINISHED' })
+  actor.send({ type: 'TURN_FINISHED' })
+  await settle()
+  actor.send({
+    type: 'EVIDENCE_RESULT',
+    items: [{ commandId: 'test', kind: 'test', status: 'pass', taskId: null }],
+  })
+  return actor
+}
+
+const twoTaskFastFixPlanEvent = {
+  type: 'plan',
+  tasks: [
+    { title: 'One', description: 'first' },
+    { title: 'Two', description: 'second' },
+  ],
+} satisfies Extract<WorkflowEvent, { type: 'PLAN' }>['event']
+
+describe('amendment A12: auto-approval', () => {
+  it('lowEnergy + low risk skips awaitingReview, landing on integrating for the last task', async () => {
+    const actor = await toAwaitingReviewWithRisk('low')
+    expect(actor.getSnapshot().value).toBe('integrating')
+    expect(noteAutoApprovedTask).toHaveBeenCalledTimes(1)
+  })
+
+  it('lowEnergy + high risk stays at awaitingReview', async () => {
+    const actor = await toAwaitingReviewWithRisk('high')
+    expect(actor.getSnapshot().value).toBe('awaitingReview')
+    expect(noteAutoApprovedTask).not.toHaveBeenCalled()
+  })
+
+  it('low risk with lowEnergy off stays at awaitingReview', async () => {
+    const machine = workflowMachine.provide({
+      actions: {
+        sendPrompt,
+        checkpoint,
+        rollbackToCheckpoint,
+        recordPlan,
+        markTaskVerified,
+        noteAutoApprovedTask,
+      },
+      actors: {
+        runVerification: fromPromise<
+          { runId: string; taskRisk: 'low' | 'high' },
+          { objectiveId: string; taskId: string | null }
+        >(async () => ({ runId: 'run-stub', taskRisk: 'low' })),
+      },
+    })
+    const actor = createActor(machine, {
+      input: initialContext({
+        objectiveId: 'o1',
+        goalText: 'fix the bug',
+        mode: 'standard',
+        lowEnergy: false,
+        verificationSpec: spec,
+      }),
+    })
+    actor.start()
+    actor.send({ type: 'START' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'DECISION_NEEDED', event: decisionEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'DECIDE', decisionId: 'd1', optionId: 'a' })
+    actor.send({ type: 'PLAN', event: oneTaskPlanEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'APPROVE_PLAN' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'TURN_FINISHED' })
+    await settle()
+    actor.send({
+      type: 'EVIDENCE_RESULT',
+      items: [{ commandId: 'test', kind: 'test', status: 'pass', taskId: null }],
+    })
+    expect(actor.getSnapshot().value).toBe('awaitingReview')
+  })
+
+  it('integrating still requires evidenceComplete on its own re-check — auto-approval never bypasses it', async () => {
+    // The last task's own evidence was green (how it got to integrating at
+    // all); this pins that `integrating`'s `INTEGRATE` guard is untouched by
+    // this task, not that auto-approval could ever reach `done` on red — that
+    // guard is `evidenceComplete`, unchanged since amendment A11.
+    const actor = await toAwaitingReviewWithRisk('low')
+    expect(actor.getSnapshot().value).toBe('integrating')
+    actor.send({ type: 'INTEGRATE', action: 'keep' })
+    expect(actor.getSnapshot().value).toBe('done')
+  })
+
+  it('a Fast Fix single-task plan auto-approves at awaitingPlanApproval', () => {
+    const machine = workflowMachine.provide({
+      actions: { sendPrompt, checkpoint, recordPlan, noteAutoApprovedPlan },
+    })
+    const actor = createActor(machine, {
+      input: initialContext({
+        objectiveId: 'o1',
+        goalText: 'fix the bug',
+        mode: 'fastfix',
+        lowEnergy: false,
+        verificationSpec: spec,
+      }),
+    })
+    actor.start()
+    actor.send({ type: 'START' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'PLAN', event: oneTaskPlanEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    expect(actor.getSnapshot().value).toBe('executing')
+    expect(noteAutoApprovedPlan).toHaveBeenCalledTimes(1)
+  })
+
+  it('a Fast Fix multi-task plan does not auto-approve', () => {
+    const machine = workflowMachine.provide({
+      actions: { sendPrompt, checkpoint, recordPlan, noteAutoApprovedPlan },
+    })
+    const actor = createActor(machine, {
+      input: initialContext({
+        objectiveId: 'o1',
+        goalText: 'fix the bug',
+        mode: 'fastfix',
+        lowEnergy: false,
+        verificationSpec: spec,
+      }),
+    })
+    actor.start()
+    actor.send({ type: 'START' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'PLAN', event: twoTaskFastFixPlanEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    expect(actor.getSnapshot().value).toBe('awaitingPlanApproval')
+    expect(noteAutoApprovedPlan).not.toHaveBeenCalled()
+  })
+
+  it('a standard-mode plan does not auto-approve regardless of task count — Fast Fix only', () => {
+    const actor = toAwaitingPlanApproval()
+    expect(actor.getSnapshot().value).toBe('awaitingPlanApproval')
+  })
+})
 
 describe('SET_LOW_ENERGY', () => {
   it('is a context-only assign from any state, not a transition', () => {
