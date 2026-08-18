@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { type Aggregate, api } from '../api.js'
 import { EvidencePanel } from '../evidence/EvidencePanel.js'
+import { AutoApprovalBanner } from '../focus/AutoApprovalBanner.js'
 import { ClarificationPrompt } from '../focus/ClarificationPrompt.js'
 import { DecisionCard } from '../focus/DecisionCard.js'
 import { IntegrationChooser } from '../focus/IntegrationChooser.js'
@@ -133,6 +134,16 @@ export function FocusView() {
               <button
                 type="button"
                 className="rounded border px-3 py-1 text-sm"
+                aria-pressed={aggregate.objective.lowEnergy}
+                onClick={() =>
+                  void onCommand({ type: 'set_low_energy', value: !aggregate.objective.lowEnergy })
+                }
+              >
+                {aggregate.objective.lowEnergy ? 'Low Energy: On' : 'Low Energy: Off'}
+              </button>
+              <button
+                type="button"
+                className="rounded border px-3 py-1 text-sm"
                 onClick={() => void onCommand({ type: 'pause' })}
               >
                 Pause
@@ -157,6 +168,11 @@ export function FocusView() {
           {error}
         </p>
       )}
+
+      <AutoApprovalBanner
+        lastAutoApproval={aggregate.lastAutoApproval}
+        onCommand={(b) => void onCommand(b)}
+      />
 
       {/* Both are 'decision', and they are not interchangeable: a clarification
           never writes a `decisions` row, so `clarifying` has to be told apart
@@ -262,8 +278,9 @@ export function FocusView() {
         </>
       )}
 
-      {/* Secondary strip: the task list as Level 0 dots. */}
-      {aggregate.tasks.length > 0 && (
+      {/* Secondary strip: the task list as Level 0 dots. Hidden in Low Energy
+          Mode (D8) — that's the whole point of the mode. */}
+      {!aggregate.objective.lowEnergy && aggregate.tasks.length > 0 && (
         <ul className="mt-8 flex gap-1" aria-label="Tasks">
           {aggregate.tasks.map((t) => (
             <li

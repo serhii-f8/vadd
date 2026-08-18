@@ -32,12 +32,14 @@ function agg(evidenceRows: unknown[], over: Record<string, unknown> = {}): Aggre
       branchName: 'vadd/abc12345',
       baseSha: 'deadbeef',
       integrateAction: null,
+      lowEnergy: false,
     },
     state: 'awaitingReview',
     tasks: [],
     decisions: [],
     evidence: evidenceRows,
     pendingClarification: null,
+    lastAutoApproval: null,
     ...over,
   } as Aggregate
 }

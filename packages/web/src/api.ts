@@ -13,6 +13,8 @@ export type Objective = {
   branchName: string | null
   baseSha: string | null
   integrateAction: 'commit' | 'keep' | 'discard' | null
+  /** Amendment A12: D8's toggle. */
+  lowEnergy: boolean
 }
 
 /**
@@ -71,6 +73,12 @@ export type Aggregate = {
    * and without it `clarifying` is a dead end with nothing on screen.
    */
   pendingClarification: string | null
+  /**
+   * Amendment A12. The most recent auto-approval, if any — the only way the
+   * UI learns one happened, since the raise that produces it means
+   * `awaitingReview`/`awaitingPlanApproval` are never actually rendered.
+   */
+  lastAutoApproval: { kind: 'task' | 'plan'; taskOrd: number | null; at: string } | null
 }
 
 export type DiffFile = {

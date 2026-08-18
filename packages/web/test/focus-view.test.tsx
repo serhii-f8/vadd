@@ -7,6 +7,18 @@ import { FakeEventSource, mockFetch } from './setup.js'
 
 function aggregate(over: Record<string, unknown> = {}) {
   return {
+    state: 'idle',
+    tasks: [],
+    decisions: [],
+    evidence: [],
+    lastAutoApproval: null,
+    ...over,
+    // `objective` is assigned last, deliberately after `...over`: `over` may
+    // itself carry an `objective` key (every existing caller that overrides
+    // a field on it does), and an object literal's later key always wins —
+    // spreading `over` first and merging `objective` after is what makes the
+    // merge below actually apply instead of being silently replaced by
+    // whatever partial `over.objective` a caller passed.
     objective: {
       id: 'o1',
       projectId: 'p1',
@@ -17,12 +29,9 @@ function aggregate(over: Record<string, unknown> = {}) {
       branchName: 'vadd/abc12345',
       baseSha: 'deadbeef',
       integrateAction: null,
+      lowEnergy: false,
+      ...(over.objective as Record<string, unknown> | undefined),
     },
-    state: 'idle',
-    tasks: [],
-    decisions: [],
-    evidence: [],
-    ...over,
   }
 }
 
@@ -481,5 +490,89 @@ describe('FocusView: paused shows the evidence that paused it', () => {
     renderFocus()
     expect(await screen.findByText('Looks right in the UI')).toBeTruthy()
     expect(screen.queryByRole('checkbox')).toBeNull()
+  })
+})
+
+describe('Low Energy Mode (amendment A12)', () => {
+  it('toggling the header control sends set_low_energy with the flipped value', async () => {
+    const { calls } = mockFetch({
+      'GET /api/objectives/o1': { body: aggregate({ state: 'executing' }) },
+      'POST /api/objectives/o1/events': { body: { ok: true } },
+    })
+    renderFocus()
+    await screen.findByText(/executing/)
+    await userEvent.click(screen.getByRole('button', { name: /low energy/i }))
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) => c.method === 'POST' && (c.body as { type?: string }).type === 'set_low_energy',
+        ),
+      ).toBe(true),
+    )
+    const sent = calls.find(
+      (c) => c.method === 'POST' && (c.body as { type?: string }).type === 'set_low_energy',
+    )
+    expect(sent?.body).toEqual({ type: 'set_low_energy', value: true })
+  })
+
+  it('hides the secondary task strip while lowEnergy is on', async () => {
+    mockFetch({
+      'GET /api/objectives/o1': {
+        body: aggregate({
+          objective: { lowEnergy: true },
+          state: 'executing',
+          tasks: [
+            {
+              id: 't1',
+              ord: 0,
+              title: 'A',
+              description: '',
+              status: 'running',
+              expectFailing: null,
+            },
+          ],
+        }),
+      },
+    })
+    renderFocus()
+    await screen.findByText(/executing/)
+    expect(screen.queryByLabelText('Tasks')).toBeNull()
+  })
+
+  it('shows the secondary task strip while lowEnergy is off', async () => {
+    mockFetch({
+      'GET /api/objectives/o1': {
+        body: aggregate({
+          state: 'executing',
+          tasks: [
+            {
+              id: 't1',
+              ord: 0,
+              title: 'A',
+              description: '',
+              status: 'running',
+              expectFailing: null,
+            },
+          ],
+        }),
+      },
+    })
+    renderFocus()
+    await screen.findByText(/executing/)
+    expect(screen.getByLabelText('Tasks')).toBeTruthy()
+  })
+
+  it('renders the auto-approval banner from the aggregate, not from the SSE payload', async () => {
+    mockFetch({
+      'GET /api/objectives/o1': {
+        body: aggregate({
+          state: 'integrating',
+          lastAutoApproval: { kind: 'task', taskOrd: 0, at: '2026-08-18T00:00:00Z' },
+        }),
+      },
+    })
+    renderFocus()
+    await screen.findByRole('status')
+    expect(screen.getByRole('status').textContent).toMatch(/Good stopping point/i)
   })
 })
