@@ -597,11 +597,22 @@ export function bindEffects(
         const task = context.tasks[context.currentTaskIndex]
         const expectFailing = task?.expectFailing ?? []
         if (expectFailing.length === 0) return
+        // `evidenceComplete` only ever inspects `required` commands when
+        // deciding whether a red set needs tolerating — a non-required
+        // command's failure never gates the transition and never needs the
+        // exemption, even if `expectFailing` happens to name its id. Intersect
+        // against the required set so this event means exactly what it claims.
+        const requiredIds = new Set(
+          (context.verificationSpec?.verify.commands ?? [])
+            .filter((c) => c.required)
+            .map((c) => c.id),
+        )
         const commandIds = event.items
           .filter(
             (item) =>
               item.status === 'fail' &&
               item.commandId !== null &&
+              requiredIds.has(item.commandId) &&
               expectFailing.includes(item.commandId),
           )
           .map((item) => item.commandId as string)

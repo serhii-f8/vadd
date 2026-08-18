@@ -66,6 +66,18 @@ const PLAN_EVENT_EXPECT_FAILING: AgentEvent = {
   ],
 }
 
+/** A11: task 0 names both the required command and a non-required one. */
+const PLAN_EVENT_EXPECT_FAILING_INCLUDES_NONREQUIRED: AgentEvent = {
+  type: 'plan',
+  tasks: [
+    {
+      title: 'Write a failing test',
+      description: 'Add a failing test for the bug',
+      expectFailing: ['test', 'lint'],
+    },
+  ],
+}
+
 // `run` is a local no-op, not `npm test`: the collector is bound now, so
 // entering `verifying` really executes this in the temp worktree.
 const SAMPLE_SPEC: VerificationSpec = {
@@ -90,6 +102,24 @@ const SPEC_WITH_FAILING_COMMAND: VerificationSpec = {
   verify: {
     ...SAMPLE_SPEC.verify,
     commands: [{ id: 'test', run: 'exit 1', required: true, allowWarn: false, cwd: '.' }],
+  },
+}
+
+/**
+ * A11: the required command fails (and is genuinely tolerated), AND a
+ * *non*-required command also fails and happens to be named in the same
+ * task's `expectFailing` — `evidenceComplete` never needed the exemption
+ * for `lint` since it isn't `required`, so `noteToleratedFailures` must not
+ * report it as tolerated.
+ */
+const SPEC_WITH_FAILING_REQUIRED_AND_NONREQUIRED: VerificationSpec = {
+  ...SAMPLE_SPEC,
+  verify: {
+    ...SAMPLE_SPEC.verify,
+    commands: [
+      { id: 'test', run: 'exit 1', required: true, allowWarn: false, cwd: '.' },
+      { id: 'lint', run: 'exit 1', required: false, allowWarn: false, cwd: '.' },
+    ],
   },
 }
 
@@ -550,5 +580,41 @@ describe('bindEffects', () => {
 
     const rows = db.select().from(events).all()
     expect(rows.some((r) => r.type === 'expected_failure_tolerated')).toBe(false)
+  })
+
+  it('A11: a non-required command named in expectFailing is excluded — evidenceComplete never needed the exemption for it', async () => {
+    db.update(objectives)
+      .set({ verificationSpec: SPEC_WITH_FAILING_REQUIRED_AND_NONREQUIRED })
+      .where(eq(objectives.id, 'o'))
+      .run()
+
+    await toAwaitingDecision()
+    queueEvents([PLAN_EVENT_EXPECT_FAILING_INCLUDES_NONREQUIRED])
+    const decision = db.select().from(decisions).all()[0]
+    if (!decision) throw new Error('expected a decision row before DECIDE')
+    runner.send('o', { type: 'DECIDE', decisionId: decision.id, optionId: decision.recommendedId })
+    await settleFakeTurn() // plan settles -> awaitingPlanApproval
+
+    writeFileSync(join(wt, 'touched.txt'), 'original')
+    queueEvents(EXECUTE_TASK_OK)
+    runner.send('o', { type: 'APPROVE_PLAN' })
+    await vi.waitFor(() => expect(promptCalls()).toBeGreaterThanOrEqual(4))
+    // The collector runs both commands: the required `test` fails (tolerated
+    // by expectFailing) and the non-required `lint` also fails. `lint` isn't
+    // `required`, so `evidenceComplete` never looked at it and never needed
+    // the exemption for it, even though the task's expectFailing happens to
+    // name it too.
+    await settleFakeTurn()
+    await vi.waitFor(() => expect(runner.get('o')?.getSnapshot().value).toBe('awaitingReview'))
+
+    const rows = db.select().from(events).all()
+    const tolerated = rows.find((r) => r.type === 'expected_failure_tolerated')
+    expect(tolerated).toBeDefined()
+    const task = db.select().from(planTasks).orderBy(planTasks.ord).all()[0]
+    // Only `test` — the required command — is reported tolerated. `lint`
+    // is excluded even though it also failed and was also named in
+    // expectFailing, because it was never required and never gated the
+    // transition.
+    expect(tolerated?.payload).toEqual({ taskId: task?.id ?? null, commandIds: ['test'] })
   })
 })
