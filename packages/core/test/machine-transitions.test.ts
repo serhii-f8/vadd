@@ -43,6 +43,18 @@ const planEvent = {
   ],
 } satisfies Extract<WorkflowEvent, { type: 'PLAN' }>['event']
 
+const planEventWithExpectFailing = {
+  type: 'plan',
+  tasks: [
+    {
+      title: 'Write a failing test',
+      description: 'repro',
+      expectFailing: ['test'],
+    },
+    { title: 'Fix it', description: 'patch' },
+  ],
+} satisfies Extract<WorkflowEvent, { type: 'PLAN' }>['event']
+
 const decisionEvent = {
   type: 'decision_needed',
   question: 'which?',
@@ -172,6 +184,77 @@ describe('the happy path', () => {
       type: 'EVIDENCE_RESULT',
       items: [{ commandId: 'test', kind: 'test', status: 'fail', taskId: null }],
     })
+    expect(actor.getSnapshot().value).toBe('paused')
+  })
+
+  it('A11: a task-declared expectFailing lets a matching red set reach awaitingReview', () => {
+    const actor = toAwaitingPlanApprovalWithExpectFailing()
+    actor.send({ type: 'APPROVE_PLAN' })
+    actor.send({ type: 'TURN_FINISHED' }) // execute-task settles -> verifying
+    actor.send({ type: 'TURN_FINISHED' }) // the collector's invoked actor
+    actor.send({
+      type: 'EVIDENCE_RESULT',
+      items: [{ commandId: 'test', kind: 'test', status: 'fail', taskId: null }],
+    })
+    expect(actor.getSnapshot().value).toBe('awaitingReview')
+  })
+
+  it('A11: a red set NOT covered by expectFailing still pauses', () => {
+    const actor = toAwaitingPlanApprovalWithExpectFailing()
+    actor.send({ type: 'APPROVE_PLAN' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({
+      // Task 0 only declared "test"; a "lint" failure (not in this spec, so
+      // treat it as an unexpected extra required item is out of scope here —
+      // simulate the same declared id failing for a DIFFERENT reason is not
+      // representable, so instead prove the *second* task, which declared
+      // nothing, still pauses on the same shape of red set.
+      type: 'EVIDENCE_RESULT',
+      items: [{ commandId: 'test', kind: 'test', status: 'fail', taskId: null }],
+    })
+    actor.send({ type: 'APPROVE_TASK' }) // advance to task 1, "Fix it" — no exemption
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({
+      type: 'EVIDENCE_RESULT',
+      items: [{ commandId: 'test', kind: 'test', status: 'fail', taskId: null }],
+    })
+    expect(actor.getSnapshot().value).toBe('paused')
+  })
+
+  it('A11: a last task carrying expectFailing still cannot reach done — INTEGRATE stays strict', () => {
+    // A one-task plan whose only task declares expectFailing, to force the
+    // degenerate "exemption on the final task" shape the design doc's §3.2
+    // names explicitly.
+    const actor = start()
+    actor.send({ type: 'START' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'DECISION_NEEDED', event: decisionEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'DECIDE', decisionId: 'd1', optionId: 'a' })
+    actor.send({
+      type: 'PLAN',
+      event: {
+        type: 'plan',
+        tasks: [{ title: 'Only task', description: 'x', expectFailing: ['test'] }],
+      },
+    })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'APPROVE_PLAN' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({
+      type: 'EVIDENCE_RESULT',
+      items: [{ commandId: 'test', kind: 'test', status: 'fail', taskId: null }],
+    })
+    expect(actor.getSnapshot().value).toBe('awaitingReview') // the per-task guard tolerated it
+
+    actor.send({ type: 'APPROVE_TASK' }) // last task -> integrating directly
+    expect(actor.getSnapshot().value).toBe('integrating')
+
+    actor.send({ type: 'INTEGRATE', action: 'commit' })
+    // The strict, unexempted re-check refuses: falls to paused, never done.
     expect(actor.getSnapshot().value).toBe('paused')
   })
 
@@ -397,6 +480,18 @@ function toAwaitingPlanApproval() {
   actor.send({ type: 'TURN_FINISHED' })
   actor.send({ type: 'DECIDE', decisionId: 'd1', optionId: 'a' })
   actor.send({ type: 'PLAN', event: planEvent })
+  actor.send({ type: 'TURN_FINISHED' })
+  return actor
+}
+
+function toAwaitingPlanApprovalWithExpectFailing() {
+  const actor = start()
+  actor.send({ type: 'START' })
+  actor.send({ type: 'TURN_FINISHED' })
+  actor.send({ type: 'DECISION_NEEDED', event: decisionEvent })
+  actor.send({ type: 'TURN_FINISHED' })
+  actor.send({ type: 'DECIDE', decisionId: 'd1', optionId: 'a' })
+  actor.send({ type: 'PLAN', event: planEventWithExpectFailing })
   actor.send({ type: 'TURN_FINISHED' })
   return actor
 }

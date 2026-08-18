@@ -84,6 +84,14 @@ export const workflowMachine = setup({
       evidenceComplete(
         context.verificationSpec,
         event.type === 'EVIDENCE_RESULT' ? event.items : context.evidence,
+        // Amendment A11: the exemption applies only to the per-task check this
+        // guard backs when it fires from `verifying`'s own `EVIDENCE_RESULT`.
+        // `integrating`'s `INTEGRATE` uses this exact same named guard and must
+        // stay strict — passing nothing here for that case is what keeps a
+        // plan's last task from reaching `done` on a declared-but-unproven red.
+        event.type === 'EVIDENCE_RESULT'
+          ? (context.tasks[context.currentTaskIndex]?.expectFailing ?? [])
+          : [],
       ),
     hasMoreTasks: ({ context }) => context.currentTaskIndex < context.tasks.length - 1,
     // Task 8's `rollbackToCheckpoint` is the real gate on a missing checkpoint
@@ -280,6 +288,7 @@ export const workflowMachine = setup({
                       title: t.title,
                       description: t.description,
                       checkpointRef: null,
+                      expectFailing: t.expectFailing,
                     }))
                   : [],
             }),
