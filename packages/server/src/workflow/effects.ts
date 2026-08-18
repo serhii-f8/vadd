@@ -464,6 +464,16 @@ export function bindEffects(
         void gitGate.enqueue(objectiveId, () => rollbackEffect(deps, objectiveId, context, runner))
       },
 
+      markTaskVerified: ({ context }) => {
+        const task = context.tasks[context.currentTaskIndex]
+        if (!task) return
+        deps.db
+          .update(planTasks)
+          .set({ status: 'verified', finishedAt: new Date().toISOString() })
+          .where(and(eq(planTasks.id, task.id), eq(planTasks.objectiveId, objectiveId)))
+          .run()
+      },
+
       recordDecision: ({ event }) => {
         if (event.type !== 'DECISION_NEEDED') return
         try {

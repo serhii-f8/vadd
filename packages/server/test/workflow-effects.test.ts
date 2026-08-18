@@ -370,6 +370,25 @@ describe('bindEffects', () => {
     expect(lastPromptText()).not.toContain('Write a failing test')
   })
 
+  it('A11-followup: APPROVE_TASK marks the just-left task verified in plan_tasks', async () => {
+    db.update(objectives).set({ verificationSpec: SAMPLE_SPEC }).where(eq(objectives.id, 'o')).run()
+    await toExecuting(EXECUTE_TASK_OK)
+
+    await settleFakeTurn() // execute-task(task 0) settles -> verifying -> awaitingReview
+    await vi.waitFor(() => expect(runner.get('o')?.getSnapshot().value).toBe('awaitingReview'))
+
+    const beforeApprove = db.select().from(planTasks).orderBy(planTasks.ord).all()
+    expect(beforeApprove.map((r) => r.status)).toEqual(['running', 'pending'])
+
+    runner.send('o', { type: 'APPROVE_TASK' })
+
+    const afterApprove = db.select().from(planTasks).orderBy(planTasks.ord).all()
+    expect(afterApprove[0]?.status).toBe('verified')
+    expect(afterApprove[0]?.finishedAt).not.toBeNull()
+    // The second task hasn't started yet -- still pending, not verified.
+    expect(afterApprove[1]?.status).toBe('pending')
+  })
+
   it('recordPlan writes plan_tasks rows in order', async () => {
     await toAwaitingPlanApproval()
     const rows = db.select().from(planTasks).orderBy(planTasks.ord).all()
