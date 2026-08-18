@@ -29,6 +29,8 @@ export type PlanTask = {
   title: string
   description: string
   status: 'pending' | 'running' | 'verifying' | 'verified' | 'failed' | 'skipped'
+  /** Amendment A11. Null (not an empty array) when the row column is unset. */
+  expectFailing: string[] | null
 }
 
 export type Decision = {

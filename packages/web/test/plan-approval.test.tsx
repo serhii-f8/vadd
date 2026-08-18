@@ -1,0 +1,63 @@
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
+import type { PlanTask } from '../src/api.js'
+import { PlanApproval } from '../src/focus/PlanApproval.js'
+
+function task(over: Partial<PlanTask> = {}): PlanTask {
+  return {
+    id: 't1',
+    ord: 0,
+    title: 'Write a failing test',
+    description: 'repro',
+    status: 'pending',
+    expectFailing: null,
+    ...over,
+  }
+}
+
+describe('PlanApproval — A11 expectFailing', () => {
+  it('shows a badge for a task that declares expectFailing', () => {
+    render(
+      <PlanApproval
+        tasks={[task({ expectFailing: ['test'] }), task({ id: 't2', title: 'Fix it' })]}
+        onCommand={vi.fn()}
+      />,
+    )
+    expect(screen.getByText(/expects failing: test/i)).toBeTruthy()
+  })
+
+  it('shows no badge for a task with no expectFailing', () => {
+    render(<PlanApproval tasks={[task()]} onCommand={vi.fn()} />)
+    expect(screen.queryByText(/expects failing/i)).toBeNull()
+  })
+
+  it('preserves an agent-declared expectFailing through approve when the human only edits the title', async () => {
+    const onCommand = vi.fn()
+    const user = userEvent.setup()
+    render(<PlanApproval tasks={[task({ expectFailing: ['test'] })]} onCommand={onCommand} />)
+
+    await user.clear(screen.getByLabelText('Task 1 title'))
+    await user.type(screen.getByLabelText('Task 1 title'), 'Retitled task')
+    await user.click(screen.getByRole('button', { name: /approve plan/i }))
+
+    expect(onCommand).toHaveBeenCalledWith({
+      type: 'approve_plan',
+      edits: [{ title: 'Retitled task', description: 'repro', expectFailing: ['test'] }],
+    })
+  })
+
+  it('lets a human add an expectFailing exemption the agent did not propose', async () => {
+    const onCommand = vi.fn()
+    const user = userEvent.setup()
+    render(<PlanApproval tasks={[task()]} onCommand={onCommand} />)
+
+    await user.type(screen.getByLabelText('Task 1 expected failing commands'), 'test')
+    await user.click(screen.getByRole('button', { name: /approve plan/i }))
+
+    expect(onCommand).toHaveBeenCalledWith({
+      type: 'approve_plan',
+      edits: [{ title: 'Write a failing test', description: 'repro', expectFailing: ['test'] }],
+    })
+  })
+})
