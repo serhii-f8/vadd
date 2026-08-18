@@ -911,6 +911,26 @@ describe('GET /api/objectives/:id', () => {
     expect(body.pendingClarification).toBe('Which environment does the redirect break in?')
   })
 
+  it('lastAutoApproval is null with no auto-approval event, and reflects the most recent one', async () => {
+    const ctx = await withObjective()
+    const before = (
+      await ctx.app.inject({ method: 'GET', url: `/api/objectives/${ctx.objectiveId}` })
+    ).json()
+    expect(before.lastAutoApproval).toBeNull()
+
+    ctx.bus.emit({
+      objectiveId: ctx.objectiveId,
+      type: 'task_auto_approved',
+      payload: { taskId: 't1', ord: 2 },
+    })
+
+    const after = (
+      await ctx.app.inject({ method: 'GET', url: `/api/objectives/${ctx.objectiveId}` })
+    ).json()
+    expect(after.lastAutoApproval).toMatchObject({ kind: 'task', taskOrd: 2 })
+    expect(typeof after.lastAutoApproval.at).toBe('string')
+  })
+
   it('still 404s for an unknown objective', async () => {
     const ctx = await withObjective()
     const res = await ctx.app.inject({ method: 'GET', url: '/api/objectives/nope' })

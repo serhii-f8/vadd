@@ -9,12 +9,13 @@ import {
   planTaskId,
   VerificationSpec,
 } from '@vadd/core'
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db } from '../../db/client.js'
 import {
   agentSessions,
   decisions,
+  events,
   evidenceItems,
   machineSnapshots,
   objectives,
@@ -311,6 +312,22 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     if (!row) return reply.code(404).send({ error: 'Objective not found' })
 
     const actor = deps.runner?.get(row.id)
+    // Amendment A12: the only way the UI learns an auto-approval happened —
+    // the raise that produces it means `awaitingReview`/`awaitingPlanApproval`
+    // are never actually rendered, and the frontend never reads SSE payloads.
+    const lastAutoApprovalEvent = db
+      .select()
+      .from(events)
+      .where(
+        and(
+          eq(events.objectiveId, row.id),
+          inArray(events.type, ['task_auto_approved', 'plan_auto_approved']),
+        ),
+      )
+      .orderBy(desc(events.id))
+      .limit(1)
+      .get()
+
     return {
       objective: row,
       state: actor ? String(actor.getSnapshot().value) : row.status,
@@ -326,6 +343,15 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
         .all(),
       decisions: db.select().from(decisions).where(eq(decisions.objectiveId, row.id)).all(),
       evidence: db.select().from(evidenceItems).where(eq(evidenceItems.objectiveId, row.id)).all(),
+      lastAutoApproval: lastAutoApprovalEvent
+        ? {
+            kind: (lastAutoApprovalEvent.type === 'task_auto_approved' ? 'task' : 'plan') as
+              | 'task'
+              | 'plan',
+            taskOrd: (lastAutoApprovalEvent.payload as { ord?: number }).ord ?? null,
+            at: lastAutoApprovalEvent.createdAt,
+          }
+        : null,
     }
   })
 
