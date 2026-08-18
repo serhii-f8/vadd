@@ -17,7 +17,7 @@ export type DiffSummary = {
   totals: { files: number; added: number; removed: number }
 }
 
-async function git(cwd: string, args: string[]): Promise<string> {
+export async function git(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await execa('git', ['-C', cwd, ...args])
   return stdout
 }
