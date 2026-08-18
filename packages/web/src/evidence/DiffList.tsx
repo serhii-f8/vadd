@@ -12,6 +12,12 @@ export function DiffList({ objectiveId }: { objectiveId: string }) {
   const [open, setOpen] = useState<string | null>(null)
   const [text, setText] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
+  // Distinct from `text`: a failed per-file fetch must not be handed to
+  // `parseDiff` as if it were diff content. `parseDiff` synthesizes a fake
+  // file (with empty hunks) for any string that isn't already a `diff --git`
+  // header, so an error message folded into `text` renders as a silent blank
+  // panel instead of the error the user needs to see.
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     api
@@ -30,9 +36,12 @@ export function DiffList({ objectiveId }: { objectiveId: string }) {
       return
     }
     setOpen(path)
-    setText(
-      await api.getFileDiff(objectiveId, path).catch((e: Error) => `Could not load: ${e.message}`),
-    )
+    setLoadError(null)
+    try {
+      setText(await api.getFileDiff(objectiveId, path))
+    } catch (e) {
+      setLoadError((e as Error).message)
+    }
   }
 
   return (
@@ -55,7 +64,10 @@ export function DiffList({ objectiveId }: { objectiveId: string }) {
                 {f.dirty && ' · uncommitted'}
               </span>
             </button>
-            {open === f.path && (
+            {open === f.path && loadError !== null && (
+              <p className="mt-1 text-xs text-red-600">Could not load diff: {loadError}</p>
+            )}
+            {open === f.path && loadError === null && (
               <Suspense fallback={<p className="mt-1 text-xs text-gray-600">Loading diff…</p>}>
                 <DiffViewer diffText={text} />
               </Suspense>

@@ -267,9 +267,35 @@ describe('DiffList inside the panel', () => {
         contentType: 'text/plain',
       },
     })
+    const { container } = render(<EvidencePanel aggregate={agg([])} onCommand={() => undefined} />)
+    await userEvent.click(await screen.findByRole('button', { name: /app\/Auth.php/ }))
+    await screen.findByTestId('file-diff')
+
+    // Substring text alone would also pass against the old `<pre>{diffText}</pre>`
+    // blob — assert on `react-diff-view`'s real per-line classes instead, which
+    // only its own `Diff`/`Hunk` rendering can produce (verified directly
+    // against the installed library's `UnifiedChange.tsx`: it applies
+    // `diff-code-${type}` per row). A plain text dump has neither class.
+    const deleted = container.querySelector('.diff-code-delete')
+    const inserted = container.querySelector('.diff-code-insert')
+    expect(deleted?.textContent).toContain('return false;')
+    expect(inserted?.textContent).toContain('return true;')
+    expect(deleted).not.toBe(inserted)
+  })
+
+  it('shows the fetch error instead of a blank panel when the file diff fails to load', async () => {
+    mockFetch({
+      'GET /api/objectives/o1/diff': () => ({
+        body: {
+          files: [{ path: 'app/Auth.php', added: 1, removed: 1, committed: true, dirty: false }],
+          totals: { files: 1, added: 1, removed: 1 },
+        },
+      }),
+      'GET /api/objectives/o1/diff?file=app%2FAuth.php': { status: 500, body: 'boom' },
+    })
     render(<EvidencePanel aggregate={agg([])} onCommand={() => undefined} />)
     await userEvent.click(await screen.findByRole('button', { name: /app\/Auth.php/ }))
-    expect(await screen.findByText(/return false;/)).toBeTruthy()
-    expect(await screen.findByText(/return true;/)).toBeTruthy()
+    expect(await screen.findByText(/Could not load diff/)).toBeTruthy()
+    expect(screen.queryByTestId('file-diff')).toBeNull()
   })
 })
