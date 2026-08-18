@@ -30,6 +30,11 @@ export {
   LEVEL_2_WORD_LIMIT,
 } from './policies/reading-budget.js'
 export {
+  classifyTaskRisk,
+  type RiskPolicyConfig,
+  type TaskDiffSummary,
+} from './policies/risk-policy.js'
+export {
   assertSpecAllowed,
   mergeSpec,
   type SpecAllowed,
