@@ -174,6 +174,19 @@ export const workflowMachine = setup({
     // `resumeState` is already correct — every state stamped it on entry.
     PAUSE: '.paused',
     CANCEL: '.cancelled',
+    /**
+     * Amendment A12. Context-only: no target, so `WorkflowRunner`'s subscribe
+     * callback sees no state-value change and persists no snapshot row here —
+     * `resume()` re-syncs this field from `objectives.lowEnergy` on every
+     * restart instead, the same way `start()`'s `initialContext` already
+     * seeds a fresh actor from it.
+     */
+    SET_LOW_ENERGY: {
+      actions: assign({
+        lowEnergy: ({ context, event }) =>
+          event.type === 'SET_LOW_ENERGY' ? event.value : context.lowEnergy,
+      }),
+    },
     // Agent events accumulate into context wherever they arrive. A `status` in
     // `verifying` is not a transition, it is progress — see design §4.2.
     STATUS: { actions: 'noteTurnEvent' },

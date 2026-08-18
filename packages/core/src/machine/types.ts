@@ -143,6 +143,8 @@ export type WorkflowEvent =
   | { type: 'RESUME' }
   | { type: 'CANCEL' }
   | { type: 'INTEGRATE'; action: 'commit' | 'keep' | 'discard' }
+  /** Amendment A12. Context-only — no state-value change, so it fires no transition. */
+  | { type: 'SET_LOW_ENERGY'; value: boolean }
 
 const AGENT_EVENT_TO_MACHINE = {
   status: 'STATUS',

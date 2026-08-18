@@ -553,6 +553,17 @@ function toAwaitingReview() {
   return actor
 }
 
+describe('SET_LOW_ENERGY', () => {
+  it('is a context-only assign from any state, not a transition', () => {
+    const actor = start()
+    actor.send({ type: 'START' })
+    expect(actor.getSnapshot().value).toBe('exploring')
+    actor.send({ type: 'SET_LOW_ENERGY', value: true })
+    expect(actor.getSnapshot().value).toBe('exploring')
+    expect(actor.getSnapshot().context.lowEnergy).toBe(true)
+  })
+})
+
 describe('amendment A12: taskRisk', () => {
   it('is assigned from the invoked collector actor before awaitingReview is entered', () => {
     const machine = workflowMachine.provide({

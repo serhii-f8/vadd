@@ -465,6 +465,30 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       return reply.code(202).send({ ok: true })
     }
 
+    // Amendment A12: D8's toggle. Not routed through `toWorkflowEvent` at all
+    // — like `tick_check`, it needs a DB write the generic dispatch path
+    // (below) doesn't do for anything else. `objectives.lowEnergy` must
+    // survive a restart even though the machine's own SET_LOW_ENERGY assign
+    // is context-only and fires no transition — `commitTransition` only
+    // persists a snapshot on a real state-value change (`WorkflowRunner`'s
+    // `#attach`), so nothing else would write this through to the row
+    // `resume()` reads on reboot.
+    if (parsed.data.type === 'set_low_energy') {
+      const runner = deps.runner
+      if (!runner) return reply.code(500).send({ error: 'Workflow runner is not configured' })
+      db.update(objectives)
+        .set({ lowEnergy: parsed.data.value, updatedAt: new Date().toISOString() })
+        .where(eq(objectives.id, objective.id))
+        .run()
+      runner.get(objective.id)?.send({ type: 'SET_LOW_ENERGY', value: parsed.data.value })
+      bus.emit({
+        objectiveId: objective.id,
+        type: 'low_energy_set',
+        payload: { value: parsed.data.value },
+      })
+      return reply.code(202).send({ ok: true })
+    }
+
     if (parsed.data.type === 'integrate') {
       const { action } = parsed.data
       if (action === 'pr' || action === 'merge') {

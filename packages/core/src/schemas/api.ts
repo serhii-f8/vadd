@@ -100,6 +100,8 @@ export const ObjectiveCommand = z.discriminatedUnion('type', [
   z.object({ type: z.literal('rollback') }),
   z.object({ type: z.literal('pause') }),
   z.object({ type: z.literal('resume') }),
+  /** Amendment A12: D8's toggle. */
+  z.object({ type: z.literal('set_low_energy'), value: z.boolean() }),
   // Spec §6's manual tick. Not a machine event: it writes a row, and the next
   // reconciliation reads it.
   z.object({

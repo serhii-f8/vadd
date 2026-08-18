@@ -250,3 +250,25 @@ describe('rehydrateOnBoot', () => {
     expect(booted[0]?.payload).toEqual(out)
   })
 })
+
+describe('WorkflowRunner.resume', () => {
+  it('resume re-syncs lowEnergy from the row, since the toggle itself fires no transition', () => {
+    const ctx = setup()
+    seed(ctx, 'o1', 'idle')
+    const actor = ctx.runner.start('o1')
+    expect(actor.getSnapshot().context.lowEnergy).toBe(false)
+    ctx.runner.stop('o1')
+
+    // Simulates the route: only the row changes, no transition, so the
+    // persisted machine_snapshots row still has the stale value.
+    ctx.db.update(objectives).set({ lowEnergy: true }).where(eq(objectives.id, 'o1')).run()
+
+    const snapshot = ctx.db
+      .select()
+      .from(machineSnapshots)
+      .where(eq(machineSnapshots.objectiveId, 'o1'))
+      .get()?.snapshot
+    const resumed = ctx.runner.resume('o1', snapshot)
+    expect(resumed.getSnapshot().context.lowEnergy).toBe(true)
+  })
+})

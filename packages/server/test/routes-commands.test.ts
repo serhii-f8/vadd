@@ -227,6 +227,17 @@ describe('commands the machine accepts', () => {
     expect(ctx.db.select().from(decisions).all()[0]?.chosenId).toBe('a')
     expect(ctx.db.select().from(decisions).all()[0]?.decidedBy).toBe('user')
   })
+
+  it('set_low_energy updates the row and the live actor immediately', async () => {
+    const ctx = await withObjective()
+    await command(ctx, { type: 'start' })
+    const res = await command(ctx, { type: 'set_low_energy', value: true })
+    expect(res.statusCode).toBe(202)
+
+    const row = ctx.db.select().from(objectives).where(eq(objectives.id, ctx.objectiveId)).get()
+    expect(row?.lowEnergy).toBe(true)
+    expect(ctx.runner.get(ctx.objectiveId)?.getSnapshot().context.lowEnergy).toBe(true)
+  })
 })
 
 /**

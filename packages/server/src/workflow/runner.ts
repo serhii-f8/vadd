@@ -108,6 +108,13 @@ export class WorkflowRunner {
     assertRestorable(objectiveId, snapshot)
     const row = this.#objective(objectiveId)
     const machine = this.#bindMachine(objectiveId, row)
+    // `objectives.lowEnergy` can change without a state transition
+    // (SET_LOW_ENERGY is context-only, amendment A12), so the persisted
+    // snapshot's own copy of it can be stale by the time of a restart. The
+    // row is the source of truth here, the same way `start()`'s
+    // `initialContext` already treats it for a fresh actor.
+    const resumable = snapshot as { context?: { lowEnergy?: boolean } }
+    if (resumable.context) resumable.context.lowEnergy = row.lowEnergy
     // xstate v5 types `input` as required on `ActorOptions` whenever the
     // machine's own input type isn't `undefined` (`RequiredActorOptionsKeys`
     // in createActor.d.ts), with no exemption for `snapshot` — even though at
@@ -115,7 +122,7 @@ export class WorkflowRunner {
     // touches `input` at all. `undefined as never` satisfies the type without
     // claiming a real value; same class of xstate v5 typing gap Task 3 hit
     // with `TS2883`/`GuardArgs`, just on `createActor` instead of `setup()`.
-    const actor = createActor(machine, { snapshot: snapshot as never, input: undefined as never })
+    const actor = createActor(machine, { snapshot: resumable as never, input: undefined as never })
     // Seeded from the snapshot's own state, not `null`: `actor.start()` on a
     // resumed actor still notifies subscribers once, and without this seed
     // that first notification — reporting the *same* state the snapshot
