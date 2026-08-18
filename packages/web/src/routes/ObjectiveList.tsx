@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type Objective } from '../api.js'
+import type { ViewStateName } from '../focus/primary.js'
+import { stateColor } from './stateColor.js'
 
 export function ObjectiveList() {
   const [objectives, setObjectives] = useState<Objective[] | null>(null)
@@ -35,13 +37,20 @@ export function ObjectiveList() {
       <ul className="divide-y">
         {(objectives ?? []).map((o) => (
           <li key={o.id} className="py-3">
-            <Link to={`/o/${o.id}`} className="flex items-baseline justify-between gap-4">
-              <span className="font-medium">{o.title}</span>
+            <Link to={`/o/${o.id}`} className="flex items-center gap-3">
+              <span
+                aria-hidden
+                className={`h-2 w-2 shrink-0 rounded-full ${stateColor(o.status as ViewStateName)}`}
+              />
+              <span className="flex-1 font-medium">{o.title}</span>
               <span className="text-sm text-gray-600">
                 {o.status}
                 {/* A8: a done objective whose work was thrown away must not
                     look like one whose work was committed. */}
                 {o.integrateAction !== null && ` · ${o.integrateAction}`}
+              </span>
+              <span className="text-sm text-gray-600">
+                {o.verifiedCount}/{o.totalCount}
               </span>
             </Link>
           </li>

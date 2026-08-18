@@ -13,6 +13,8 @@ export type Objective = {
   branchName: string | null
   baseSha: string | null
   integrateAction: 'commit' | 'keep' | 'discard' | null
+  verifiedCount: number
+  totalCount: number
 }
 
 export type VaddEvent = {

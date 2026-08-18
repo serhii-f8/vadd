@@ -12,6 +12,8 @@ const objective = (over: Record<string, unknown> = {}) => ({
   worktreePath: '/tmp/wt',
   branchName: 'vadd/abc12345',
   integrateAction: null,
+  verifiedCount: 1,
+  totalCount: 3,
   ...over,
 })
 
@@ -70,5 +72,15 @@ describe('ObjectiveList', () => {
       </MemoryRouter>,
     )
     expect(await screen.findByText(/No objectives yet/)).toBeTruthy()
+  })
+
+  it('shows the verified/total fraction and a state dot', async () => {
+    mockFetch({ 'GET /api/objectives': { body: [objective()] } })
+    render(
+      <MemoryRouter>
+        <ObjectiveList />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('1/3')).toBeTruthy()
   })
 })
