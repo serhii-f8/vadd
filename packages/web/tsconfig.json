@@ -13,7 +13,8 @@
     // the root `tsc -b` visiting it every time. Do not "fix" the cache warning
     // by dropping the reference from the root tsconfig — that reinstates the
     // blind spot where packages/web went unchecked entirely.
-    "composite": false
+    "composite": false,
+    "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src", "test", "vite.config.ts"]
 }
