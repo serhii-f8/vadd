@@ -280,4 +280,47 @@ describe('plan task identity', () => {
     expect(runner.get('obj-b')?.getSnapshot().value).toBe('paused')
     expect(bus.since('obj-b', 0).map((e) => e.type)).toContain('record_plan_failed')
   })
+
+  it('A11: recordPlan persists a task-declared expectFailing', async () => {
+    await agents.ensure({ id: 'obj-a', worktreePath: worktrees.get('obj-a') ?? null })
+    runner.start('obj-a')
+    handle('obj-a').queue(
+      [STATUS_EVENT],
+      [
+        {
+          type: 'plan',
+          tasks: [
+            { title: 'Write a failing test', description: 'repro', expectFailing: ['test'] },
+            { title: 'Fix it', description: 'patch' },
+          ],
+        },
+      ],
+    )
+    runner.send('obj-a', { type: 'START' })
+    await settleFakeTurn('obj-a')
+    await settleFakeTurn('obj-a')
+
+    const rows = tasksOf('obj-a')
+    expect(rows.map((r) => r.expectFailing)).toEqual([['test'], null])
+  })
+
+  it('A11: APPROVE_PLAN edits can add an expectFailing exemption the agent did not propose', async () => {
+    await planObjective('obj-a', 'Original one', 'Original two')
+
+    runner.send('obj-a', {
+      type: 'APPROVE_PLAN',
+      tasks: [
+        {
+          id: planTaskId('obj-a', 0),
+          ord: 0,
+          title: 'Original one',
+          description: 'do Original one',
+          checkpointRef: null,
+          expectFailing: ['test'],
+        },
+      ],
+    })
+
+    expect(tasksOf('obj-a').map((r) => r.expectFailing)).toEqual([['test']])
+  })
 })

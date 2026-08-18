@@ -491,6 +491,7 @@ export function bindEffects(
                   checkpointRef: null,
                   startedAt: null,
                   finishedAt: null,
+                  expectFailing: task.expectFailing ?? null,
                 })
                 .run()
             }

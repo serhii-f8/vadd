@@ -36,6 +36,13 @@
       "when": 1786987430754,
       "tag": "0004_plan_task_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787040782382,
+      "tag": "0005_expected_failing_column",
+      "breakpoints": true
     }
   ]
 }

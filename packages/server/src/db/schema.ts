@@ -198,6 +198,15 @@ export const planTasks = sqliteTable(
     checkpointRef: text('checkpoint_ref'),
     startedAt: text('started_at'),
     finishedAt: text('finished_at'),
+    /**
+     * Amendment A11: `verify.commands[].id`s this task may leave failing — a
+     * deliberate TDD "red" step. Null means no exemption. Read by the
+     * `evidenceComplete` guard only via `context.tasks` (the machine's
+     * in-memory copy, from `plan`/`APPROVE_PLAN` events) — this column is the
+     * durable mirror the API and UI read, not something rehydrated back into
+     * context.
+     */
+    expectFailing: text('expect_failing', { mode: 'json' }).$type<string[]>(),
   },
   (t) => [uniqueIndex('plan_tasks_objective_ord_unique').on(t.objectiveId, t.ord)],
 )
