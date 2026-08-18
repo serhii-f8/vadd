@@ -170,8 +170,8 @@ describe('FocusView primary element by state', () => {
       },
     })
     renderFocus()
-    const radios = (await screen.findAllByRole('radio')) as HTMLInputElement[]
-    expect(radios[1]?.checked).toBe(true)
+    const radios = await screen.findAllByRole('radio')
+    expect(radios[1]?.getAttribute('aria-checked')).toBe('true')
   })
 
   it('posts decide with the chosen option', async () => {

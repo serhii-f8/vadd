@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
@@ -17,6 +18,15 @@ export default defineConfig({
         },
       },
       {
+        // `@` mirrors packages/web/vite.config.ts's own alias and
+        // packages/web/tsconfig.json's `paths` — shadcn/ui components import
+        // `@/lib/utils` and this project runs those files directly rather
+        // than through Vite's dev/build config, so without this alias every
+        // shadcn component fails to resolve under Vitest even though `tsc`
+        // and `vite build` both see it fine.
+        resolve: {
+          alias: { '@': fileURLToPath(new URL('./packages/web/src', import.meta.url)) },
+        },
         test: {
           name: 'web',
           // Both extensions: a `.test.ts` here (a pure-logic helper test with
