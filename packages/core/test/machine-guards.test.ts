@@ -105,7 +105,7 @@ describe('evidenceComplete with a declared expectFailing (A11)', () => {
     expect(evidenceComplete(spec, items, ['test'])).toBe(false)
   })
 
-  it('has no effect when omitted — today\'s strict behaviour is unchanged', () => {
+  it("has no effect when omitted — today's strict behaviour is unchanged", () => {
     const items = [
       item({ commandId: 'test', kind: 'test', status: 'fail' }),
       item({ commandId: 'lint', kind: 'lint', status: 'pass' }),

@@ -28,11 +28,7 @@
               "maxLength": 120
             }
           },
-          "required": [
-            "type",
-            "phase",
-            "headline"
-          ],
+          "required": ["type", "phase", "headline"],
           "additionalProperties": false
         },
         {
@@ -76,33 +72,18 @@
                   },
                   "effort": {
                     "type": "string",
-                    "enum": [
-                      "S",
-                      "M",
-                      "L"
-                    ]
+                    "enum": ["S", "M", "L"]
                   },
                   "reversibility": {
                     "type": "string",
-                    "enum": [
-                      "high",
-                      "medium",
-                      "low"
-                    ]
+                    "enum": ["high", "medium", "low"]
                   },
                   "verification": {
                     "type": "string",
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "id",
-                  "label",
-                  "pros",
-                  "cons",
-                  "reversibility",
-                  "verification"
-                ],
+                "required": ["id", "label", "pros", "cons", "reversibility", "verification"],
                 "additionalProperties": false
               },
               "minItems": 2,
@@ -112,12 +93,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "type",
-            "question",
-            "options",
-            "recommendedId"
-          ],
+          "required": ["type", "question", "options", "recommendedId"],
           "additionalProperties": false
         },
         {
@@ -140,11 +116,7 @@
               "maxItems": 4
             }
           },
-          "required": [
-            "type",
-            "question",
-            "suggestedAnswers"
-          ],
+          "required": ["type", "question", "suggestedAnswers"],
           "additionalProperties": false
         },
         {
@@ -176,20 +148,14 @@
                     "maxItems": 5
                   }
                 },
-                "required": [
-                  "title",
-                  "description"
-                ],
+                "required": ["title", "description"],
                 "additionalProperties": false
               },
               "minItems": 1,
               "maxItems": 12
             }
           },
-          "required": [
-            "type",
-            "tasks"
-          ],
+          "required": ["type", "tasks"],
           "additionalProperties": false
         },
         {
@@ -213,12 +179,7 @@
               }
             }
           },
-          "required": [
-            "type",
-            "taskId",
-            "claim",
-            "evidenceRefs"
-          ],
+          "required": ["type", "taskId", "claim", "evidenceRefs"],
           "additionalProperties": false
         },
         {
@@ -230,24 +191,11 @@
             },
             "kind": {
               "type": "string",
-              "enum": [
-                "test",
-                "diff",
-                "lint",
-                "build",
-                "check",
-                "artifact",
-                "warning"
-              ]
+              "enum": ["test", "diff", "lint", "build", "check", "artifact", "warning"]
             },
             "status": {
               "type": "string",
-              "enum": [
-                "pass",
-                "fail",
-                "warn",
-                "info"
-              ]
+              "enum": ["pass", "fail", "warn", "info"]
             },
             "headline": {
               "type": "string",
@@ -269,13 +217,7 @@
               "maxLength": 40
             }
           },
-          "required": [
-            "type",
-            "kind",
-            "status",
-            "headline",
-            "summary"
-          ],
+          "required": ["type", "kind", "status", "headline", "summary"],
           "additionalProperties": false
         },
         {
@@ -302,12 +244,7 @@
               "maxItems": 3
             }
           },
-          "required": [
-            "type",
-            "headline",
-            "probableCause",
-            "suggestedActions"
-          ],
+          "required": ["type", "headline", "probableCause", "suggestedActions"],
           "additionalProperties": false
         }
       ]
