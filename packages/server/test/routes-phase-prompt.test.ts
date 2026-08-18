@@ -7,7 +7,10 @@ test('a phase prompt sends the rendered template', async () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/objectives/${ctx.objectiveId}/events`,
-      payload: { type: 'prompt', phase: 'plan' },
+      // Amendment A11: `plan` now needs `{{verifyCommandIds}}` from the
+      // caller too, same as `verify` needs `{{verificationChecks}}` below —
+      // this raw route never resolves a verification spec on its own.
+      payload: { type: 'prompt', phase: 'plan', vars: { verifyCommandIds: '' } },
     })
     expect(res.statusCode).toBe(202)
 

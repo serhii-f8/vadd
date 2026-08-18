@@ -136,6 +136,12 @@ export const AUTO_TEMPLATE_VARS = ['title', 'goalText'] as const
  *
  * `missing` is `repair.md`'s: the human-readable list of unmet expect groups,
  * built by the caller from `ContractPipeline.unmetExpectations()`.
+ *
+ * `verifyCommandIds` is `plan.md`'s (amendment A11): the comma-joined
+ * `verify.commands[].id`s a task's `expectFailing` may name. `sendPromptEffect`
+ * always supplies it for the `plan` phase — an empty string when no
+ * verification spec is resolved yet — so it is never left as a literal
+ * placeholder the way `verificationCommands` once was.
  */
 export const CALLER_TEMPLATE_VARS = [
   'verificationChecks',
@@ -143,6 +149,7 @@ export const CALLER_TEMPLATE_VARS = [
   'taskTitle',
   'taskDescription',
   'missing',
+  'verifyCommandIds',
 ] as const
 
 /** Distinct `{{name}}` placeholders in a template body or a rendered prompt. */

@@ -107,6 +107,19 @@ function verificationChecksVar(context: WorkflowContext): string | null {
   return checks.map((c) => `${c.id}: ${c.text}`).join('\n')
 }
 
+/**
+ * Comma-joined `verify.commands[].id`s, for `plan.md`'s `{{verifyCommandIds}}`
+ * placeholder — the agent needs these to name a command in a task's
+ * `expectFailing` (amendment A11). Unlike `verificationChecksVar`, an
+ * unresolved spec is not a hard stop here: the `plan` phase can legitimately
+ * run before verification is resolved, and a plan with no available commands
+ * to exempt is a normal outcome, not a broken prompt.
+ */
+function verifyCommandIdsVar(context: WorkflowContext): string {
+  if (!context.verificationSpec) return ''
+  return context.verificationSpec.verify.commands.map((c) => c.id).join(', ')
+}
+
 async function sendPromptEffect(
   deps: Deps,
   objectiveId: string,
@@ -140,12 +153,19 @@ async function sendPromptEffect(
       return
     }
     vars = taskVars
-  } else if (phase === 'plan' && context.reviseInstruction) {
+  } else if (phase === 'plan') {
+    const verifyCommandIds = verifyCommandIdsVar(context)
     // Amendment A10: a REVISE from awaitingPlanApproval re-enters `planning`,
-    // whose template only has `{{goalText}}` — override the default merge
-    // (`renderTurnPrompt` spreads `turn.vars` after it) rather than adding a
-    // new placeholder, the same reuse `executeTaskVars` already relies on.
-    vars = { goalText: `${context.goalText}\n\nRevision note: ${context.reviseInstruction}` }
+    // whose template only has `{{goalText}}` and now also `{{verifyCommandIds}}`
+    // — override goalText in the default merge (`renderTurnPrompt` spreads
+    // `turn.vars` after it) rather than adding a new placeholder, the same
+    // reuse `executeTaskVars` already relies on.
+    vars = context.reviseInstruction
+      ? {
+          goalText: `${context.goalText}\n\nRevision note: ${context.reviseInstruction}`,
+          verifyCommandIds,
+        }
+      : { verifyCommandIds }
   } else if (phase === 'verify') {
     const verificationChecks = verificationChecksVar(context)
     // A null spec, or one with no checks, must never let the literal

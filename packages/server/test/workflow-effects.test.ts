@@ -345,6 +345,33 @@ describe('bindEffects', () => {
     expect(rows.map((r) => r.title)).toEqual(['Split part one'])
   })
 
+  it('A11: the plan prompt lists the resolved verification command ids', async () => {
+    db.update(objectives).set({ verificationSpec: SAMPLE_SPEC }).where(eq(objectives.id, 'o')).run()
+    await toAwaitingPlanApproval()
+    expect(lastPromptText()).toContain('test')
+  })
+
+  it('A11: a REVISE re-plan still carries the command ids alongside the revision note', async () => {
+    db.update(objectives).set({ verificationSpec: SAMPLE_SPEC }).where(eq(objectives.id, 'o')).run()
+    await toAwaitingPlanApproval()
+
+    queueEvents([
+      { type: 'plan', tasks: [{ title: 'Split part one', description: 'do part one' }] },
+    ])
+    runner.send('o', { type: 'REVISE', instruction: 'Split task one into two' })
+
+    await vi.waitFor(() => expect(promptedPhases().filter((p) => p === 'plan').length).toBe(2))
+    expect(lastPromptText()).toContain('Split task one into two')
+    expect(lastPromptText()).toContain('test')
+  })
+
+  it('A11: plan phase renders with no unresolved placeholder when no verificationSpec is set', async () => {
+    // The default state in this file's fixtures — no explicit update to
+    // objectives.verificationSpec, so it stays null.
+    await toAwaitingPlanApproval()
+    expect(lastPromptText()).not.toContain('{{')
+  })
+
   it('recordDecision writes a decisions row, and DECIDE fills in the choice', async () => {
     await toAwaitingDecision()
     const before = db.select().from(decisions).all()[0]

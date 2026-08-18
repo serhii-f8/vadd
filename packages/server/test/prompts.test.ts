@@ -134,7 +134,7 @@ test('verify.md asks for the checks, not the commands', () => {
   expect(placeholdersIn(body)).toEqual(['verificationChecks'])
 })
 
-test('the objective-derived vars alone leave three templates unsatisfied', () => {
+test('the objective-derived vars alone leave four templates unsatisfied', () => {
   // Pins the fact the fix depends on: `verify` and `execute-task` genuinely
   // cannot be rendered from an objective row, so the route must reject them
   // without `vars` rather than treating the leftover braces as prose. If a
@@ -143,11 +143,15 @@ test('the objective-derived vars alone leave three templates unsatisfied', () =>
   //
   // `repair` joins them for the same reason: `{{missing}}` comes from
   // `ContractPipeline.unmetExpectations()` at repair time, not the objective row.
+  //
+  // `plan` joined this list under amendment A11: `{{verifyCommandIds}}` comes
+  // from the resolved verification spec, which `sendPromptEffect` supplies
+  // (as `''` when unresolved) — never from the objective row alone.
   const auto = Object.fromEntries(AUTO_TEMPLATE_VARS.map((v) => [v, 'x']))
   const unsatisfied = PROMPT_PHASES.filter(
     (p) => placeholdersIn(renderTemplate(loadTemplate(p), auto)).length > 0,
   )
-  expect(unsatisfied.sort()).toEqual(['execute-task', 'repair', 'verify'])
+  expect(unsatisfied.sort()).toEqual(['execute-task', 'plan', 'repair', 'verify'])
 })
 
 test('a fully supplied var set renders every template with no placeholder left', () => {
