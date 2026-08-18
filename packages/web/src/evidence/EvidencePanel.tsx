@@ -13,12 +13,17 @@ function Row({
   row,
   onCommand,
   readOnly,
+  expectFailing,
 }: {
   row: EvidenceRow
   onCommand: (body: Record<string, unknown>) => void
   readOnly: boolean
+  /** Amendment A11: the current task's declared expectFailing ids, if any. */
+  expectFailing: string[]
 }) {
   const tickable = !readOnly && row.kind === 'check' && row.commandId !== null
+  const expected =
+    row.status === 'fail' && row.commandId !== null && expectFailing.includes(row.commandId)
   return (
     <li className={`py-2 ${row.status === 'warn' ? 'text-amber-700' : ''}`}>
       <div className="flex items-baseline gap-2">
@@ -41,6 +46,7 @@ function Row({
           <span aria-hidden>{GLYPH[row.status]}</span>
         )}
         <span className="font-medium">{row.headline}</span>
+        {expected && <span className="text-xs text-amber-700">expected</span>}
         {/* A7: a manual tick must never be mistaken for a command VADD ran. */}
         {row.decidedBy === 'user' && <span className="text-xs text-gray-600">ticked by you</span>}
         {row.artifactPath !== null && (
@@ -78,13 +84,24 @@ export function EvidencePanel({
 }) {
   const { required, advisory, warnings } = groupEvidence(aggregate.evidence)
 
+  const expectFailingFor = (row: EvidenceRow): string[] => {
+    const task = aggregate.tasks.find((t) => t.id === row.taskId)
+    return task?.expectFailing ?? []
+  }
+
   const group = (label: string, rows: EvidenceRow[]) =>
     rows.length === 0 ? null : (
       <section aria-label={label} className="mt-4">
         <h3 className="text-sm font-medium">{label}</h3>
         <ul className="divide-y">
           {rows.map((r) => (
-            <Row key={r.id} row={r} onCommand={onCommand} readOnly={readOnly} />
+            <Row
+              key={r.id}
+              row={r}
+              onCommand={onCommand}
+              readOnly={readOnly}
+              expectFailing={expectFailingFor(r)}
+            />
           ))}
         </ul>
       </section>

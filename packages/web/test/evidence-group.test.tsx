@@ -5,6 +5,7 @@ function row(over: Partial<EvidenceRow> = {}): EvidenceRow {
   return {
     id: over.id ?? 'e1',
     commandId: over.commandId ?? null,
+    taskId: over.taskId ?? null,
     kind: over.kind ?? 'test',
     status: over.status ?? 'pass',
     headline: over.headline ?? 'ok',

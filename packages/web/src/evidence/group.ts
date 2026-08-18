@@ -7,6 +7,8 @@ export type EvidenceRow = {
    * never closes a required verification item.
    */
   commandId: string | null
+  /** Amendment A11: which plan task this evidence was produced for, if any. */
+  taskId: string | null
   kind: 'test' | 'diff' | 'lint' | 'build' | 'check' | 'artifact' | 'warning'
   status: 'pass' | 'fail' | 'warn' | 'info'
   headline: string

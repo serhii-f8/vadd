@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Aggregate } from '../src/api.js'
 import { EvidencePanel } from '../src/evidence/EvidencePanel.js'
 import { mockFetch } from './setup.js'
@@ -173,6 +173,39 @@ describe('EvidencePanel', () => {
       />,
     )
     expect(screen.queryByRole('checkbox')).toBeNull()
+  })
+
+  it('A11: badges a failing row as expected when its task declared it', async () => {
+    const rows = [evidence({ id: 'e1', commandId: 'test', status: 'fail', taskId: 't1' })]
+    const tasks = [
+      {
+        id: 't1',
+        ord: 0,
+        title: 'Write a failing test',
+        description: 'repro',
+        status: 'pending' as const,
+        expectFailing: ['test'],
+      },
+    ]
+    render(<EvidencePanel aggregate={agg(rows, { tasks })} onCommand={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText(/expected/i)).toBeTruthy())
+  })
+
+  it('A11: does NOT badge a failing row the current task did not declare', async () => {
+    const rows = [evidence({ id: 'e1', commandId: 'lint', status: 'fail', taskId: 't1' })]
+    const tasks = [
+      {
+        id: 't1',
+        ord: 0,
+        title: 'Write a failing test',
+        description: 'repro',
+        status: 'pending' as const,
+        expectFailing: ['test'],
+      },
+    ]
+    render(<EvidencePanel aggregate={agg(rows, { tasks })} onCommand={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('PHPUnit: 42 passed')).toBeTruthy())
+    expect(screen.queryByText(/expected/i)).toBeNull()
   })
 })
 
