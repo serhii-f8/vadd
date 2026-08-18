@@ -90,6 +90,14 @@ export type WorkflowContext = {
    * must be re-proven (design §5.4).
    */
   verificationEpoch: string | null
+  /**
+   * Amendment A12. Set from `runVerification`'s output when its `onDone`
+   * fires, read only by `awaitingReview`'s auto-approve action. `null` until
+   * the first verification completes, and reset to `null` on every fresh
+   * `executing` entry so a stale classification from a prior task can never
+   * leak into a new one's evaluation.
+   */
+  taskRisk: 'low' | 'high' | null
   /** `'plan'` and `` `task:${ord}` `` keys the user has explicitly approved. */
   approvals: string[]
   pendingDecisionId: string | null

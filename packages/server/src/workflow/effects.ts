@@ -9,6 +9,7 @@ import { decisions, evidenceItems, objectives, planTasks } from '../db/schema.js
 import type { EventBus } from '../events/event-bus.js'
 import { checkpointCommit, resetHard } from '../git/git-manager.js'
 import { collectEvidence } from '../verification/collector.js'
+import { computeTaskRisk } from '../verification/risk.js'
 import { runTurn, type TurnOutcome } from './turn.js'
 
 type Deps = { db: Db; bus: EventBus; agents: AgentRegistry }
@@ -442,7 +443,27 @@ export function bindEffects(
             taskId: input.taskId,
             signal,
           })
-          return { runId: result.runId }
+
+          // Amendment A12: judged against the *task's own* checkpoint, never
+          // the objective's baseSha — a plan's earlier, already-approved
+          // tasks must not count against a later one's risk. No checkpoint
+          // (a task never reached `executing`) fails closed to `high`.
+          let taskRisk: 'low' | 'high' = 'high'
+          if (row.worktreePath && input.taskId) {
+            const taskRow = deps.db
+              .select()
+              .from(planTasks)
+              .where(and(eq(planTasks.id, input.taskId), eq(planTasks.objectiveId, objectiveId)))
+              .get()
+            if (taskRow?.checkpointRef) {
+              taskRisk = await computeTaskRisk(row.worktreePath, taskRow.checkpointRef, {
+                protectedGlobs: spec.data.policy.protectedGlobs,
+                maxLines: spec.data.policy.maxFastFixLines,
+              })
+            }
+          }
+
+          return { runId: result.runId, taskRisk }
         },
       ),
     },

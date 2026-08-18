@@ -38,6 +38,7 @@ export function initialContext(input: WorkflowInput): WorkflowContext {
     evidence: [],
     verificationRunId: null,
     verificationEpoch: null,
+    taskRisk: null,
     approvals: [],
     pendingDecisionId: null,
     pendingClarification: null,
@@ -110,11 +111,12 @@ export const workflowMachine = setup({
      * an unprovided collector must fail loudly, never report an empty — and
      * therefore red — evidence set that looks like a real verdict.
      */
-    runVerification: fromPromise<{ runId: string }, { objectiveId: string; taskId: string | null }>(
-      async () => {
-        throw new Error('runVerification is not implemented in core')
-      },
-    ),
+    runVerification: fromPromise<
+      { runId: string; taskRisk: 'low' | 'high' },
+      { objectiveId: string; taskId: string | null }
+    >(async () => {
+      throw new Error('runVerification is not implemented in core')
+    }),
   },
   actions: {
     /**
@@ -353,6 +355,7 @@ export const workflowMachine = setup({
           // rows and check rows alike (design §5.4).
           verificationRunId: () => null,
           verificationEpoch: () => new Date().toISOString(),
+          taskRisk: () => null,
         }),
         { type: 'checkpoint' },
         { type: 'sendPrompt', params: { phase: 'execute-task' } },
@@ -381,7 +384,10 @@ export const workflowMachine = setup({
           {
             guard: 'hasChecks',
             actions: [
-              assign({ verificationRunId: ({ event }) => event.output.runId }),
+              assign({
+                verificationRunId: ({ event }) => event.output.runId,
+                taskRisk: ({ event }) => event.output.taskRisk,
+              }),
               // Commands are VADD's now; the agent is asked only for the one
               // thing a command cannot produce — a judgement on the checks.
               { type: 'sendPrompt', params: { phase: 'verify' } },
@@ -389,7 +395,10 @@ export const workflowMachine = setup({
           },
           {
             actions: [
-              assign({ verificationRunId: ({ event }) => event.output.runId }),
+              assign({
+                verificationRunId: ({ event }) => event.output.runId,
+                taskRisk: ({ event }) => event.output.taskRisk,
+              }),
               'reconcileEvidence',
             ],
           },

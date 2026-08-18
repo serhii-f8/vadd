@@ -19,7 +19,12 @@ const stubbed = workflowMachine.provide({
   // `verifying` invokes the collector (phase 4). `core`'s own implementation
   // throws on purpose — an unprovided collector must fail loudly — so every
   // test that passes through `verifying` provides an inert one here.
-  actors: { runVerification: fromPromise(async () => ({ runId: 'run-stub' })) },
+  actors: {
+    runVerification: fromPromise<
+      { runId: string; taskRisk: 'low' | 'high' },
+      { objectiveId: string; taskId: string | null }
+    >(async () => ({ runId: 'run-stub', taskRisk: 'high' })),
+  },
 })
 
 function start(mode: 'standard' | 'fastfix' = 'standard') {
@@ -463,9 +468,12 @@ function startVerifying(opts: {
   const sent = opts.sent
   const machine = workflowMachine.provide({
     actors: {
-      runVerification: fromPromise(async () => {
+      runVerification: fromPromise<
+        { runId: string; taskRisk: 'low' | 'high' },
+        { objectiveId: string; taskId: string | null }
+      >(async () => {
         if (opts.failWith) throw opts.failWith
-        return opts.output ?? { runId: 'run-stub' }
+        return { ...(opts.output ?? { runId: 'run-stub' }), taskRisk: 'high' }
       }),
     },
     actions: {
@@ -544,3 +552,40 @@ function toAwaitingReview() {
   })
   return actor
 }
+
+describe('amendment A12: taskRisk', () => {
+  it('is assigned from the invoked collector actor before awaitingReview is entered', () => {
+    const machine = workflowMachine.provide({
+      actions: { sendPrompt, checkpoint, rollbackToCheckpoint, recordPlan, markTaskVerified },
+      actors: {
+        runVerification: fromPromise<
+          { runId: string; taskRisk: 'low' | 'high' },
+          { objectiveId: string; taskId: string | null }
+        >(async () => ({ runId: 'run-stub', taskRisk: 'low' })),
+      },
+    })
+    const actor = createActor(machine, {
+      input: initialContext({
+        objectiveId: 'o1',
+        goalText: 'fix the bug',
+        mode: 'standard',
+        lowEnergy: false,
+        verificationSpec: spec,
+      }),
+    })
+    actor.start()
+    actor.send({ type: 'START' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'DECISION_NEEDED', event: decisionEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'DECIDE', decisionId: 'd1', optionId: 'a' })
+    actor.send({ type: 'PLAN', event: planEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'APPROVE_PLAN' })
+    actor.send({ type: 'TURN_FINISHED' })
+    expect(actor.getSnapshot().context.taskRisk).toBeNull()
+    return settle().then(() => {
+      expect(actor.getSnapshot().context.taskRisk).toBe('low')
+    })
+  })
+})

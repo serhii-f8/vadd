@@ -370,6 +370,23 @@ describe('bindEffects', () => {
     expect(lastPromptText()).not.toContain('Write a failing test')
   })
 
+  it('amendment A12: a real low-risk checkpoint diff lands taskRisk on the context', async () => {
+    db.update(objectives).set({ verificationSpec: SAMPLE_SPEC }).where(eq(objectives.id, 'o')).run()
+    await toExecuting(EXECUTE_TASK_OK)
+
+    // execute-task(task 0) settles -> verifying, which invokes the *real*
+    // bindEffects-bound collector (SAMPLE_SPEC's one command is `exit 0` — see
+    // its own comment: "the collector is bound now, so entering verifying
+    // really executes this in the temp worktree"). No checks, so
+    // reconcileEvidence sends EVIDENCE_RESULT on its own -> awaitingReview.
+    // touched.txt was the only change (from toExecuting's own checkpoint
+    // setup), and nothing changed it further before verifying ran, so the
+    // real diff against the checkpoint is empty -> low risk.
+    await settleFakeTurn()
+    await vi.waitFor(() => expect(runner.get('o')?.getSnapshot().value).toBe('awaitingReview'))
+    expect(runner.get('o')?.getSnapshot().context.taskRisk).toBe('low')
+  })
+
   it('A11-followup: APPROVE_TASK marks the just-left task verified in plan_tasks', async () => {
     db.update(objectives).set({ verificationSpec: SAMPLE_SPEC }).where(eq(objectives.id, 'o')).run()
     await toExecuting(EXECUTE_TASK_OK)
