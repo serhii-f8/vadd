@@ -62,8 +62,13 @@ export function userApproved(context: WorkflowContext, key: string): boolean {
 }
 
 /**
- * D1's Fast Fix. Routes `exploring → planning` and nothing else — it never
- * approves a plan (that is M2) and never skips verification (spec §5).
+ * D1's Fast Fix. This guard itself still only routes `exploring → planning`
+ * and never skips verification (spec §5). It is no longer read only there,
+ * though: amendment A12's plan auto-approve (`fastFixPlanLooksSimple`, wired
+ * into `awaitingPlanApproval`'s entry in `workflow-machine.ts`) also reads
+ * this guard, gating the Fast Fix plan auto-approve on `mode === 'fastfix'`
+ * — the "approving a plan is M2, not this guard" framing no longer holds
+ * now that M2's plan-approval feature has shipped.
  */
 export function isFastFix(context: WorkflowContext): boolean {
   return context.mode === 'fastfix'

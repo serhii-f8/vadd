@@ -348,21 +348,27 @@ export const workflowMachine = setup({
          *
          * Deliberately *inline* rather than a named entry in `setup()`'s
          * `actions:` map (statelyai/xstate#4820, confirmed upstream and
-         * still open on 5.20.1): `enqueue({ type: <name> })` referencing a
-         * sibling action defined in that same map makes the map's own
-         * self-referential `TAction` inference collapse — every other named
-         * action's `params` type widens to `unknown`, breaking `enter`'s
-         * `params: { name: MachineStateName }` a few lines above. Declaring
-         * the `enqueueActions(...)` call inline at the entry site — as
-         * xstate's own maintainers recommend as the workaround — sidesteps
-         * the self-reference entirely while `enqueue({ type:
-         * 'noteAutoApprovedPlan' })` still resolves through the *named*,
-         * `.provide()`-able action below, so Task 7 can bind a real
-         * effect server-side exactly as it would for any other named
-         * action. Neither this action nor `autoApproveTaskIfLowRisk` in
-         * `awaitingReview` below is itself named or provided — the decision
-         * is pure domain logic, same as `evidenceComplete` and every other
-         * guard, and never needs a server-side override.
+         * still open on 5.20.1, independently reproduced twice against the
+         * real installed `xstate@5.20.1`): any `enqueueActions(...)` value
+         * appearing as a named entry in `setup()`'s `actions:` map fails
+         * with `TS2719` — regardless of whether it references a sibling
+         * action, since even a raise-only `enqueueActions` with no
+         * `enqueue(...)` call to another action fails identically — and
+         * every other named action's `params` type widens to `unknown`,
+         * breaking `enter`'s `params: { name: MachineStateName }` a few
+         * lines above. That's why the workaround below is unconditional —
+         * declared inline at both entry sites rather than only when a
+         * sibling reference is present. Declaring the `enqueueActions(...)`
+         * call inline at the entry site — as xstate's own maintainers
+         * recommend as the workaround — sidesteps the failure entirely
+         * while `enqueue({ type: 'noteAutoApprovedPlan' })` still resolves
+         * through the *named*, `.provide()`-able action below, so Task 7
+         * can bind a real effect server-side exactly as it would for any
+         * other named action. Neither this action nor
+         * `autoApproveTaskIfLowRisk` in `awaitingReview` below is itself
+         * named or provided — the decision is pure domain logic, same as
+         * `evidenceComplete` and every other guard, and never needs a
+         * server-side override.
          */
         enqueueActions(({ context, enqueue }) => {
           if (isFastFixGuard(context) && fastFixPlanLooksSimple(context.tasks)) {
