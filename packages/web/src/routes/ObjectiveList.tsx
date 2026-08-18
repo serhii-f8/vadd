@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type Objective } from '../api.js'
+import { api, type ObjectiveListRow } from '../api.js'
 import type { ViewStateName } from '../focus/primary.js'
 import { stateColor } from './stateColor.js'
 
 export function ObjectiveList() {
-  const [objectives, setObjectives] = useState<Objective[] | null>(null)
+  const [objectives, setObjectives] = useState<ObjectiveListRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {

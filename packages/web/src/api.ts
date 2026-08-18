@@ -13,9 +13,16 @@ export type Objective = {
   branchName: string | null
   baseSha: string | null
   integrateAction: 'commit' | 'keep' | 'discard' | null
-  verifiedCount: number
-  totalCount: number
 }
+
+/**
+ * `GET /api/objectives` — the list route only. `verifiedCount`/`totalCount`
+ * are computed for the list and never present on the bare Drizzle row
+ * `GET /api/objectives/:id` returns as `Aggregate.objective` — keep them off
+ * `Objective` itself or that field type-checks as `number` while being
+ * `undefined` at runtime.
+ */
+export type ObjectiveListRow = Objective & { verifiedCount: number; totalCount: number }
 
 export type VaddEvent = {
   id: number
@@ -116,7 +123,7 @@ export const api = {
   deleteObjective: (objectiveId: string) =>
     fetch(`/api/objectives/${objectiveId}`, { method: 'DELETE' }).then(json<{ ok: boolean }>),
 
-  listObjectives: () => fetch('/api/objectives').then(json<Objective[]>),
+  listObjectives: () => fetch('/api/objectives').then(json<ObjectiveListRow[]>),
 
   getObjective: (id: string) => fetch(`/api/objectives/${id}`).then(json<Aggregate>),
 
