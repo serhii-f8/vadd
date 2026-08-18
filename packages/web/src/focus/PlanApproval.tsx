@@ -43,81 +43,87 @@ export function PlanApproval({
       <ol className="space-y-2">
         {edits.map((e, i) => {
           const parsedExpectFailing = parseCommandIds(e.expectFailingText)
+          const expectFailingInputId = `expect-failing-${i}`
           return (
             // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional here
-            <Card key={i}>
-              <CardContent className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <Input
-                    className="flex-1"
-                    value={e.title}
-                    aria-label={`Task ${i + 1} title`}
-                    onChange={(ev) =>
-                      setEdits(
-                        edits.map((x, j) => (i === j ? { ...x, title: ev.target.value } : x)),
-                      )
-                    }
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    type="button"
-                    aria-label={`Move task ${i + 1} up`}
-                    onClick={() => move(i, i - 1)}
-                  >
-                    ↑
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    type="button"
-                    aria-label={`Move task ${i + 1} down`}
-                    onClick={() => move(i, i + 1)}
-                  >
-                    ↓
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    type="button"
-                    aria-label={`Remove task ${i + 1}`}
-                    onClick={() => setEdits(edits.filter((_, j) => j !== i))}
-                  >
-                    ✕
-                  </Button>
-                </div>
-                {parsedExpectFailing.length > 0 && (
-                  <div>
-                    {/* A single Badge whose own text is the whole label+list string: getByText
+            <li key={i}>
+              <Card>
+                <CardContent className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      className="flex-1"
+                      value={e.title}
+                      aria-label={`Task ${i + 1} title`}
+                      onChange={(ev) =>
+                        setEdits(
+                          edits.map((x, j) => (i === j ? { ...x, title: ev.target.value } : x)),
+                        )
+                      }
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      type="button"
+                      aria-label={`Move task ${i + 1} up`}
+                      onClick={() => move(i, i - 1)}
+                    >
+                      ↑
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      type="button"
+                      aria-label={`Move task ${i + 1} down`}
+                      onClick={() => move(i, i + 1)}
+                    >
+                      ↓
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      type="button"
+                      aria-label={`Remove task ${i + 1}`}
+                      onClick={() => setEdits(edits.filter((_, j) => j !== i))}
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                  {parsedExpectFailing.length > 0 && (
+                    <div>
+                      {/* A single Badge whose own text is the whole label+list string: getByText
                         only reads a node's direct text-node children, not nested elements, so a
                         label span plus one Badge per id would never expose the combined text a
                         single query can match. */}
-                    <Badge variant="outline" className="mr-1">
-                      {`expects failing: ${parsedExpectFailing.join(', ')}`}
-                    </Badge>
-                  </div>
-                )}
-                {/* A plain span, not <label>: Input already carries its own aria-label below,
-                    and biome's noLabelWithoutControl can't see through the custom component to
-                    the native <input> it wraps, so a <label> here would be flagged (and would
-                    double-announce the same text to a screen reader). */}
-                <span className="text-xs text-gray-600">
-                  Task {i + 1} expected failing commands
-                  <Input
-                    className="ml-2 mt-1 h-6 text-xs"
-                    value={e.expectFailingText}
-                    aria-label={`Task ${i + 1} expected failing commands`}
-                    onChange={(ev) =>
-                      setEdits(
-                        edits.map((x, j) =>
-                          i === j ? { ...x, expectFailingText: ev.target.value } : x,
-                        ),
-                      )
-                    }
-                  />
-                </span>
-              </CardContent>
-            </Card>
+                      <Badge variant="outline" className="mr-1">
+                        {`expects failing: ${parsedExpectFailing.join(', ')}`}
+                      </Badge>
+                    </div>
+                  )}
+                  {/* htmlFor/id, mirroring DecisionCard.tsx's pattern for labeling a custom
+                    control: biome's noLabelWithoutControl can't see through Input to the native
+                    <input> it wraps, so a bare <label> around it is flagged, but a <label
+                    htmlFor> paired with a matching id on Input passes cleanly and keeps the real
+                    label→input association (click-to-focus, and the label's accessible role) —
+                    not just the aria-label a screen reader alone would get. */}
+                  <label className="text-xs text-gray-600" htmlFor={expectFailingInputId}>
+                    Task {i + 1} expected failing commands
+                    <Input
+                      id={expectFailingInputId}
+                      className="ml-2 mt-1 h-6 text-xs"
+                      value={e.expectFailingText}
+                      aria-label={`Task ${i + 1} expected failing commands`}
+                      onChange={(ev) =>
+                        setEdits(
+                          edits.map((x, j) =>
+                            i === j ? { ...x, expectFailingText: ev.target.value } : x,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                </CardContent>
+              </Card>
+            </li>
           )
         })}
       </ol>
