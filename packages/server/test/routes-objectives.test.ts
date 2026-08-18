@@ -92,6 +92,77 @@ test('lists every objective newest first', async () => {
   expect(rows.map((r) => r.title)).toEqual(['second', 'first'])
 })
 
+test('lists verifiedCount and totalCount per objective', async () => {
+  const { app, db, projectId } = await withProject()
+  const created = await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/objectives`,
+    payload: { title: 'has tasks', goalText: 'g' },
+  })
+  const objectiveId = created.json().id as string
+  const now = new Date().toISOString()
+  db.insert(planTasks)
+    .values([
+      {
+        id: `${objectiveId}:0`,
+        objectiveId,
+        ord: 0,
+        title: 'a',
+        description: 'd',
+        status: 'verified',
+        checkpointRef: null,
+        startedAt: now,
+        finishedAt: now,
+      },
+      {
+        id: `${objectiveId}:1`,
+        objectiveId,
+        ord: 1,
+        title: 'b',
+        description: 'd',
+        status: 'running',
+        checkpointRef: null,
+        startedAt: now,
+        finishedAt: null,
+      },
+      {
+        id: `${objectiveId}:2`,
+        objectiveId,
+        ord: 2,
+        title: 'c',
+        description: 'd',
+        status: 'pending',
+        checkpointRef: null,
+        startedAt: null,
+        finishedAt: null,
+      },
+    ])
+    .run()
+
+  const rows = (await app.inject({ method: 'GET', url: '/api/objectives' })).json() as Array<{
+    id: string
+    verifiedCount: number
+    totalCount: number
+  }>
+  const row = rows.find((r) => r.id === objectiveId)
+  expect(row?.verifiedCount).toBe(1)
+  expect(row?.totalCount).toBe(3)
+})
+
+test('an objective with no plan yet shows 0/0, not a crash', async () => {
+  const { app, projectId } = await withProject()
+  await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/objectives`,
+    payload: { title: 'no plan', goalText: 'g' },
+  })
+  const rows = (await app.inject({ method: 'GET', url: '/api/objectives' })).json() as Array<{
+    verifiedCount: number
+    totalCount: number
+  }>
+  expect(rows[0]).toMatchObject({ verifiedCount: 0, totalCount: 0 })
+})
+
 test('M1 commands are rejected in M0', async () => {
   const { app, projectId } = await withProject()
   const o = (

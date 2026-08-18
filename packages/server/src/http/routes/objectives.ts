@@ -281,9 +281,25 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
   /** Spec §8's board, unstyled: every objective, newest first. Registered
    * before `/api/objectives/:id` — a parameterised route registered first
    * would shadow this literal path and treat "objectives" as an id. */
-  app.get('/api/objectives', async () =>
-    db.select().from(objectives).orderBy(desc(objectives.createdAt)).all(),
-  )
+  app.get('/api/objectives', async () => {
+    const rows = db.select().from(objectives).orderBy(desc(objectives.createdAt)).all()
+    const taskRows = db
+      .select({ objectiveId: planTasks.objectiveId, status: planTasks.status })
+      .from(planTasks)
+      .all()
+    const counts = new Map<string, { verified: number; total: number }>()
+    for (const t of taskRows) {
+      const c = counts.get(t.objectiveId) ?? { verified: 0, total: 0 }
+      c.total += 1
+      if (t.status === 'verified') c.verified += 1
+      counts.set(t.objectiveId, c)
+    }
+    return rows.map((r) => ({
+      ...r,
+      verifiedCount: counts.get(r.id)?.verified ?? 0,
+      totalCount: counts.get(r.id)?.total ?? 0,
+    }))
+  })
 
   // Spec §7's "full aggregate (state, decisions, tasks, evidence)". The Focus
   // View mirrors this and performs no client-side transitions, so `state` is
