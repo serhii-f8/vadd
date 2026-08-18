@@ -12,9 +12,10 @@ const sendPrompt = vi.fn()
 const checkpoint = vi.fn()
 const rollbackToCheckpoint = vi.fn()
 const recordPlan = vi.fn()
+const markTaskVerified = vi.fn()
 
 const stubbed = workflowMachine.provide({
-  actions: { sendPrompt, checkpoint, rollbackToCheckpoint, recordPlan },
+  actions: { sendPrompt, checkpoint, rollbackToCheckpoint, recordPlan, markTaskVerified },
   // `verifying` invokes the collector (phase 4). `core`'s own implementation
   // throws on purpose — an unprovided collector must fail loudly — so every
   // test that passes through `verifying` provides an inert one here.
@@ -70,6 +71,7 @@ beforeEach(() => {
   checkpoint.mockClear()
   rollbackToCheckpoint.mockClear()
   recordPlan.mockClear()
+  markTaskVerified.mockClear()
 })
 
 describe('the happy path', () => {
@@ -272,6 +274,41 @@ describe('the happy path', () => {
     })
     actor.send({ type: 'APPROVE_TASK' })
     expect(actor.getSnapshot().value).toBe('integrating')
+  })
+
+  it('A11-followup: markTaskVerified fires for the task being left, before currentTaskIndex advances', () => {
+    const actor = toAwaitingReview()
+    expect(actor.getSnapshot().context.currentTaskIndex).toBe(0)
+
+    actor.send({ type: 'APPROVE_TASK' })
+
+    expect(markTaskVerified).toHaveBeenCalledTimes(1)
+    // The action ran while currentTaskIndex was still 0 (the task being left),
+    // not 1 (the task being entered) -- this is the ordering the design doc's
+    // §4 explicitly calls out as safety-critical.
+    const call = markTaskVerified.mock.calls[0]
+    expect(call).toBeDefined()
+    expect(call?.[0].context.currentTaskIndex).toBe(0)
+    expect(actor.getSnapshot().context.currentTaskIndex).toBe(1)
+  })
+
+  it('A11-followup: markTaskVerified does NOT fire on the last task (routes straight to integrating)', () => {
+    const actor = toAwaitingReview()
+    actor.send({ type: 'APPROVE_TASK' }) // task 0 -> task 1, into executing
+    markTaskVerified.mockClear()
+
+    // executing -> verifying -> awaitingReview, same cycle as the preceding
+    // 'awaitingReview → executing for the next task...' test.
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({
+      type: 'EVIDENCE_RESULT',
+      items: [{ commandId: 'test', kind: 'test', status: 'pass', taskId: null }],
+    })
+    actor.send({ type: 'APPROVE_TASK' }) // task 1, the last one -> integrating
+
+    expect(actor.getSnapshot().value).toBe('integrating')
+    expect(markTaskVerified).not.toHaveBeenCalled()
   })
 })
 

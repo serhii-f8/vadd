@@ -159,6 +159,7 @@ export const workflowMachine = setup({
     reconcileEvidence: () => {},
     finishObjective: (_, _params: { action: 'commit' | 'keep' | 'discard' }) => {},
     noteToleratedFailures: () => {},
+    markTaskVerified: () => {},
   },
 }).createMachine({
   id: 'workflow',
@@ -438,13 +439,16 @@ export const workflowMachine = setup({
           {
             guard: 'hasMoreTasks',
             target: 'executing',
-            actions: assign({
-              approvals: ({ context }) => [
-                ...context.approvals,
-                `task:${context.currentTaskIndex}`,
-              ],
-              currentTaskIndex: ({ context }) => context.currentTaskIndex + 1,
-            }),
+            actions: [
+              { type: 'markTaskVerified' },
+              assign({
+                approvals: ({ context }) => [
+                  ...context.approvals,
+                  `task:${context.currentTaskIndex}`,
+                ],
+                currentTaskIndex: ({ context }) => context.currentTaskIndex + 1,
+              }),
+            ],
           },
           {
             target: 'integrating',
