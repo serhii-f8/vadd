@@ -21,6 +21,7 @@ export {
   workflowMachine,
 } from './machine/workflow-machine.js'
 export { type CommandDecision, decideCommand } from './policies/command-policy.js'
+export { fastFixPlanLooksSimple } from './policies/fast-fix-plan.js'
 export { isProtectedPath, protectedPaths } from './policies/protected-paths.js'
 export {
   type BudgetViolation,
