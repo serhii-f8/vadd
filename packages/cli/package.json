@@ -14,7 +14,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsx scripts/build.ts"
+    "build": "tsx scripts/build.ts",
+    "smoke": "tsx scripts/smoke-test.ts"
   },
   "dependencies": {
     "fastify": "^5.11.0",
