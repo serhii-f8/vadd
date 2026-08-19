@@ -1,0 +1,35 @@
+{
+  "name": "@vadd/cli",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "license": "Apache-2.0",
+  "bin": {
+    "vadd": "./dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsx scripts/build.ts"
+  },
+  "dependencies": {
+    "fastify": "^5.11.0",
+    "@fastify/static": "^8.0.4",
+    "better-sqlite3": "^13.0.2",
+    "drizzle-orm": "^0.45.2",
+    "execa": "^10.0.1",
+    "xstate": "^5.20.1",
+    "zod": "^3.25.76",
+    "@anthropic-ai/sdk": "^0.115.0",
+    "@zed-industries/agent-client-protocol": "0.4.5",
+    "@zed-industries/claude-code-acp": "0.16.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "tsx": "^4.23.4"
+  }
+}

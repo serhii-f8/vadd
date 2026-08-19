@@ -14,6 +14,7 @@
     "includes": [
       "**",
       "!**/dist",
+      "!**/dist-types",
       "!**/node_modules",
       "!**/drizzle",
       "!**/evals/transcripts",

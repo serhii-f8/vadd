@@ -1,8 +1,15 @@
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
+const rootDir = fileURLToPath(new URL('.', import.meta.url))
+
 export default defineConfig({
   test: {
+    // Explicit root: without it, vitest's project `include` globs (which are
+    // written repo-root-relative, e.g. `packages/{core,server,cli}/test/**`)
+    // resolve against `process.cwd()` instead, so `pnpm --filter @vadd/cli
+    // vitest run ...` (cwd = packages/cli) silently matched nothing.
+    root: rootDir,
     testTimeout: 20_000,
     hookTimeout: 20_000,
     // Two projects rather than one glob: the web package needs jsdom and a
@@ -11,7 +18,7 @@ export default defineConfig({
       {
         test: {
           name: 'node',
-          include: ['packages/{core,server}/test/**/*.test.ts'],
+          include: ['packages/{core,server,cli}/test/**/*.test.ts'],
           environment: 'node',
           testTimeout: 20_000,
           hookTimeout: 20_000,
