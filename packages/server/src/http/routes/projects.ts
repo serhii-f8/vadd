@@ -43,6 +43,7 @@ export function registerProjectRoutes(app: FastifyInstance, { db, bus }: AppDeps
         name: parsed.data.name ?? basename(toplevel),
         repoPath: toplevel,
         config: {},
+        agentKind: parsed.data.agentKind,
         createdAt: new Date().toISOString(),
       })
       .returning()

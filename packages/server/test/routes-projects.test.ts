@@ -72,6 +72,27 @@ test('registration appends a project_registered event', async () => {
   expect(bus.since(null, 0).map((e) => e.type)).toContain('project_registered')
 })
 
+test('POST /api/projects defaults agentKind to claude-code, and honors an explicit codex', async () => {
+  const home = withTempHome()
+  const db = createDb(`${home}/vadd.db`)
+  const bus = new EventBus(db)
+  const app = buildApp({ db, bus })
+
+  const defaulted = await app.inject({
+    method: 'POST',
+    url: '/api/projects',
+    payload: { repoPath: makeTempRepo() },
+  })
+  expect(defaulted.json().agentKind).toBe('claude-code')
+
+  const explicit = await app.inject({
+    method: 'POST',
+    url: '/api/projects',
+    payload: { repoPath: makeTempRepo(), agentKind: 'codex' },
+  })
+  expect(explicit.json().agentKind).toBe('codex')
+})
+
 test('a failed registration appends project_registration_failed with the reason', async () => {
   // Only the success path had event coverage, so the failure event could have
   // stopped firing without a single test noticing.

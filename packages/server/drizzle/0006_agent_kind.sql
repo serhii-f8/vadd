@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `agent_kind` text DEFAULT 'claude-code' NOT NULL;

@@ -1,9 +1,13 @@
 import { z } from 'zod'
 import { VerificationOverride } from './verification.js'
 
+export const AGENT_KINDS = ['claude-code', 'codex'] as const
+export type AgentKind = (typeof AGENT_KINDS)[number]
+
 export const RegisterProjectBody = z.object({
   repoPath: z.string().min(1),
   name: z.string().min(1).max(80).optional(),
+  agentKind: z.enum(AGENT_KINDS).default('claude-code'),
 })
 export type RegisterProjectBody = z.infer<typeof RegisterProjectBody>
 

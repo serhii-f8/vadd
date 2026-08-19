@@ -43,6 +43,13 @@
       "when": 1787040782382,
       "tag": "0005_expected_failing_column",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787149654507,
+      "tag": "0006_agent_kind",
+      "breakpoints": true
     }
   ]
 }

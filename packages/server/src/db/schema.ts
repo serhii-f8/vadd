@@ -6,6 +6,7 @@ export const projects = sqliteTable('projects', {
   name: text('name').notNull(),
   repoPath: text('repo_path').notNull().unique(),
   config: text('config', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+  agentKind: text('agent_kind').notNull().default('claude-code'),
   createdAt: text('created_at').notNull(),
 })
 
