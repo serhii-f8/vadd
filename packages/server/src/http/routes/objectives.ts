@@ -9,7 +9,7 @@ import {
   planTaskId,
   VerificationSpec,
 } from '@vadd/core'
-import { and, desc, eq, gte, inArray } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNotNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db } from '../../db/client.js'
 import {
@@ -217,6 +217,7 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
           eq(objectives.projectId, project.id),
           eq(evidenceItems.kind, 'check'),
           eq(evidenceItems.status, 'pass'),
+          isNotNull(evidenceItems.commandId),
           gte(evidenceItems.createdAt, since),
         ),
       )

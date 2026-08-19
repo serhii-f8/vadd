@@ -200,6 +200,24 @@ describe('GET /api/projects/:id/today', () => {
           decidedBy: 'user',
           createdAt: insideToday(),
         },
+        // An agent-emitted `evidence` event of kind `check` that names no
+        // declared check id (`commandId: null`) is an unanchored claim, not a
+        // proven one — amendment A6 requires "referencing the check id" to
+        // count. Must not increment `checksPassed` alongside the anchored row
+        // above.
+        {
+          id: randomUUID(),
+          objectiveId,
+          taskId: null,
+          commandId: null,
+          kind: 'check',
+          status: 'pass',
+          headline: 'Unanchored claim',
+          summary: [],
+          artifactPath: null,
+          decidedBy: null,
+          createdAt: insideToday(),
+        },
       ])
       .run()
 

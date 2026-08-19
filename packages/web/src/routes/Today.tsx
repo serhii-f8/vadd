@@ -19,6 +19,8 @@ export function Today() {
   useEffect(() => {
     const projectId = selected ?? projects?.[0]?.id
     if (!projectId) return
+    setError(null)
+    setSummary(null)
     api
       .getToday(projectId)
       .then(setSummary)
@@ -41,17 +43,27 @@ export function Today() {
       )}
 
       {projects !== null && projects.length > 1 && (
-        <select
-          className="mb-4 rounded border px-2 py-1 text-sm"
-          value={selected ?? projects[0]?.id ?? ''}
-          onChange={(e) => setSearchParams({ project: e.target.value })}
-        >
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        <>
+          {/* htmlFor/id, mirroring DecisionCard.tsx's and PlanApproval.tsx's pattern
+            for labeling a custom control: an associated <label> gives the select a
+            real label→control relationship (click-to-focus, and the label's
+            accessible role), not just an implicit one. */}
+          <label className="mb-1 block text-xs text-gray-600" htmlFor="today-project">
+            Project
+          </label>
+          <select
+            id="today-project"
+            className="mb-4 rounded border px-2 py-1 text-sm"
+            value={selected ?? projects[0]?.id ?? ''}
+            onChange={(e) => setSearchParams({ project: e.target.value })}
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </>
       )}
 
       {summary !== null && (

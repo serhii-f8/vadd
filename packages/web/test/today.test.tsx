@@ -104,4 +104,27 @@ describe('Today', () => {
     renderToday()
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('boom'))
   })
+
+  it("clears the previous project's counts and shows an error when the newly selected project's fetch fails", async () => {
+    mockFetch({
+      'GET /api/projects': {
+        body: [
+          { id: 'p1', name: 'Flexpick', repoPath: '/r1' },
+          { id: 'p2', name: 'Wheelership', repoPath: '/r2' },
+        ],
+      },
+      'GET /api/projects/p1/today': {
+        body: { date: '2026-08-19', verifiedTasks: 1, decisionsMade: 0, checksPassed: 0 },
+      },
+      'GET /api/projects/p2/today': { status: 500, body: { error: 'boom' } },
+    })
+    renderToday()
+    expect(await screen.findByText('1 task verified')).toBeTruthy()
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByRole('combobox'), 'p2')
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('boom'))
+    expect(screen.queryByText('1 task verified')).toBeNull()
+  })
 })
