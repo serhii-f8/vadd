@@ -16,19 +16,24 @@ const tarball = readdirSync(tmpdir()).find((f) => f.startsWith('vadd-cli-') && f
 if (!tarball) throw new Error('npm pack did not produce a vadd-cli-*.tgz in the tmp dir')
 const tarballPath = join(tmpdir(), tarball)
 
-console.log('3/5 installing into a scratch prefix...')
-const prefix = mkdtempSync(join(tmpdir(), 'vadd-smoke-prefix-'))
-const scratchHome = mkdtempSync(join(tmpdir(), 'vadd-smoke-home-'))
-execFileSync('npm', ['install', '-g', '--prefix', prefix, tarballPath], { stdio: 'inherit' })
-
-console.log('4/5 running the installed binary...')
-const port = 14319
-const child = spawn(join(prefix, 'bin', 'vadd'), [], {
-  env: { ...process.env, HOME: scratchHome, VADD_PORT: String(port), VADD_WEB_DIST: '' },
-  stdio: 'inherit',
-})
+let prefix: string | undefined
+let scratchHome: string | undefined
+let child: ReturnType<typeof spawn> | undefined
 
 try {
+  console.log('3/5 installing into a scratch prefix...')
+  prefix = mkdtempSync(join(tmpdir(), 'vadd-smoke-prefix-'))
+  scratchHome = mkdtempSync(join(tmpdir(), 'vadd-smoke-home-'))
+  execFileSync('npm', ['install', '-g', '--prefix', prefix, tarballPath], { stdio: 'inherit' })
+
+  console.log('4/5 running the installed binary...')
+  const port = 14319
+  child = spawn(join(prefix, 'bin', 'vadd'), [], {
+    env: { ...process.env, HOME: scratchHome, VADD_PORT: String(port), VADD_WEB_DIST: '' },
+    stdio: 'inherit',
+  })
+  child.on('error', () => {})
+
   await waitForPort(port, 30_000)
   const elapsedToListening = Date.now() - start
 
@@ -68,9 +73,9 @@ try {
     'see the packaging design doc §4.',
   )
 } finally {
-  child.kill('SIGTERM')
-  rmSync(prefix, { recursive: true, force: true })
-  rmSync(scratchHome, { recursive: true, force: true })
+  child?.kill('SIGTERM')
+  if (prefix) rmSync(prefix, { recursive: true, force: true })
+  if (scratchHome) rmSync(scratchHome, { recursive: true, force: true })
 }
 
 async function waitForPort(port: number, timeoutMs: number): Promise<void> {
