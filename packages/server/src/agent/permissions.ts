@@ -74,9 +74,9 @@ export function isInsideWorktree(worktreeRoot: string, target: string): boolean 
  *
  * The Task 2 spike observed `requestPermission.toolCall.locations` **absent
  * entirely** — even for an Edit whose earlier `tool_call` notification for the
- * same `toolCallId` did carry locations. So three sources are consulted: the
+ * same `toolCallId` did carry locations. So multiple sources are consulted: the
  * request's own `locations`, locations remembered from the `tool_call` stream
- * by id, and `rawInput`'s path-bearing fields.
+ * by id, `rawInput`'s path-bearing fields, and Codex's `content[].path` array.
  *
  * See docs/superpowers/notes/acp-handshake.md §3.
  */
@@ -85,6 +85,7 @@ export function pathsFromToolCall(
     toolCallId?: string
     locations?: { path: string }[] | null
     rawInput?: Record<string, unknown>
+    content?: { path?: string }[] | null
   },
   known?: ReadonlyMap<string, string[]>,
 ): string[] {
@@ -103,6 +104,14 @@ export function pathsFromToolCall(
   for (const key of ['file_path', 'path', 'notebook_path']) {
     const v = raw[key]
     if (typeof v === 'string' && v.length > 0) out.add(v)
+  }
+  // Codex's edit tool-calls (kind: "edit") carry no top-level `locations` and
+  // no `rawInput` at all — each changed file's path lives here instead.
+  // Verified against @agentclientprotocol/codex-acp's real source. A strict
+  // addition: Claude Code's tool-calls never populate `content`, so this
+  // changes nothing for the existing agent.
+  for (const c of toolCall.content ?? []) {
+    if (c && typeof c.path === 'string' && c.path.length > 0) out.add(c.path)
   }
   return [...out]
 }

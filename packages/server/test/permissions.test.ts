@@ -108,6 +108,32 @@ test('pathsFromToolCall recovers paths the spike showed can go missing', () => {
   ).toEqual(['/x/y.ts'])
 })
 
+test('pathsFromToolCall reads Codex-style diff content blocks', () => {
+  // Verified against @agentclientprotocol/codex-acp's real source
+  // (CodexToolCallMapper.ts): an edit tool-call carries no top-level
+  // `locations` and no `rawInput` at all — each changed file's path lives on
+  // `content[].path` instead. Left unhandled, every Codex edit's path set
+  // comes back empty and decidePermission fails closed on all of them.
+  expect(
+    pathsFromToolCall({
+      content: [{ path: '/a/b.ts' }, { path: '/c/d.ts' }],
+    } as never),
+  ).toEqual(['/a/b.ts', '/c/d.ts'])
+})
+
+test('pathsFromToolCall merges content-block paths with the other sources, deduplicated', () => {
+  expect(
+    pathsFromToolCall({
+      rawInput: { file_path: '/a/b.ts' },
+      content: [{ path: '/a/b.ts' }, { path: '/e/f.ts' }],
+    } as never),
+  ).toEqual(['/a/b.ts', '/e/f.ts'])
+})
+
+test('pathsFromToolCall drops malformed content entries the same way it drops malformed locations', () => {
+  expect(pathsFromToolCall({ content: [{}, { path: '/a' }] } as never)).toEqual(['/a'])
+})
+
 test('decidePermission fails closed when no path can be determined', () => {
   const root = worktree()
   // `paths.every(isInside)` would return true here. That is the bug this guards.
