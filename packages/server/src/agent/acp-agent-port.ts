@@ -11,6 +11,8 @@ import {
   PROTOCOL_VERSION,
   sessionNotificationSchema,
 } from '@zed-industries/agent-client-protocol'
+import { claudeCodeConfig } from './kinds/claude-code.js'
+import type { AgentKindConfig } from './kinds/types.js'
 import { decidePermission, isInsideWorktree, pathsFromToolCall } from './permissions.js'
 
 let notificationSchemaRelaxed = false
@@ -75,6 +77,9 @@ export type ExitInfo = { code: number | null; signal: NodeJS.Signals | null; std
 export type AcpAgentPortOptions = {
   /** Root of the objective's worktree; the boundary for the permission policy. */
   worktreePath: string
+  /** Which agent this port drives. Defaults to Claude Code — every existing
+   * caller that never set this keeps today's exact behavior. */
+  config?: AgentKindConfig
   /** Test seam. Omit in production so the pinned adapter is resolved by path. */
   command?: string
   args?: string[]
@@ -123,8 +128,11 @@ export class AcpAgentPort implements AgentPort {
   #rejectPending?: (err: Error) => void
   /** Rejects `start()` if the process dies before the handshake completes. */
   #rejectStart?: (err: Error) => void
+  readonly #config: AgentKindConfig
 
-  constructor(private readonly opts: AcpAgentPortOptions) {}
+  constructor(private readonly opts: AcpAgentPortOptions) {
+    this.#config = opts.config ?? claudeCodeConfig()
+  }
 
   /**
    * The adapter child's pid, or undefined before `start()`. Recorded on the
@@ -139,9 +147,21 @@ export class AcpAgentPort implements AgentPort {
   async start(): Promise<void> {
     // Tests inject `command`/`args`; production resolves the pinned adapter.
     const command = this.opts.command ?? process.execPath
-    const args = this.opts.command
-      ? (this.opts.args ?? [])
-      : [resolveAdapterBin('@zed-industries/claude-code-acp')]
+    let args: string[]
+    if (this.opts.command) {
+      args = this.opts.args ?? []
+    } else {
+      // resolveAdapterBin's own error is generic (it doesn't know which agent
+      // kind is asking); translate to the config's install instruction so a
+      // missing adapter reads the same whether it's caught here (package not
+      // resolvable at all) or in the spawn ENOENT handler below (resolves but
+      // isn't actually runnable).
+      try {
+        args = [resolveAdapterBin(this.#config.packageName)]
+      } catch {
+        throw new Error(this.#config.missingAdapterMessage)
+      }
+    }
 
     const child = spawn(command, args, {
       cwd: this.opts.worktreePath,
@@ -162,7 +182,7 @@ export class AcpAgentPort implements AgentPort {
       this.#fail(
         new Error(
           isMissing
-            ? `Cannot find the ACP adapter. Install it with: pnpm add -Dw @zed-industries/claude-code-acp@0.16.2`
+            ? this.#config.missingAdapterMessage
             : `Failed to spawn ${command}: ${err.message}`,
         ),
       )

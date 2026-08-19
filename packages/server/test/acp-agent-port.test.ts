@@ -65,6 +65,21 @@ test('start, newSession, prompt and stop complete against a fake agent', async (
   await port.stop()
 })
 
+test('a missing adapter surfaces the config-specific install message', async () => {
+  const wt = mkdtempSync(join(tmpdir(), 'vadd-wt-'))
+  const port = new AcpAgentPort({
+    worktreePath: wt,
+    config: {
+      kind: 'codex',
+      packageName: '@vadd/definitely-not-a-real-package',
+      missingAdapterMessage:
+        'Cannot find the Codex ACP adapter. Install it with: pnpm add -Dw @agentclientprotocol/codex-acp',
+      setupProfile: () => ({ env: {} }),
+    },
+  })
+  await expect(port.start()).rejects.toThrow(/Codex ACP adapter/)
+})
+
 test('updates the SDK schema rejects are still delivered, not dropped', async () => {
   // The SDK validates session/update against a strict zod schema BEFORE
   // dispatching, and a parse failure throws instead of calling the handler —
