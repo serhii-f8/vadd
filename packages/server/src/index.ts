@@ -1,10 +1,12 @@
 import { resolveAdapterBin } from './agent/acp-agent-port.js'
 import { AgentRegistry } from './agent/registry.js'
+import { openBrowser } from './boot/open-browser.js'
 import { reconcileOnBoot } from './boot/reconcile.js'
 import { rehydrateOnBoot } from './boot/rehydrate.js'
 import { createDb } from './db/client.js'
 import { EventBus } from './events/event-bus.js'
 import { buildApp } from './http/app.js'
+import { registerStaticWeb } from './http/static.js'
 import { dbPath } from './paths.js'
 import { WorkflowRunner } from './workflow/runner.js'
 
@@ -41,9 +43,19 @@ await rehydrateOnBoot({ db, bus, runner })
 
 const app = buildApp({ db, bus, agents, runner })
 
+// Packaged-install mode only: `pnpm dev` never sets this, so this branch is
+// dead code in every dev/test run and changes nothing about that path.
+if (process.env.VADD_WEB_DIST) {
+  await registerStaticWeb(app, process.env.VADD_WEB_DIST)
+}
+
 // Localhost only (spec §7). Never bind 0.0.0.0.
 await app.listen({ port: PORT, host: '127.0.0.1' })
 console.log(`VADD server listening on http://127.0.0.1:${PORT}`)
+
+if (process.env.VADD_WEB_DIST) {
+  openBrowser(`http://127.0.0.1:${PORT}/`)
+}
 
 let shuttingDown = false
 async function shutdown(signal: string) {
