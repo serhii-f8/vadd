@@ -1,19 +1,29 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { api, type ObjectiveListRow } from '../api.js'
+import { Link, useSearchParams } from 'react-router-dom'
+import { api, type ObjectiveListRow, type Project } from '../api.js'
 import type { ViewStateName } from '../focus/primary.js'
 import { stateColor } from './stateColor.js'
 
 export function ObjectiveList() {
+  const [projects, setProjects] = useState<Project[] | null>(null)
   const [objectives, setObjectives] = useState<ObjectiveListRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const selectedProject = searchParams.get('project')
 
   useEffect(() => {
     api
-      .listObjectives()
-      .then(setObjectives)
+      .listProjects()
+      .then(setProjects)
       .catch((e: Error) => setError(e.message))
   }, [])
+
+  useEffect(() => {
+    api
+      .listObjectives(selectedProject ?? undefined)
+      .then(setObjectives)
+      .catch((e: Error) => setError(e.message))
+  }, [selectedProject])
 
   return (
     <main className="mx-auto max-w-3xl p-6">
@@ -28,6 +38,23 @@ export function ObjectiveList() {
           </Link>
         </div>
       </header>
+
+      {projects !== null && projects.length > 1 && (
+        <select
+          className="mb-4 rounded border px-2 py-1 text-sm"
+          value={selectedProject ?? ''}
+          onChange={(e) =>
+            e.target.value ? setSearchParams({ project: e.target.value }) : setSearchParams({})
+          }
+        >
+          <option value="">All projects</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      )}
 
       {error !== null && (
         <p role="alert" className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm">

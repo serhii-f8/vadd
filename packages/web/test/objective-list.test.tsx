@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import { ObjectiveList } from '../src/routes/ObjectiveList.js'
@@ -82,5 +83,67 @@ describe('ObjectiveList', () => {
       </MemoryRouter>,
     )
     expect(await screen.findByText('1/3')).toBeTruthy()
+  })
+
+  it('hides the project switcher with only one project registered', async () => {
+    mockFetch({
+      'GET /api/projects': { body: [{ id: 'p1', name: 'Flexpick', repoPath: '/r' }] },
+      'GET /api/objectives': { body: [objective()] },
+    })
+    render(
+      <MemoryRouter>
+        <ObjectiveList />
+      </MemoryRouter>,
+    )
+    await screen.findByText('Fix the login redirect')
+    expect(screen.queryByRole('combobox')).toBeNull()
+  })
+
+  it('shows a project switcher and narrows the board on selection', async () => {
+    mockFetch({
+      'GET /api/projects': {
+        body: [
+          { id: 'p1', name: 'Flexpick', repoPath: '/r1' },
+          { id: 'p2', name: 'Wheelership', repoPath: '/r2' },
+        ],
+      },
+      'GET /api/objectives': { body: [objective({ id: 'o1', title: 'in Flexpick' })] },
+      'GET /api/objectives?projectId=p2': {
+        body: [objective({ id: 'o2', title: 'in Wheelership' })],
+      },
+    })
+    render(
+      <MemoryRouter>
+        <ObjectiveList />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('in Flexpick')).toBeTruthy()
+
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByRole('combobox'), 'p2')
+
+    expect(await screen.findByText('in Wheelership')).toBeTruthy()
+    expect(screen.queryByText('in Flexpick')).toBeNull()
+  })
+
+  it('defaults to All projects when ?project= is absent, and honors it when present', async () => {
+    mockFetch({
+      'GET /api/projects': {
+        body: [
+          { id: 'p1', name: 'Flexpick', repoPath: '/r1' },
+          { id: 'p2', name: 'Wheelership', repoPath: '/r2' },
+        ],
+      },
+      'GET /api/objectives': { body: [objective({ id: 'o1', title: 'in Flexpick' })] },
+      'GET /api/objectives?projectId=p2': {
+        body: [objective({ id: 'o2', title: 'in Wheelership' })],
+      },
+    })
+    render(
+      <MemoryRouter initialEntries={['/?project=p2']}>
+        <ObjectiveList />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('in Wheelership')).toBeTruthy()
   })
 })

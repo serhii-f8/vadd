@@ -138,7 +138,10 @@ export const api = {
   deleteObjective: (objectiveId: string) =>
     fetch(`/api/objectives/${objectiveId}`, { method: 'DELETE' }).then(json<{ ok: boolean }>),
 
-  listObjectives: () => fetch('/api/objectives').then(json<ObjectiveListRow[]>),
+  listObjectives: (projectId?: string) =>
+    fetch(projectId ? `/api/objectives?projectId=${projectId}` : '/api/objectives').then(
+      json<ObjectiveListRow[]>,
+    ),
 
   getObjective: (id: string) => fetch(`/api/objectives/${id}`).then(json<Aggregate>),
 

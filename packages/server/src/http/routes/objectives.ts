@@ -339,8 +339,14 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
   /** Spec §8's board, unstyled: every objective, newest first. Registered
    * before `/api/objectives/:id` — a parameterised route registered first
    * would shadow this literal path and treat "objectives" as an id. */
-  app.get('/api/objectives', async () => {
-    const rows = db.select().from(objectives).orderBy(desc(objectives.createdAt)).all()
+  app.get<{ Querystring: { projectId?: string } }>('/api/objectives', async (req) => {
+    const { projectId } = req.query
+    const rows = db
+      .select()
+      .from(objectives)
+      .where(projectId ? eq(objectives.projectId, projectId) : undefined)
+      .orderBy(desc(objectives.createdAt))
+      .all()
     const taskRows = db
       .select({ objectiveId: planTasks.objectiveId, status: planTasks.status })
       .from(planTasks)

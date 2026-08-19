@@ -149,6 +149,37 @@ test('lists verifiedCount and totalCount per objective', async () => {
   expect(row?.totalCount).toBe(3)
 })
 
+test('?projectId= filters the board to one project', async () => {
+  const { app, projectId: projectA } = await withProject()
+  const resB = await app.inject({
+    method: 'POST',
+    url: '/api/projects',
+    payload: { repoPath: makeTempRepo() },
+  })
+  const projectB = resB.json().id as string
+
+  await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectA}/objectives`,
+    payload: { title: 'in A', goalText: 'g' },
+  })
+  await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectB}/objectives`,
+    payload: { title: 'in B', goalText: 'g' },
+  })
+
+  const filtered = (
+    await app.inject({ method: 'GET', url: `/api/objectives?projectId=${projectA}` })
+  ).json() as Array<{ title: string }>
+  expect(filtered.map((r) => r.title)).toEqual(['in A'])
+
+  const unfiltered = (await app.inject({ method: 'GET', url: '/api/objectives' })).json() as Array<{
+    title: string
+  }>
+  expect(unfiltered.map((r) => r.title).sort()).toEqual(['in A', 'in B'])
+})
+
 test('an objective with no plan yet shows 0/0, not a crash', async () => {
   const { app, projectId } = await withProject()
   await app.inject({
