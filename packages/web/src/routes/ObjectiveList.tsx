@@ -19,9 +19,14 @@ export function ObjectiveList() {
     <main className="mx-auto max-w-3xl p-6">
       <header className="mb-6 flex items-baseline justify-between">
         <h1 className="text-xl font-semibold">Objectives</h1>
-        <Link className="text-sm underline" to="/debug">
-          Debug
-        </Link>
+        <div className="flex gap-3">
+          <Link className="text-sm underline" to="/today">
+            Today
+          </Link>
+          <Link className="text-sm underline" to="/debug">
+            Debug
+          </Link>
+        </div>
       </header>
 
       {error !== null && (

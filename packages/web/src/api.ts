@@ -93,6 +93,13 @@ export type DiffSummary = {
   totals: { files: number; added: number; removed: number }
 }
 
+export type TodaySummary = {
+  date: string
+  verifiedTasks: number
+  decisionsMade: number
+  checksPassed: number
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string }
@@ -142,6 +149,9 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
     return res.text()
   },
+
+  getToday: (projectId: string) =>
+    fetch(`/api/projects/${projectId}/today`).then(json<TodaySummary>),
 
   /**
    * Every user command. Returns the server's own refusal message on a 409 by
