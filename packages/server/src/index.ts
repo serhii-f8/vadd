@@ -16,7 +16,7 @@ const PORT = Number(process.env.VADD_PORT ?? 4319)
 // instruction, rather than letting the first prompt of the session die on a
 // spawn ENOENT. Resolution is pure path lookup — no process is spawned here.
 try {
-  resolveAdapterBin()
+  resolveAdapterBin('@zed-industries/claude-code-acp')
 } catch (err) {
   console.error(err instanceof Error ? err.message : String(err))
   process.exit(1)

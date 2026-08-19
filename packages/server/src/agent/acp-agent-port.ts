@@ -83,22 +83,21 @@ export type AcpAgentPortOptions = {
 }
 
 /**
- * Absolute path to the pinned adapter's entry script.
+ * Absolute path to the adapter's entry script.
  *
- * Never spawn `npx claude-code-acp`. The Task 2 spike found that with `cwd`
- * set to a worktree — which has no `node_modules`, and that is every objective
- * we create — npx falls back to the public registry and silently runs an
- * unrelated package of the same name, with no error. Resolving against this
- * module's own dependency graph is independent of the child's cwd.
+ * Never spawn `npx`. The Task 2 spike found that with `cwd` set to a worktree —
+ * which has no `node_modules`, and that is every objective we create — npx falls
+ * back to the public registry and silently runs an unrelated package of the same
+ * name, with no error. Resolving against this module's own dependency graph is
+ * independent of the child's cwd.
  *
  * See docs/superpowers/notes/acp-handshake.md, "Deviation from the brief's script".
  */
-export function resolveAdapterBin(): string {
-  const missing =
-    'Cannot find the Claude Code ACP adapter. Install it with: pnpm add -Dw @zed-industries/claude-code-acp@0.16.2'
+export function resolveAdapterBin(packageName: string): string {
+  const missing = `Cannot find the ACP adapter for ${packageName}. Install it with: pnpm add -Dw ${packageName}`
   let pkgPath: string
   try {
-    pkgPath = fileURLToPath(import.meta.resolve('@zed-industries/claude-code-acp/package.json'))
+    pkgPath = fileURLToPath(import.meta.resolve(`${packageName}/package.json`))
   } catch {
     throw new Error(missing)
   }
@@ -140,7 +139,9 @@ export class AcpAgentPort implements AgentPort {
   async start(): Promise<void> {
     // Tests inject `command`/`args`; production resolves the pinned adapter.
     const command = this.opts.command ?? process.execPath
-    const args = this.opts.command ? (this.opts.args ?? []) : [resolveAdapterBin()]
+    const args = this.opts.command
+      ? (this.opts.args ?? [])
+      : [resolveAdapterBin('@zed-industries/claude-code-acp')]
 
     const child = spawn(command, args, {
       cwd: this.opts.worktreePath,
@@ -161,7 +162,7 @@ export class AcpAgentPort implements AgentPort {
       this.#fail(
         new Error(
           isMissing
-            ? `Cannot find the Claude Code ACP adapter. Install it with: pnpm add -Dw @zed-industries/claude-code-acp@0.16.2`
+            ? `Cannot find the ACP adapter. Install it with: pnpm add -Dw @zed-industries/claude-code-acp@0.16.2`
             : `Failed to spawn ${command}: ${err.message}`,
         ),
       )
