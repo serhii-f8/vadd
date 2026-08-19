@@ -19,6 +19,7 @@ test('claudeCodeConfig.setupProfile isolates CLAUDE_CONFIG_DIR to the managed pr
   const home = withTempHome()
   const config = claudeCodeConfig()
   const { env } = config.setupProfile()
-  expect(env.CLAUDE_CONFIG_DIR).toBe(join(home, 'agent-profiles', 'claude-code'))
-  expect(existsSync(env.CLAUDE_CONFIG_DIR)).toBe(true)
+  const configDir = env.CLAUDE_CONFIG_DIR as string
+  expect(configDir).toBe(join(home, 'agent-profiles', 'claude-code'))
+  expect(existsSync(configDir)).toBe(true)
 })
