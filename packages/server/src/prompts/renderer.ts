@@ -37,7 +37,7 @@ export type PromptTemplate = {
 
 /** `prompts/claude-code/v1/`, anchored to the repo root, not `process.cwd()`. */
 export function bundledPromptDir(): string {
-  return join(repoRoot(), 'prompts', 'claude-code', 'v1')
+  return process.env.VADD_PROMPTS_DIR ?? join(repoRoot(), 'prompts', 'claude-code', 'v1')
 }
 
 /** D11: user overrides live in `~/.vadd/prompts/`. */
