@@ -6,7 +6,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import * as schema from './schema.js'
 
-const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url))
+const defaultMigrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url))
 
 type Sqlite = InstanceType<typeof Database>
 
@@ -64,6 +64,7 @@ export function createDb(file: string) {
 function applyMigrations(sqlite: Sqlite, db: ReturnType<typeof drizzle<typeof schema>>): void {
   sqlite.pragma('foreign_keys = OFF')
   const before = appliedMigrationCount(sqlite)
+  const migrationsFolder = process.env.VADD_MIGRATIONS_DIR ?? defaultMigrationsFolder
   migrate(db, { migrationsFolder })
   if (appliedMigrationCount(sqlite) > before) assertNoDanglingReferences(sqlite)
 }
