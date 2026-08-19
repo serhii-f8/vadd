@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type Objective, type Project, type VaddEvent } from '../api.js'
+import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group.js'
 
 // Mirrors packages/server/src/prompts/renderer.ts PROMPT_PHASES. The web
 // package has no dependency on the server package, so this list is
@@ -37,6 +38,7 @@ export function DebugPage() {
   const [error, setError] = useState<string | null>(null)
 
   const [repoPath, setRepoPath] = useState('')
+  const [agentKind, setAgentKind] = useState<'claude-code' | 'codex'>('claude-code')
   const [title, setTitle] = useState('')
   const [goalText, setGoalText] = useState('')
   const [prompt, setPrompt] = useState('')
@@ -100,13 +102,27 @@ export function DebugPage() {
             className="rounded bg-black px-3 py-1 text-white disabled:opacity-40"
             disabled={busy}
             onClick={run(async () => {
-              await api.registerProject(repoPath)
+              await api.registerProject(repoPath, agentKind)
               setProjects(await api.listProjects())
             })}
           >
             Register
           </button>
         </div>
+        <RadioGroup
+          value={agentKind}
+          onValueChange={(v) => setAgentKind(v as 'claude-code' | 'codex')}
+          className="flex gap-4"
+        >
+          <label className="flex items-center gap-2 text-sm" htmlFor="agent-kind-claude-code">
+            <RadioGroupItem id="agent-kind-claude-code" value="claude-code" />
+            Claude Code
+          </label>
+          <label className="flex items-center gap-2 text-sm" htmlFor="agent-kind-codex">
+            <RadioGroupItem id="agent-kind-codex" value="codex" />
+            Codex
+          </label>
+        </RadioGroup>
         <ul className="text-sm text-gray-600">
           {projects.map((p) => (
             <li key={p.id}>

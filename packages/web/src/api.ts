@@ -111,11 +111,11 @@ async function json<T>(res: Response): Promise<T> {
 export const api = {
   listProjects: () => fetch('/api/projects').then(json<Project[]>),
 
-  registerProject: (repoPath: string) =>
+  registerProject: (repoPath: string, agentKind: 'claude-code' | 'codex') =>
     fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repoPath }),
+      body: JSON.stringify({ repoPath, agentKind }),
     }).then(json<Project>),
 
   createObjective: (projectId: string, title: string, goalText: string) =>
