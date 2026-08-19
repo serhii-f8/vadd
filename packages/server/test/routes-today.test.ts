@@ -240,6 +240,11 @@ describe('GET /api/projects/:id/today', () => {
     const { db, app } = setup()
     const projectId = await withProject(db, app)
     const res = await app.inject({ method: 'GET', url: `/api/projects/${projectId}/today` })
-    expect(res.json().date).toBe(startOfToday().toISOString().slice(0, 10))
+    const today = startOfToday()
+    const y = today.getFullYear()
+    const m = String(today.getMonth() + 1).padStart(2, '0')
+    const d = String(today.getDate()).padStart(2, '0')
+    const expectedDate = `${y}-${m}-${d}`
+    expect(res.json().date).toBe(expectedDate)
   })
 })

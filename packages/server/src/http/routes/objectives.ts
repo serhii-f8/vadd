@@ -183,6 +183,11 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     startOfDay.setHours(0, 0, 0, 0)
     const since = startOfDay.toISOString()
 
+    const y = startOfDay.getFullYear()
+    const m = String(startOfDay.getMonth() + 1).padStart(2, '0')
+    const d = String(startOfDay.getDate()).padStart(2, '0')
+    const date = `${y}-${m}-${d}`
+
     const verifiedTasks = db
       .select({ id: planTasks.id })
       .from(planTasks)
@@ -217,7 +222,7 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       )
       .all().length
 
-    return { date: since.slice(0, 10), verifiedTasks, decisionsMade, checksPassed }
+    return { date, verifiedTasks, decisionsMade, checksPassed }
   })
 
   app.post<{ Params: { id: string } }>('/api/projects/:id/objectives', async (req, reply) => {
