@@ -265,7 +265,7 @@ pnpm lint                          # Biome (lint + format; the only such tool)
 pnpm format                        # Biome, writing fixes
 pnpm transcript:export <objId>     # dump events rows → evals/transcripts/<name>.jsonl
 pnpm eval                          # eval harness: precision/recall vs. golden transcripts (M1)
-npx vadd                           # packaged entry point → localhost web app (M2)
+npx @vadd/cli                      # packaged entry point → localhost web app (M2)
 ```
 
 Single Vitest file: `pnpm vitest run <path>`; single test: add `-t "<name>"`. The real-adapter integration test is skipped unless `VADD_E2E=1`. `pnpm eval` runs against the recorded corpus and its labels and **currently exits non-zero** — the gate genuinely fails (see Current state), which is the harness working, not a setup problem. It exits non-zero on an unlabelled transcript or an orphan label too, so keep `evals/transcripts/*.jsonl` and `evals/labels/*.labels.json` in exact name correspondence.
