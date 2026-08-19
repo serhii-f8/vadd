@@ -10,6 +10,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   sessionNotificationSchema,
+  type ToolCallContent,
 } from '@zed-industries/agent-client-protocol'
 import { claudeCodeConfig } from './kinds/claude-code.js'
 import type { AgentKindConfig } from './kinds/types.js'
@@ -249,6 +250,12 @@ export class AcpAgentPort implements AgentPort {
           toolCallId?: string
           locations?: { path: string }[] | null
           rawInput?: Record<string, unknown>
+          // The real, pinned SDK's own type for this field — a `ToolCallContent`
+          // union of content-block/diff/terminal variants, only the "diff" arm
+          // of which carries `path`. `pathsFromToolCall` only reads a `path` off
+          // whatever's here (and drops anything that doesn't have one), so it's
+          // narrowed to just that shape at the call site below.
+          content?: ToolCallContent[] | null
         }
       }) => {
         // Amendment A3: a tool carrying a command (Bash and friends have no
@@ -267,7 +274,15 @@ export class AcpAgentPort implements AgentPort {
         if (command) {
           ;({ allowed, reason } = decideCommand(command, this.opts.worktreePath))
         } else {
-          paths = pathsFromToolCall(params.toolCall, this.#knownLocations)
+          paths = pathsFromToolCall(
+            params.toolCall as {
+              toolCallId?: string
+              locations?: { path: string }[] | null
+              rawInput?: Record<string, unknown>
+              content?: { path?: string }[] | null
+            },
+            this.#knownLocations,
+          )
           ;({ allowed, reason } = decidePermission(this.opts.worktreePath, paths))
         }
         this.opts.onPermission?.({ allowed, paths, command, reason })
@@ -305,22 +320,34 @@ export class AcpAgentPort implements AgentPort {
   }
 
   /**
-   * Records `toolCallId → locations` off the `tool_call` stream so a later
+   * Records `toolCallId → paths` off the `tool_call` stream so a later
    * `requestPermission` for the same id can be judged even when its own
-   * `toolCall.locations` is missing — the exact case the spike observed.
+   * request carries none of them — the exact case the spike observed for
+   * Claude Code's `locations`, and the exact case the real, installed
+   * `@agentclientprotocol/codex-acp@1.4.0` hits structurally for every file
+   * edit: `CodexToolCallMapper.createFileChangeUpdate` puts each changed
+   * file's path on this notification's `content[].path`, and
+   * `CodexApprovalHandler.buildFileChangePermissionRequest` sends a
+   * `toolCall` with no `locations` and no `content` at all — so without this,
+   * `pathsFromToolCall` at the request site always comes back empty and
+   * `decidePermission` fails closed on every Codex edit. `pathsFromToolCall`
+   * already knows how to read every source (`locations`, `content`,
+   * `rawInput`), so this delegates to it rather than re-implementing one of
+   * its branches by hand. Ordering is safe: the adapter's own
+   * `waitForSessionNotifications` blocks the approval handler on the pending
+   * notification queue for the same session, so this notification is always
+   * processed before the matching permission request arrives.
    */
   #rememberLocations(update: unknown): void {
     const u = update as {
       sessionUpdate?: string
       toolCallId?: string
       locations?: { path: string }[] | null
+      rawInput?: Record<string, unknown>
+      content?: { path?: string }[] | null
     }
     if (u?.sessionUpdate !== 'tool_call' || !u.toolCallId) return
-    // Guard the entries themselves, not just the resulting strings: a malformed
-    // `locations: [{}]` would otherwise throw inside this async handler.
-    const paths = (u.locations ?? [])
-      .filter((l) => l && typeof l.path === 'string' && l.path.length > 0)
-      .map((l) => l.path)
+    const paths = pathsFromToolCall(u)
     if (paths.length > 0) this.#knownLocations.set(u.toolCallId, paths)
   }
 

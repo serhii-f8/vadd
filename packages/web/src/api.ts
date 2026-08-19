@@ -1,7 +1,12 @@
 import type { EvidenceRow } from './evidence/group.js'
 import type { ViewStateName } from './focus/primary.js'
 
-export type Project = { id: string; name: string; repoPath: string }
+export type Project = {
+  id: string
+  name: string
+  repoPath: string
+  agentKind: 'claude-code' | 'codex'
+}
 
 export type Objective = {
   id: string

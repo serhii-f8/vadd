@@ -44,4 +44,20 @@ describe('DebugPage project registration', () => {
     const registerCall = calls.find((c) => c.url === '/api/projects' && c.method === 'POST')
     expect(registerCall?.body).toMatchObject({ agentKind: 'codex' })
   })
+
+  it('shows each registered project agentKind in the project list', async () => {
+    mockFetch({
+      'GET /api/projects': {
+        body: [{ id: 'p1', name: 'flexpick', repoPath: '/r', agentKind: 'codex' }],
+      },
+    })
+    render(
+      <MemoryRouter>
+        <DebugPage />
+      </MemoryRouter>,
+    )
+
+    const match = await screen.findByText(/codex/)
+    expect(match).toBeDefined()
+  })
 })

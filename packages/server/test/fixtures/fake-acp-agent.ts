@@ -8,6 +8,12 @@
  *   'permission'         — requests permission for FAKE_ACP_PATH before finishing
  *   'permission-command' — requests permission for a command (FAKE_ACP_COMMAND)
  *                          instead of a path, via toolCall.rawInput.command
+ *   'permission-codex-edit' — reproduces @agentclientprotocol/codex-acp@1.4.0's
+ *                          real shape for a file edit: a `tool_call`
+ *                          notification carrying the path on `content[].path`
+ *                          (no `locations`), followed by a permission request
+ *                          for the same toolCallId with neither `locations`
+ *                          nor `content` at all
  *   'crash-on-prompt'    — exits with code 3 when a prompt arrives
  *   'repair-succeeds'    — first turn owes evidence; the repair prompt supplies it
  *   'repair-fails'       — first turn owes evidence; the repair prompt does not
@@ -244,6 +250,36 @@ rl.on('line', async (line) => {
       })
       send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
       return
+    }
+
+    if (mode === 'permission-codex-edit') {
+      // The `tool_call` notification arrives first, carrying the path only on
+      // `content[].path` — Codex's real edit-tool-call shape, no `locations`.
+      send({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: 'fake-tc-1',
+            kind: 'edit',
+            status: 'pending',
+            content: [{ path: permissionPath }],
+          },
+        },
+      })
+      // The permission request that follows carries neither `locations` nor
+      // `content` — matching CodexApprovalHandler.buildFileChangePermissionRequest
+      // exactly, which sends only { toolCallId, kind, status }.
+      await request('session/request_permission', {
+        sessionId,
+        toolCall: { toolCallId: 'fake-tc-1', kind: 'edit', status: 'pending' },
+        options: [
+          { optionId: 'yes', name: 'Allow', kind: 'allow_once' },
+          { optionId: 'no', name: 'Reject', kind: 'reject_once' },
+        ],
+      })
     }
 
     if (mode === 'permission') {

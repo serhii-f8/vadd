@@ -152,6 +152,32 @@ test('permission is granted for a path inside the worktree', async () => {
   await port.stop()
 })
 
+test('a Codex edit path arriving only on the tool_call notification content[].path is recovered by the later permission request', async () => {
+  // Reproduces @agentclientprotocol/codex-acp@1.4.0's real shape, verified
+  // against the installed package's compiled source:
+  // CodexToolCallMapper.createFileChangeUpdate puts the changed file's path
+  // on the `tool_call` notification's `content[].path` (no `locations`), and
+  // CodexApprovalHandler.buildFileChangePermissionRequest sends the later
+  // permission request with neither `locations` nor `content` at all. Before
+  // this fix, #rememberLocations only ever read `u.locations`, so the request
+  // site's own pathsFromToolCall() came back empty and decidePermission
+  // failed closed on every Codex edit.
+  const wt = mkdtempSync(join(tmpdir(), 'vadd-wt-'))
+  const decisions: { allowed: boolean; paths: string[]; reason?: string }[] = []
+  const port = makePort({
+    mode: 'permission-codex-edit',
+    worktreePath: wt,
+    permissionPath: join(wt, 'src', 'new.ts'),
+    onPermission: (d) => decisions.push(d),
+  })
+  await port.start()
+  const { sessionId } = await port.newSession({ cwd: wt })
+  await port.prompt(sessionId, 'edit a file')
+  expect(decisions).toHaveLength(1)
+  expect(decisions[0]).toMatchObject({ allowed: true, paths: [join(wt, 'src', 'new.ts')] })
+  await port.stop()
+})
+
 test('permission is refused for a path outside the worktree', async () => {
   const wt = mkdtempSync(join(tmpdir(), 'vadd-wt-'))
   const decisions: { allowed: boolean; paths: string[]; reason?: string }[] = []

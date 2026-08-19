@@ -1,3 +1,4 @@
+import type { AgentKind } from '@vadd/core'
 import { sql } from 'drizzle-orm'
 import { check, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
@@ -6,7 +7,13 @@ export const projects = sqliteTable('projects', {
   name: text('name').notNull(),
   repoPath: text('repo_path').notNull().unique(),
   config: text('config', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
-  agentKind: text('agent_kind').notNull().default('claude-code'),
+  // No SQL-level CHECK constraint, deliberately — see the M3 Codex adapter
+  // plan's Global Constraints: a CHECK would force a full table-rebuild
+  // migration (the documented drizzle-kit trap this project has hit three
+  // times already). Zod validates the enum at the API boundary instead; this
+  // `$type` only makes Drizzle's own TS types honest about the intended
+  // value, so callers don't need an unchecked `as AgentKind` cast.
+  agentKind: text('agent_kind').notNull().default('claude-code').$type<AgentKind>(),
   createdAt: text('created_at').notNull(),
 })
 

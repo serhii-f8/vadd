@@ -127,7 +127,7 @@ export class AgentRegistry {
     const port = this.factory({
       worktreePath: objective.worktreePath,
       objectiveId: objective.id,
-      agentKind: project.agentKind as AgentKind,
+      agentKind: project.agentKind,
       onPermission: (d) =>
         this.bus.emit({ objectiveId: objective.id, type: 'permission_decision', payload: d }),
     })

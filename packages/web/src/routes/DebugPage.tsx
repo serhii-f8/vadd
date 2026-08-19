@@ -126,7 +126,7 @@ export function DebugPage() {
         <ul className="text-sm text-gray-600">
           {projects.map((p) => (
             <li key={p.id}>
-              {p.name} — <code>{p.repoPath}</code>
+              {p.name} — <code>{p.repoPath}</code> ({p.agentKind})
             </li>
           ))}
         </ul>

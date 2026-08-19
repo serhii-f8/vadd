@@ -18,6 +18,7 @@
     "eval": "pnpm --filter @vadd/server exec tsx scripts/eval.ts"
   },
   "devDependencies": {
+    "@agentclientprotocol/codex-acp": "1.4.0",
     "@biomejs/biome": "^2.5.6",
     "@types/node": "^26.1.2",
     "@zed-industries/agent-client-protocol": "0.4.5",

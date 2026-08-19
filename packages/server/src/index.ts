@@ -1,4 +1,5 @@
 import { resolveAdapterBin } from './agent/acp-agent-port.js'
+import { claudeCodeConfig } from './agent/kinds/claude-code.js'
 import { AgentRegistry } from './agent/registry.js'
 import { openBrowser } from './boot/open-browser.js'
 import { reconcileOnBoot } from './boot/reconcile.js'
@@ -15,10 +16,16 @@ const PORT = Number(process.env.VADD_PORT ?? 4319)
 // Design §5: probe for the adapter at startup and fail with a one-line install
 // instruction, rather than letting the first prompt of the session die on a
 // spawn ENOENT. Resolution is pure path lookup — no process is spawned here.
+// The install instruction comes from the config, not from resolveAdapterBin's
+// own thrown message: that function is now adapter-agnostic (M3) and no
+// longer knows the exact pinned version, only the package name. Reading it
+// from claudeCodeConfig().missingAdapterMessage keeps this probe carrying the
+// same `@0.16.2` pin AcpAgentPort's own error path already reads from the
+// injected config, rather than a generic message with no version in it.
 try {
-  resolveAdapterBin('@zed-industries/claude-code-acp')
-} catch (err) {
-  console.error(err instanceof Error ? err.message : String(err))
+  resolveAdapterBin(claudeCodeConfig().packageName)
+} catch {
+  console.error(claudeCodeConfig().missingAdapterMessage)
   process.exit(1)
 }
 
