@@ -2,8 +2,19 @@
   "name": "@vadd/cli",
   "version": "0.1.0",
   "private": false,
+  "description": "VADD — a localhost comprehension and verification layer for Claude Code, wrapping it over ACP.",
+  "keywords": [
+    "vadd",
+    "claude-code",
+    "acp",
+    "agent",
+    "cli"
+  ],
   "type": "module",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "vadd": "./dist/bin.js"
   },
@@ -15,7 +26,8 @@
   },
   "scripts": {
     "build": "tsx scripts/build.ts",
-    "smoke": "tsx scripts/smoke-test.ts"
+    "smoke": "tsx scripts/smoke-test.ts",
+    "prepack": "pnpm run build"
   },
   "dependencies": {
     "fastify": "^5.11.0",

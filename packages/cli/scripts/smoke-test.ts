@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,9 +12,17 @@ execFileSync('pnpm', ['run', 'build'], { cwd: cliRoot, stdio: 'inherit' })
 
 console.log('2/5 packing...')
 execFileSync('npm', ['pack', '--pack-destination', tmpdir()], { cwd: cliRoot, stdio: 'inherit' })
-const tarball = readdirSync(tmpdir()).find((f) => f.startsWith('vadd-cli-') && f.endsWith('.tgz'))
-if (!tarball) throw new Error('npm pack did not produce a vadd-cli-*.tgz in the tmp dir')
+// npm's own tarball naming convention: the `@scope/` prefix is stripped and the
+// `/` becomes a `-`, so `@vadd/cli` version X.Y.Z packs as `vadd-cli-X.Y.Z.tgz`.
+// Build the exact expected name from package.json rather than matching any
+// vadd-cli-*.tgz by prefix — a bare prefix match takes an unspecified-order
+// first match, which the very next version bump would make ambiguous.
+const { version } = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf8')) as {
+  version: string
+}
+const tarball = `vadd-cli-${version}.tgz`
 const tarballPath = join(tmpdir(), tarball)
+if (!existsSync(tarballPath)) throw new Error(`npm pack did not produce ${tarballPath}`)
 
 let prefix: string | undefined
 let scratchHome: string | undefined
@@ -28,6 +36,7 @@ try {
 
   console.log('4/5 running the installed binary...')
   const port = 14319
+  const spawnedAt = Date.now()
   child = spawn(join(prefix, 'bin', 'vadd'), [], {
     env: { ...process.env, HOME: scratchHome, VADD_PORT: String(port), VADD_WEB_DIST: '' },
     stdio: 'inherit',
@@ -35,7 +44,7 @@ try {
   child.on('error', () => {})
 
   await waitForPort(port, 30_000)
-  const elapsedToListening = Date.now() - start
+  const elapsedToListening = Date.now() - spawnedAt
 
   console.log('5/5 driving a real project + objective through the HTTP API...')
   const repo = mkdtempSync(join(tmpdir(), 'vadd-smoke-repo-'))
@@ -66,7 +75,10 @@ try {
   )
   if (!objectiveRes.ok) throw new Error(`objective creation failed: ${objectiveRes.status}`)
 
-  console.log(`PASS. Server reached listening state in ${elapsedToListening}ms.`)
+  console.log(
+    `PASS. Server reached listening state in ${elapsedToListening}ms ` +
+      `(total pipeline: ${Date.now() - start}ms).`,
+  )
   console.log(
     'Note: this measures the server half only, from a cold install. The <5-minute DoD',
     'itself (a human clicking through the real browser) is not measured by this script —',
@@ -76,6 +88,7 @@ try {
   child?.kill('SIGTERM')
   if (prefix) rmSync(prefix, { recursive: true, force: true })
   if (scratchHome) rmSync(scratchHome, { recursive: true, force: true })
+  rmSync(tarballPath, { force: true })
 }
 
 async function waitForPort(port: number, timeoutMs: number): Promise<void> {

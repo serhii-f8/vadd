@@ -1,6 +1,6 @@
 # VADD
 
-![VADD demo](./assets/demo.gif)
+<!-- ![VADD demo](./assets/demo.gif) -->
 
 VADD is a localhost web app that wraps an existing coding agent — Claude Code, via ACP — as
 a **comprehension and verification layer**, not an orchestrator and not an agent of its own.

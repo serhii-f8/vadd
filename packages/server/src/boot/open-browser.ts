@@ -7,10 +7,14 @@ import { spawn } from 'node:child_process'
  */
 export function openBrowser(url: string): void {
   try {
-    const command =
-      process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open'
-    const args = process.platform === 'win32' ? ['', url] : [url]
-    const child = spawn(command, args, { detached: true, stdio: 'ignore' })
+    const isWin32 = process.platform === 'win32'
+    const command = isWin32 ? 'cmd' : process.platform === 'darwin' ? 'open' : 'xdg-open'
+    const args = isWin32 ? ['/c', 'start', '', url] : [url]
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: 'ignore',
+      ...(isWin32 ? { windowsHide: true } : {}),
+    })
     child.on('error', () => {
       // Best-effort — see the note above. spawn does not throw synchronously
       // on ENOENT; it emits this asynchronously instead, and an unhandled

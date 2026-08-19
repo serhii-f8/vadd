@@ -25,6 +25,22 @@ describe('openBrowser', () => {
     expect(child.unref).toHaveBeenCalled()
   })
 
+  it('spawns via cmd /c start on win32, not the bare start builtin', async () => {
+    vi.stubGlobal('process', { ...process, platform: 'win32' })
+    const child = Object.assign(new EventEmitter(), { unref: vi.fn() })
+    spawnMock.mockReturnValue(child)
+
+    const { openBrowser } = await import('../src/boot/open-browser.js')
+    openBrowser('http://127.0.0.1:4319/')
+
+    expect(spawnMock).toHaveBeenCalledWith('cmd', ['/c', 'start', '', 'http://127.0.0.1:4319/'], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    expect(child.unref).toHaveBeenCalled()
+  })
+
   it('never throws even if spawn itself throws', async () => {
     vi.stubGlobal('process', { ...process, platform: 'linux' })
     spawnMock.mockImplementation(() => {
