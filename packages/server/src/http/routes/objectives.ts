@@ -9,7 +9,7 @@ import {
   planTaskId,
   VerificationSpec,
 } from '@vadd/core'
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import type { Db } from '../../db/client.js'
 import {
@@ -167,6 +167,57 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     const project = db.select().from(projects).where(eq(projects.id, req.params.id)).get()
     if (!project) return reply.code(404).send({ error: 'Project not found' })
     return resolveVerification(project.repoPath, null)
+  })
+
+  // D6, spec §8's `/today`: "counts of verified outcomes, decisions made,
+  // checks passed. Text only. Not gamified." Local server time, deliberately
+  // — this is a single-user localhost app, and a UTC-precise day boundary
+  // would only confuse the one person reading the page. Every count is a
+  // plain row count, not deduplicated by task/decision/check id, matching how
+  // the Objective Board already treats its own verifiedCount/totalCount tally.
+  app.get<{ Params: { id: string } }>('/api/projects/:id/today', async (req, reply) => {
+    const project = db.select().from(projects).where(eq(projects.id, req.params.id)).get()
+    if (!project) return reply.code(404).send({ error: 'Project not found' })
+
+    const startOfDay = new Date()
+    startOfDay.setHours(0, 0, 0, 0)
+    const since = startOfDay.toISOString()
+
+    const verifiedTasks = db
+      .select({ id: planTasks.id })
+      .from(planTasks)
+      .innerJoin(objectives, eq(planTasks.objectiveId, objectives.id))
+      .where(
+        and(
+          eq(objectives.projectId, project.id),
+          eq(planTasks.status, 'verified'),
+          gte(planTasks.finishedAt, since),
+        ),
+      )
+      .all().length
+
+    const decisionsMade = db
+      .select({ id: decisions.id })
+      .from(decisions)
+      .innerJoin(objectives, eq(decisions.objectiveId, objectives.id))
+      .where(and(eq(objectives.projectId, project.id), gte(decisions.decidedAt, since)))
+      .all().length
+
+    const checksPassed = db
+      .select({ id: evidenceItems.id })
+      .from(evidenceItems)
+      .innerJoin(objectives, eq(evidenceItems.objectiveId, objectives.id))
+      .where(
+        and(
+          eq(objectives.projectId, project.id),
+          eq(evidenceItems.kind, 'check'),
+          eq(evidenceItems.status, 'pass'),
+          gte(evidenceItems.createdAt, since),
+        ),
+      )
+      .all().length
+
+    return { date: since.slice(0, 10), verifiedTasks, decisionsMade, checksPassed }
   })
 
   app.post<{ Params: { id: string } }>('/api/projects/:id/objectives', async (req, reply) => {
