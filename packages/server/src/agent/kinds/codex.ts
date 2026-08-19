@@ -24,7 +24,7 @@ export function codexConfig(): AgentKindConfig {
     kind: 'codex',
     packageName: '@agentclientprotocol/codex-acp',
     missingAdapterMessage:
-      'Cannot find the Codex ACP adapter. Install it with: pnpm add -Dw @agentclientprotocol/codex-acp',
+      'Cannot find the Codex ACP adapter. Install it with: pnpm add -Dw @agentclientprotocol/codex-acp@1.4.0',
     setupProfile: () => {
       const dir = codexProfileDir()
       mkdirSync(dir, { recursive: true })

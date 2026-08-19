@@ -2,10 +2,11 @@
   "name": "@vadd/cli",
   "version": "0.1.0",
   "private": false,
-  "description": "VADD — a localhost comprehension and verification layer for Claude Code, wrapping it over ACP.",
+  "description": "VADD — a localhost comprehension and verification layer for Claude Code and Codex, wrapping them over ACP.",
   "keywords": [
     "vadd",
     "claude-code",
+    "codex",
     "acp",
     "agent",
     "cli"
@@ -39,7 +40,8 @@
     "zod": "^3.25.76",
     "@anthropic-ai/sdk": "^0.115.0",
     "@zed-industries/agent-client-protocol": "0.4.5",
-    "@zed-industries/claude-code-acp": "0.16.2"
+    "@zed-industries/claude-code-acp": "0.16.2",
+    "@agentclientprotocol/codex-acp": "1.4.0"
   },
   "devDependencies": {
     "esbuild": "^0.28.1",
