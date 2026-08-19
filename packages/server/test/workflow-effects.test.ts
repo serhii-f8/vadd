@@ -264,7 +264,7 @@ function setup() {
     settleNext,
     promptedPhases: () => promptedPhases,
     lastPromptText: () => lastPromptText,
-    objective: { id: 'o', worktreePath: wt },
+    objective: { id: 'o', worktreePath: wt, projectId: 'proj-1' },
   }
 }
 

@@ -50,6 +50,7 @@ export {
   Phase,
 } from './schemas/agent-event.js'
 export {
+  type AgentKind,
   CreateObjectiveBody,
   ObjectiveCommand,
   RegisterProjectBody,

@@ -1,15 +1,16 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentPort } from '@vadd/core'
+import type { AgentKind, AgentPort } from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import type { ContractEmission } from '../contract/pipeline.js'
 import { ContractPipeline } from '../contract/pipeline.js'
 import { summarizerFromSettings } from '../contract/summarizer.js'
 import type { Db } from '../db/client.js'
-import { agentSessions } from '../db/schema.js'
+import { agentSessions, projects } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
 import type { ExitInfo, PermissionDecision } from './acp-agent-port.js'
 import { AcpAgentPort } from './acp-agent-port.js'
-import { ensureAgentProfile } from './profile.js'
+import { claudeCodeConfig } from './kinds/claude-code.js'
+import { codexConfig } from './kinds/codex.js'
 
 type PortWithExit = AgentPort & {
   onExit?(cb: (e: ExitInfo) => void): () => void
@@ -25,6 +26,7 @@ type PortWithExit = AgentPort & {
 export type PortFactory = (o: {
   worktreePath: string
   objectiveId: string
+  agentKind: AgentKind
   onPermission: (d: PermissionDecision) => void
 }) => PortWithExit
 
@@ -44,7 +46,7 @@ type Entry = {
   turnId: string | null
 }
 
-export type ObjectiveRef = { id: string; worktreePath: string | null }
+export type ObjectiveRef = { id: string; worktreePath: string | null; projectId: string }
 
 /**
  * Owns one live AgentPort per objective. Tests inject `factory` to back the
@@ -71,15 +73,15 @@ export class AgentRegistry {
   ) {
     this.factory =
       factory ??
-      (({ worktreePath, onPermission }) =>
-        new AcpAgentPort({
+      (({ worktreePath, onPermission, agentKind }) => {
+        const config = agentKind === 'codex' ? codexConfig() : claudeCodeConfig()
+        return new AcpAgentPort({
           worktreePath,
           onPermission,
-          // Isolation, not preference: with the user's global ~/.claude in
-          // scope, third-party skills load into VADD sessions and contaminate
-          // the eval corpus the M1 gate reads (vadd-spec-phase2.md §2).
-          env: { CLAUDE_CONFIG_DIR: ensureAgentProfile() },
-        }))
+          config,
+          env: config.setupProfile().env,
+        })
+      })
   }
 
   /**
@@ -112,12 +114,20 @@ export class AgentRegistry {
   }
 
   async #start(objective: ObjectiveRef & { worktreePath: string }): Promise<Entry> {
+    const project = this.db
+      .select({ agentKind: projects.agentKind })
+      .from(projects)
+      .where(eq(projects.id, objective.projectId))
+      .get()
+    if (!project) throw new Error(`No project row for ${objective.projectId}`)
+
     // Answering the agent's permission callbacks is not enough on its own: the
     // milestone requires an out-of-worktree request to be rejected *and logged*,
     // and the decision's `reason` is the only record of why it was refused.
     const port = this.factory({
       worktreePath: objective.worktreePath,
       objectiveId: objective.id,
+      agentKind: project.agentKind as AgentKind,
       onPermission: (d) =>
         this.bus.emit({ objectiveId: objective.id, type: 'permission_decision', payload: d }),
     })

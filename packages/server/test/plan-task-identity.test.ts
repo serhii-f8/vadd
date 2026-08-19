@@ -175,7 +175,11 @@ async function settleFakeTurn(objectiveId: string): Promise<void> {
 
 /** idle -> exploring -> planning -> awaitingPlanApproval, with `titles` planned. */
 async function planObjective(objectiveId: string, ...titles: string[]): Promise<void> {
-  await agents.ensure({ id: objectiveId, worktreePath: worktrees.get(objectiveId) ?? null })
+  await agents.ensure({
+    id: objectiveId,
+    worktreePath: worktrees.get(objectiveId) ?? null,
+    projectId: 'proj-1',
+  })
   runner.start(objectiveId)
   handle(objectiveId).queue([STATUS_EVENT], [planEvent(...titles)])
   runner.send(objectiveId, { type: 'START' })
@@ -282,7 +286,11 @@ describe('plan task identity', () => {
   })
 
   it('A11: recordPlan persists a task-declared expectFailing', async () => {
-    await agents.ensure({ id: 'obj-a', worktreePath: worktrees.get('obj-a') ?? null })
+    await agents.ensure({
+      id: 'obj-a',
+      worktreePath: worktrees.get('obj-a') ?? null,
+      projectId: 'proj-1',
+    })
     runner.start('obj-a')
     handle('obj-a').queue(
       [STATUS_EVENT],

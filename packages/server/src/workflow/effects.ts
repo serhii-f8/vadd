@@ -187,6 +187,7 @@ async function sendPromptEffect(
   const row = loadObjective(deps.db, objectiveId)
   const objectiveRef = {
     id: row.id,
+    projectId: row.projectId,
     title: row.title,
     goalText: row.goalText,
     worktreePath: row.worktreePath,

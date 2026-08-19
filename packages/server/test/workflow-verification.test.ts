@@ -142,7 +142,7 @@ async function setup(spec: VerificationSpec | null) {
     })
     .run()
 
-  await agents.ensure({ id: 'o', worktreePath: wt })
+  await agents.ensure({ id: 'o', worktreePath: wt, projectId: 'proj-1' })
 
   async function settleFakeTurn(): Promise<void> {
     settleNext()

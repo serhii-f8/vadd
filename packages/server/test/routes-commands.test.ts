@@ -415,7 +415,7 @@ async function seedAwaitingReviewWithGreenEvidence(checks: string[] = []) {
   if (!row0?.worktreePath) throw new Error('expected a worktree path')
   const worktreePath = row0.worktreePath
 
-  await agents.ensure({ id: objectiveId, worktreePath })
+  await agents.ensure({ id: objectiveId, worktreePath, projectId })
 
   async function settleFakeTurn(): Promise<void> {
     settleNext()
@@ -504,7 +504,7 @@ async function seedExecutingObjective() {
   if (!row0?.worktreePath) throw new Error('expected a worktree path')
   const worktreePath = row0.worktreePath
 
-  await agents.ensure({ id: objectiveId, worktreePath })
+  await agents.ensure({ id: objectiveId, worktreePath, projectId })
 
   async function settleFakeTurn(): Promise<void> {
     settleNext()

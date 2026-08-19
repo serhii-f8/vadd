@@ -95,7 +95,13 @@ function setup(behavior: 'immediate' | 'hang') {
     })
     .run()
 
-  const objective = { id: 'obj-1', title: 't', goalText: 'g', worktreePath: `${home}/wt` }
+  const objective = {
+    id: 'obj-1',
+    title: 't',
+    goalText: 'g',
+    worktreePath: `${home}/wt`,
+    projectId: 'proj-1',
+  }
   return { db, bus, agents, objective, cancelCalls }
 }
 

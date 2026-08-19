@@ -9,6 +9,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@agentclientprotocol/codex-acp": "^1.4.0",
     "@anthropic-ai/sdk": "^0.115.0",
     "@fastify/static": "^8.0.4",
     "@vadd/core": "workspace:*",

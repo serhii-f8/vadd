@@ -1,9 +1,10 @@
+import { randomUUID } from 'node:crypto'
 import { expect, test } from 'vitest'
 import { AgentRegistry, type PortFactory } from '../src/agent/registry.js'
 import { createDb } from '../src/db/client.js'
 import { agentSessions, objectives, projects } from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
-import { withTempHome } from './fixtures/temp-repo.js'
+import { makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
 
 type StubPort = {
   id: number
@@ -72,7 +73,7 @@ function setup(startDelayMs?: number) {
     })
     .run()
 
-  const objective = { id: 'obj-1', worktreePath: `${home}/wt` }
+  const objective = { id: 'obj-1', worktreePath: `${home}/wt`, projectId: 'proj-1' }
   return { db, bus, agents, objective, ports }
 }
 
@@ -126,4 +127,54 @@ test('discarding while the agent is still starting still stops it', async () => 
   expect(ports).toHaveLength(1)
   expect(ports[0]?.stopped).toBe(true)
   expect(agents.get('obj-1')).toBeUndefined()
+})
+
+test("the registry picks the factory agentKind matching the objective's project", async () => {
+  const home = withTempHome()
+  const db = createDb(`${home}/vadd.db`)
+  const bus = new EventBus(db)
+
+  const projectId = randomUUID()
+  db.insert(projects)
+    .values({
+      id: projectId,
+      name: 'p',
+      repoPath: makeTempRepo(),
+      config: {},
+      agentKind: 'codex',
+      createdAt: new Date().toISOString(),
+    })
+    .run()
+  const objectiveId = randomUUID()
+  const worktreePath = makeTempRepo()
+  const now = new Date().toISOString()
+  db.insert(objectives)
+    .values({
+      id: objectiveId,
+      projectId,
+      title: 't',
+      goalText: 'g',
+      worktreePath,
+      status: 'idle',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run()
+
+  const seenAgentKinds: string[] = []
+  const registry = new AgentRegistry(db, bus, ({ agentKind }) => {
+    seenAgentKinds.push(agentKind)
+    return {
+      start: async () => {},
+      newSession: async () => ({ sessionId: 's1' }),
+      prompt: async () => ({ stopReason: 'end_turn' }),
+      cancel: async () => {},
+      stop: async () => {},
+      onUpdate: () => () => {},
+      pid: undefined,
+    } as never
+  })
+
+  await registry.ensure({ id: objectiveId, worktreePath, projectId })
+  expect(seenAgentKinds).toEqual(['codex'])
 })

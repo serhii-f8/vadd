@@ -132,7 +132,7 @@ function setup() {
     promptCalls,
     cancelCalls,
     settleNext,
-    objective: { id: 'o', worktreePath: `${home}/wt` },
+    objective: { id: 'o', worktreePath: `${home}/wt`, projectId: 'proj-1' },
   }
 }
 
