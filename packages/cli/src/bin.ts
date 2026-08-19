@@ -1,26 +1,14 @@
 #!/usr/bin/env node
-import { join } from 'node:path'
+import { resolveDefaults } from './resolve-defaults.js'
 
-export function resolveDefaults(here: string) {
-  return {
-    migrationsDir: join(here, 'migrations'),
-    promptsDir: join(here, 'prompts', 'claude-code', 'v1'),
-    webDist: join(here, 'web'),
-  }
-}
-
-async function main() {
-  const here = import.meta.dirname
-  const defaults = resolveDefaults(here)
-  process.env.VADD_MIGRATIONS_DIR ??= defaults.migrationsDir
-  process.env.VADD_PROMPTS_DIR ??= defaults.promptsDir
-  process.env.VADD_WEB_DIST ??= defaults.webDist
-  const serverEntry = './server.js'
-  await import(serverEntry)
-}
-
-// Guard so the packaging test in Task 6 can import resolveDefaults without
-// also booting a real server as a side effect of the import.
-if (process.argv[1] === import.meta.filename) {
-  await main()
-}
+const here = import.meta.dirname
+const defaults = resolveDefaults(here)
+process.env.VADD_MIGRATIONS_DIR ??= defaults.migrationsDir
+process.env.VADD_PROMPTS_DIR ??= defaults.promptsDir
+process.env.VADD_WEB_DIST ??= defaults.webDist
+// Indirection (rather than a static `import './server.js'`) so tsc doesn't
+// resolve this against the TS source in packages/server/src (TS2307 at
+// typecheck time) — server.js only exists post-build, next to this bundled
+// file in dist/. Kept from Task 4's original fix.
+const serverEntry = './server.js'
+await import(serverEntry)

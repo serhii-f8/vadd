@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { resolveDefaults } from '../src/bin.js'
+import { resolveDefaults } from '../src/resolve-defaults.js'
 
 describe('resolveDefaults', () => {
   it('computes migrations/prompts/web paths relative to the given base dir', () => {
