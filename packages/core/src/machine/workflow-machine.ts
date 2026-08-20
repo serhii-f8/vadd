@@ -438,7 +438,12 @@ export const workflowMachine = setup({
           taskRisk: () => null,
         }),
         { type: 'checkpoint' },
-        { type: 'sendPrompt', params: { phase: 'execute-task' } },
+        {
+          type: 'sendPrompt',
+          params: ({ context }) => ({
+            phase: context.mode === 'investigation' ? 'execute-task-investigation' : 'execute-task',
+          }),
+        },
       ],
       on: {
         TASK_RESULT: { actions: 'noteTurnEvent' },
@@ -572,7 +577,12 @@ export const workflowMachine = setup({
       entry: [
         { type: 'enter', params: { name: 'revising' } },
         'clearTurn',
-        { type: 'sendPrompt', params: { phase: 'execute-task' } },
+        {
+          type: 'sendPrompt',
+          params: ({ context }) => ({
+            phase: context.mode === 'investigation' ? 'execute-task-investigation' : 'execute-task',
+          }),
+        },
       ],
       on: {
         TASK_RESULT: { actions: 'noteTurnEvent' },

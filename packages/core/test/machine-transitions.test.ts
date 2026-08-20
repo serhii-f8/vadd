@@ -29,7 +29,7 @@ const stubbed = workflowMachine.provide({
   },
 })
 
-function start(mode: 'standard' | 'fastfix' = 'standard') {
+function start(mode: 'standard' | 'fastfix' | 'investigation' = 'standard') {
   const actor = createActor(stubbed, {
     input: initialContext({
       objectiveId: 'o1',
@@ -354,6 +354,53 @@ describe('fast fix', () => {
     actor.send({ type: 'PLAN', event: planEvent })
     actor.send({ type: 'TURN_FINISHED' })
     expect(actor.getSnapshot().value).toBe('awaitingPlanApproval')
+  })
+})
+
+describe('investigation mode', () => {
+  it('sends execute-task-investigation instead of execute-task when entering executing', () => {
+    const actor = start('investigation')
+    actor.send({ type: 'START' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'DECISION_NEEDED', event: decisionEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'DECIDE', decisionId: 'd1', optionId: 'a' })
+    actor.send({ type: 'PLAN', event: planEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'APPROVE_PLAN' })
+    expect(actor.getSnapshot().value).toBe('executing')
+    const lastCall = sendPrompt.mock.calls.at(-1)
+    expect(lastCall?.[1]).toEqual({ phase: 'execute-task-investigation' })
+  })
+
+  it('visits the exact same state sequence as standard mode — no states skipped or added', () => {
+    const seen: string[] = []
+    const actor = start('investigation')
+    // `start()` already called `actor.start()`, so the initial `idle`
+    // notification predates this `subscribe` and is never delivered — xstate
+    // v5's `subscribe` does not replay the current snapshot to a new
+    // observer. `DECISION_NEEDED` and `PLAN` are internal transitions
+    // (no `target`) whose `noteTurnEvent` action still runs `assign`, so
+    // each produces its own same-value notification alongside the one from
+    // the preceding `TURN_FINISHED` target change — this is unrelated to
+    // `mode` and would be identical under `start('standard')`.
+    actor.subscribe((snap) => seen.push(String(snap.value)))
+    actor.send({ type: 'START' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'DECISION_NEEDED', event: decisionEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'DECIDE', decisionId: 'd1', optionId: 'a' })
+    actor.send({ type: 'PLAN', event: planEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    expect(seen).toEqual([
+      'exploring',
+      'proposing',
+      'proposing',
+      'awaitingDecision',
+      'planning',
+      'planning',
+      'awaitingPlanApproval',
+    ])
   })
 })
 
