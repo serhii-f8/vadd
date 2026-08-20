@@ -18,6 +18,9 @@ guess — and a `task_result` event whose `claim` states what you found.
 it the same if you emit more than one `task_result` for the same task).
 `evidenceRefs` lists the `evidence` event(s) that back the claim:
 
+<!-- Template-author note: `kind:"check"` here is a citation label, not a
+     reference to a declared acceptance check — there is no `checkId`, so
+     nothing binds. Harmless, but keep it that way in any revision. -->
 ```vadd-event
 {"type":"evidence","kind":"check","status":"pass","headline":"Confirmed in auth.ts:42","summary":["Session tokens use a 30-minute TTL, not 24 hours as assumed"]}
 ```
