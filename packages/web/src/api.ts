@@ -20,6 +20,8 @@ export type Objective = {
   integrateAction: 'commit' | 'keep' | 'discard' | null
   /** Amendment A12: D8's toggle. */
   lowEnergy: boolean
+  /** D1's two paths, plus amendment A15's read-only investigation. */
+  mode?: 'standard' | 'fastfix' | 'investigation'
 }
 
 /**

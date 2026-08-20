@@ -21,15 +21,20 @@ const ACTIONS = [
 ] as const
 
 export function IntegrationChooser({
+  mode = 'standard',
   onCommand,
 }: {
+  mode?: 'standard' | 'fastfix' | 'investigation'
   onCommand: (body: Record<string, unknown>) => void
 }) {
+  // An investigation objective has no diff by construction (design §4) — offering
+  // Commit would squash nothing, so it's excluded rather than handled.
+  const actions = mode === 'investigation' ? ACTIONS.filter((a) => a.action !== 'commit') : ACTIONS
   return (
     <section>
       <h2 className="mb-3 text-lg font-medium">Integrate</h2>
       <ul className="space-y-2">
-        {ACTIONS.map((a) => (
+        {actions.map((a) => (
           <li key={a.action} className="flex items-baseline gap-3">
             <button
               type="button"
