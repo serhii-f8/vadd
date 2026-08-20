@@ -131,7 +131,7 @@ async function sendPromptEffect(
 ): Promise<void> {
   // Never proceed to the prompt with no checkpoint: this is the other half of
   // `checkpoint`'s failure handling (see `GitGate`'s doc comment above).
-  if (phase === 'execute-task') {
+  if (phase === 'execute-task' || phase === 'execute-task-investigation') {
     const pending = gitGate.pendingCheckpoint.get(objectiveId)
     if (pending) {
       gitGate.pendingCheckpoint.delete(objectiveId)
@@ -141,7 +141,7 @@ async function sendPromptEffect(
   }
 
   let vars: Record<string, string> = {}
-  if (phase === 'execute-task') {
+  if (phase === 'execute-task' || phase === 'execute-task-investigation') {
     const taskVars = executeTaskVars(context)
     if (!taskVars) {
       const message = `No task at index ${context.currentTaskIndex} to execute`

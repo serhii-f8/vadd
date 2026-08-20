@@ -459,6 +459,17 @@ describe('bindEffects', () => {
     expect(lastPromptText()).not.toContain('{{')
   })
 
+  it('an investigation-mode objective sends execute-task-investigation, not execute-task', async () => {
+    db.update(objectives).set({ mode: 'investigation' }).where(eq(objectives.id, 'o')).run()
+    await toAwaitingPlanApproval()
+    runner.send('o', { type: 'APPROVE_PLAN' })
+    await vi.waitFor(() =>
+      expect(promptedPhases()).toContain('execute-task-investigation'),
+    )
+    expect(promptedPhases()).not.toContain('execute-task')
+    expect(lastPromptText()).toContain('Do not change any code')
+  })
+
   it('recordDecision writes a decisions row, and DECIDE fills in the choice', async () => {
     await toAwaitingDecision()
     const before = db.select().from(decisions).all()[0]
