@@ -64,6 +64,15 @@ test('every bundled phase loads', () => {
   }
 })
 
+test('execute-task-investigation asks for findings, not a diff', () => {
+  const t = loadTemplate('execute-task-investigation')
+  expect(t.body).toContain('Do not change any code')
+  expect(t.expects).toEqual([
+    ['task_result', 'failure'],
+    ['evidence', 'failure'],
+  ])
+})
+
 test('bundledPromptDir() resolves to a real directory holding the addendum', () => {
   expect(existsSync(join(bundledPromptDir(), 'system-addendum.md'))).toBe(true)
 })
@@ -134,7 +143,7 @@ test('verify.md asks for the checks, not the commands', () => {
   expect(placeholdersIn(body)).toEqual(['verificationChecks'])
 })
 
-test('the objective-derived vars alone leave four templates unsatisfied', () => {
+test('the objective-derived vars alone leave five templates unsatisfied', () => {
   // Pins the fact the fix depends on: `verify` and `execute-task` genuinely
   // cannot be rendered from an objective row, so the route must reject them
   // without `vars` rather than treating the leftover braces as prose. If a
@@ -147,11 +156,21 @@ test('the objective-derived vars alone leave four templates unsatisfied', () => 
   // `plan` joined this list under amendment A11: `{{verifyCommandIds}}` comes
   // from the resolved verification spec, which `sendPromptEffect` supplies
   // (as `''` when unresolved) — never from the objective row alone.
+  //
+  // `execute-task-investigation` joins this list: `{{taskTitle}}` and
+  // `{{taskDescription}}` come from CALLER_TEMPLATE_VARS supplied per-task,
+  // not from the objective row alone.
   const auto = Object.fromEntries(AUTO_TEMPLATE_VARS.map((v) => [v, 'x']))
   const unsatisfied = PROMPT_PHASES.filter(
     (p) => placeholdersIn(renderTemplate(loadTemplate(p), auto)).length > 0,
   )
-  expect(unsatisfied.sort()).toEqual(['execute-task', 'plan', 'repair', 'verify'])
+  expect(unsatisfied.sort()).toEqual([
+    'execute-task',
+    'execute-task-investigation',
+    'plan',
+    'repair',
+    'verify',
+  ])
 })
 
 test('a fully supplied var set renders every template with no placeholder left', () => {
