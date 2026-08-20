@@ -30,6 +30,7 @@ function aggregate(over: Record<string, unknown> = {}) {
       baseSha: 'deadbeef',
       integrateAction: null,
       lowEnergy: false,
+      mode: 'standard',
       ...(over.objective as Record<string, unknown> | undefined),
     },
   }
@@ -273,6 +274,17 @@ describe('FocusView primary element by state', () => {
     for (const name of [/commit/i, /keep/i, /discard/i]) {
       expect(await screen.findByRole('button', { name })).toBeTruthy()
     }
+  })
+
+  it('hides Commit for an investigation-mode objective at integrating', async () => {
+    mockFetch({
+      'GET /api/objectives/o1': {
+        body: aggregate({ state: 'integrating', objective: { mode: 'investigation' } }),
+      },
+    })
+    renderFocus()
+    expect(await screen.findByRole('button', { name: /keep/i })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /commit/i })).toBeNull()
   })
 
   it('posts the chosen integration action', async () => {
