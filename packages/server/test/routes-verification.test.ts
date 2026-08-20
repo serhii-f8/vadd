@@ -153,6 +153,28 @@ describe('resolution at objective creation', () => {
       return row?.status === 'setup_failed'
     })
   })
+
+  it('investigation mode ignores repo auto-detection and gets the checks-only default', async () => {
+    const id = (await create({ mode: 'investigation' })).json().id
+    const row = db.select().from(objectives).where(eq(objectives.id, id)).get()
+    const spec = row?.verificationSpec as {
+      verify: { commands: unknown[]; checks: string[] }
+    }
+    expect(spec.verify.commands).toEqual([])
+    expect(spec.verify.checks).toHaveLength(1)
+  })
+
+  it('investigation mode still merges a per-objective override', async () => {
+    const id = (
+      await create({
+        mode: 'investigation',
+        verificationOverrides: { verify: { timeoutSec: 30 } },
+      })
+    ).json().id
+    const row = db.select().from(objectives).where(eq(objectives.id, id)).get()
+    const spec = row?.verificationSpec as { verify: { timeoutSec: number } }
+    expect(spec.verify.timeoutSec).toBe(30)
+  })
 })
 
 describe('POST /api/objectives/:id/events tick_check', () => {

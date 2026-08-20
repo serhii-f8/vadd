@@ -4,6 +4,7 @@ import {
   assertSpecAllowed,
   CreateObjectiveBody,
   evidenceComplete,
+  mergeSpec,
   normalizeChecks,
   ObjectiveCommand,
   planTaskId,
@@ -25,7 +26,11 @@ import {
 import { objectiveDiff, objectiveFileDiff } from '../../git/diff.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
-import { resolveVerification } from '../../verification/resolve.js'
+import {
+  INVESTIGATION_VERIFICATION_SPEC,
+  type Resolution,
+  resolveVerification,
+} from '../../verification/resolve.js'
 import { runSetup } from '../../verification/setup.js'
 import { currentEvidence } from '../../workflow/effects.js'
 import { runIntegration } from '../../workflow/integrate.js'
@@ -243,10 +248,21 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     // Design §4.2: resolve against repoPath *before* anything is created, and
     // assert the command policy against the worktree path we are about to use.
     // A denial or a malformed config must cost the user nothing.
-    const resolution = resolveVerification(
-      project.repoPath,
-      parsed.data.verificationOverrides ?? null,
-    )
+    //
+    // Design §3, amendment A15: investigation objectives have nothing to
+    // run, ever — resolving against the repo's config or auto-detection
+    // would offer commands that can never apply to a read-only objective.
+    const resolution: Resolution =
+      parsed.data.mode === 'investigation'
+        ? {
+            kind: 'resolved',
+            spec: mergeSpec(
+              INVESTIGATION_VERIFICATION_SPEC,
+              parsed.data.verificationOverrides ?? null,
+            ),
+            source: 'detected',
+          }
+        : resolveVerification(project.repoPath, parsed.data.verificationOverrides ?? null)
     if (resolution.kind === 'invalid') {
       return reply.code(400).send({ error: `Verification spec rejected: ${resolution.reason}` })
     }
