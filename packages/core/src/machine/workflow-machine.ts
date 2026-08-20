@@ -20,7 +20,7 @@ import {
 export type WorkflowInput = {
   objectiveId: string
   goalText: string
-  mode: 'standard' | 'fastfix'
+  mode: 'standard' | 'fastfix' | 'investigation'
   lowEnergy: boolean
   verificationSpec: VerificationSpec | null
   /** Set when rehydrating an objective whose plan is already in the DB. */

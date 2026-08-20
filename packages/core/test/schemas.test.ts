@@ -12,6 +12,12 @@ test('CreateObjectiveBody requires title and goalText', () => {
   expect(CreateObjectiveBody.safeParse({ title: 'T' }).success).toBe(false)
 })
 
+test('CreateObjectiveBody accepts investigation mode', () => {
+  expect(
+    CreateObjectiveBody.safeParse({ title: 'T', goalText: 'G', mode: 'investigation' }).success,
+  ).toBe(true)
+})
+
 test('ObjectiveCommand carries the M0 commands plus spec §7s machine commands', () => {
   expect(ObjectiveCommand.safeParse({ type: 'prompt', text: 'hi' }).success).toBe(true)
   expect(ObjectiveCommand.safeParse({ type: 'cancel' }).success).toBe(true)

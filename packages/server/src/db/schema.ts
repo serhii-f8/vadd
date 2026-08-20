@@ -92,8 +92,8 @@ export const objectives = sqliteTable(
      */
     integrateAction: text('integrate_action', { enum: INTEGRATE_ACTIONS }),
     status: text('status').notNull(),
-    /** D1's two paths. Fast Fix skips proposing/awaitingDecision, never verification. */
-    mode: text('mode', { enum: ['standard', 'fastfix'] })
+    /** D1/A15: standard, Fast Fix (skips proposing/awaitingDecision), and investigation (read-only, no diff). */
+    mode: text('mode', { enum: ['standard', 'fastfix', 'investigation'] })
       .notNull()
       .default('standard'),
     /** Spec §6, resolved at objective creation in phase 4. Null = not yet resolved. */

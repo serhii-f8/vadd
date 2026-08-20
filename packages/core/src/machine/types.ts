@@ -69,7 +69,7 @@ export type EvidenceItemLike = {
 
 export type WorkflowContext = {
   objectiveId: string
-  mode: 'standard' | 'fastfix'
+  mode: 'standard' | 'fastfix' | 'investigation'
   lowEnergy: boolean
   goalText: string
   verificationSpec: VerificationSpec | null

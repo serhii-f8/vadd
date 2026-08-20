@@ -15,7 +15,7 @@ export const CreateObjectiveBody = z.object({
   title: z.string().min(1).max(120),
   goalText: z.string().min(1).max(4000),
   /** D1's two paths (spec §7). Fast Fix skips proposing/awaitingDecision only. */
-  mode: z.enum(['standard', 'fastfix']).default('standard'),
+  mode: z.enum(['standard', 'fastfix', 'investigation']).default('standard'),
   /**
    * Spec §6's per-objective override, merged over repo config or
    * auto-detection at creation and winning leaf by leaf.
