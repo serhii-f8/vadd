@@ -463,9 +463,7 @@ describe('bindEffects', () => {
     db.update(objectives).set({ mode: 'investigation' }).where(eq(objectives.id, 'o')).run()
     await toAwaitingPlanApproval()
     runner.send('o', { type: 'APPROVE_PLAN' })
-    await vi.waitFor(() =>
-      expect(promptedPhases()).toContain('execute-task-investigation'),
-    )
+    await vi.waitFor(() => expect(promptedPhases()).toContain('execute-task-investigation'))
     expect(promptedPhases()).not.toContain('execute-task')
     expect(lastPromptText()).toContain('Do not change any code')
   })

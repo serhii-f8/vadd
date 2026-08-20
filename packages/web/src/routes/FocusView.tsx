@@ -228,7 +228,9 @@ export function FocusView() {
           </div>
         </>
       )}
-      {primary === 'integration' && <IntegrationChooser mode={aggregate.objective.mode} onCommand={(b) => void onCommand(b)} />}
+      {primary === 'integration' && (
+        <IntegrationChooser mode={aggregate.objective.mode} onCommand={(b) => void onCommand(b)} />
+      )}
       {primary === 'outcome' && (
         <section>
           <h2 className="text-lg font-medium">
