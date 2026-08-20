@@ -471,6 +471,30 @@ describe('bindEffects', () => {
     expect(after?.decidedAt).not.toBeNull()
   })
 
+  it('REVISE from awaitingDecision re-prompts propose with the note, and replaces the stale decision row', async () => {
+    await toAwaitingDecision()
+    const before = db.select().from(decisions).all()
+    expect(before).toHaveLength(1)
+
+    queueEvents([DECISION_EVENT])
+    runner.send('o', { type: 'REVISE', instruction: 'Consider a third option' })
+    expect(runner.get('o')?.getSnapshot().value).toBe('proposing')
+
+    await vi.waitFor(() => expect(promptedPhases().filter((p) => p === 'propose').length).toBe(2))
+    expect(lastPromptText()).toContain('Consider a third option')
+
+    await settleFakeTurn() // decision_needed settles -> awaitingDecision
+    expect(runner.get('o')?.getSnapshot().value).toBe('awaitingDecision')
+    expect(runner.get('o')?.getSnapshot().context.reviseInstruction).toBeNull()
+
+    // Replace, not append: a second decision row would leave the aggregate's
+    // "the current undecided decision" pick ambiguous (see recordPlan's own
+    // "replace, not append" for tasks, same failure shape).
+    const after = db.select().from(decisions).all()
+    expect(after).toHaveLength(1)
+    expect(after[0]?.id).not.toBe(before[0]?.id)
+  })
+
   it('recordEvidence writes an evidence_items row with a null commandId', async () => {
     await toExecuting()
     emitFromPipeline('o', evidenceEmission({ kind: 'test', status: 'pass', headline: '12 passed' }))

@@ -154,6 +154,13 @@ async function sendPromptEffect(
       return
     }
     vars = taskVars
+  } else if (phase === 'propose') {
+    // Mirrors the `plan` phase's A10 handling just below: a REVISE-triggered
+    // re-propose overrides `goalText` in the default merge the same way, since
+    // `propose.md` has no placeholder of its own to carry a revision note.
+    vars = context.reviseInstruction
+      ? { goalText: `${context.goalText}\n\nRevision note: ${context.reviseInstruction}` }
+      : {}
   } else if (phase === 'plan') {
     const verifyCommandIds = verifyCommandIdsVar(context)
     // Amendment A10: a REVISE from awaitingPlanApproval re-enters `planning`,
@@ -520,20 +527,28 @@ export function bindEffects(
         if (event.type !== 'DECISION_NEEDED') return
         try {
           const id = randomUUID()
-          deps.db
-            .insert(decisions)
-            .values({
-              id,
-              objectiveId,
-              question: event.event.question,
-              options: event.event.options,
-              recommendedId: event.event.recommendedId,
-              chosenId: null,
-              decidedAt: null,
-              decidedBy: null,
-              createdAt: new Date().toISOString(),
-            })
-            .run()
+          deps.db.transaction((tx) => {
+            // Replace, not append: a REVISE-triggered re-propose must not
+            // accumulate two generations of decisions — the same failure
+            // shape `recordPlan` already guards against for tasks. Safe to
+            // run unconditionally: `awaitingDecision` (the only state REVISE
+            // can fire from) is reached before `DECIDE`, so any existing row
+            // here always has `chosenId: null`.
+            tx.delete(decisions).where(eq(decisions.objectiveId, objectiveId)).run()
+            tx.insert(decisions)
+              .values({
+                id,
+                objectiveId,
+                question: event.event.question,
+                options: event.event.options,
+                recommendedId: event.event.recommendedId,
+                chosenId: null,
+                decidedAt: null,
+                decidedBy: null,
+                createdAt: new Date().toISOString(),
+              })
+              .run()
+          })
           // Carries the id so the UI (and `DECIDE`) can address this exact row.
           deps.bus.emit({ objectiveId, type: 'decision_recorded', payload: { id } })
         } catch (err) {

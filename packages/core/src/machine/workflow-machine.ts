@@ -271,11 +271,19 @@ export const workflowMachine = setup({
       on: {
         DECISION_NEEDED: { actions: ['noteTurnEvent', { type: 'recordDecision' }] },
         TURN_FINISHED: [
-          { guard: 'sawDecision', target: 'awaitingDecision' },
+          {
+            guard: 'sawDecision',
+            target: 'awaitingDecision',
+            // A REVISE-triggered re-propose set this; a fresh proposal from
+            // exploring never did, so clearing it here is always correct
+            // rather than only sometimes a no-op (mirrors `planning`'s own
+            // TURN_FINISHED clear).
+            actions: assign({ reviseInstruction: () => null }),
+          },
           // A propose turn that produced no decision is not a failure — it is a
           // turn that owes one. Pause rather than guess, so the user can
           // re-prompt or decide directly.
-          { target: 'paused' },
+          { target: 'paused', actions: assign({ reviseInstruction: () => null }) },
         ],
       },
     },
@@ -287,6 +295,16 @@ export const workflowMachine = setup({
           target: 'planning',
           actions: assign({
             pendingDecisionId: ({ event }) => (event.type === 'DECIDE' ? event.decisionId : null),
+          }),
+        },
+        // Mirrors amendment A10's `awaitingPlanApproval` REVISE: "the options
+        // are wrong, think again" is cheapest right here, before any plan
+        // exists. Re-enters `proposing`, whose entry sends the `propose`
+        // phase prompt again.
+        REVISE: {
+          target: 'proposing',
+          actions: assign({
+            reviseInstruction: ({ event }) => (event.type === 'REVISE' ? event.instruction : null),
           }),
         },
       },

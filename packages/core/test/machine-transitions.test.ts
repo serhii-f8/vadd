@@ -173,6 +173,24 @@ describe('the happy path', () => {
     expect(actor.getSnapshot().context.reviseInstruction).toBeNull()
   })
 
+  it('REVISE from awaitingDecision re-proposes instead of being refused', () => {
+    const actor = start()
+    actor.send({ type: 'START' })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'DECISION_NEEDED', event: decisionEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    expect(actor.getSnapshot().value).toBe('awaitingDecision')
+    actor.send({ type: 'REVISE', instruction: 'Consider a third option' })
+    expect(actor.getSnapshot().value).toBe('proposing')
+    expect(actor.getSnapshot().context.reviseInstruction).toBe('Consider a third option')
+    // The re-propose turn's own DECISION_NEEDED/TURN_FINISHED clears it once
+    // consumed, the same way `planning`'s re-plan turn does.
+    actor.send({ type: 'DECISION_NEEDED', event: decisionEvent })
+    actor.send({ type: 'TURN_FINISHED' })
+    expect(actor.getSnapshot().value).toBe('awaitingDecision')
+    expect(actor.getSnapshot().context.reviseInstruction).toBeNull()
+  })
+
   it('executing → verifying, and verifying → awaitingReview only on a green set', () => {
     const actor = toAwaitingPlanApproval()
     actor.send({ type: 'APPROVE_PLAN' })
