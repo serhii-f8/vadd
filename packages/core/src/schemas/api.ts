@@ -14,7 +14,7 @@ export type RegisterProjectBody = z.infer<typeof RegisterProjectBody>
 export const CreateObjectiveBody = z.object({
   title: z.string().min(1).max(120),
   goalText: z.string().min(1).max(4000),
-  /** D1's two paths (spec §7). Fast Fix skips proposing/awaitingDecision only. */
+  /** D1/A15: standard, Fast Fix (skips proposing/awaitingDecision), and investigation (read-only, no diff). */
   mode: z.enum(['standard', 'fastfix', 'investigation']).default('standard'),
   /**
    * Spec §6's per-objective override, merged over repo config or
@@ -48,8 +48,9 @@ export const ObjectiveCommand = z.discriminatedUnion('type', [
      * Two bundled templates carry placeholders whose real sources — the
      * verification spec and `plan_tasks` — are milestone phases 3 and 4. Until
      * those exist this is how a caller supplies them; without it, `verify` and
-     * `execute-task` are unusable, and they are the only two templates that
-     * solicit `evidence`, one of the two types the §9 gate binds on.
+     * `execute-task` are unusable. `verify.md`, `execute-task.md` and
+     * `execute-task-investigation.md` are the three templates that solicit
+     * `evidence`, one of the two types the §9 gate binds on.
      */
     vars: z.record(z.string(), z.string().max(4000)).optional(),
   }),

@@ -124,11 +124,11 @@ export const AUTO_TEMPLATE_VARS = ['title', 'goalText'] as const
  * `verificationChecks` comes from the verification spec and `taskTitle` /
  * `taskDescription` from `plan_tasks`; the machine supplies both from phase 4
  * on, and a human driving corpus collection types them in. Naming them here
- * rather than leaving them implicit is the point: `verify.md` and
- * `execute-task.md` are the only two templates that solicit `evidence`, one of
- * the two gated types, and they shipped sending the literal string
- * `{{verificationCommands}}` to the agent because nothing checked that any
- * caller could satisfy them.
+ * rather than leaving them implicit is the point: `verify.md`, `execute-task.md`
+ * and `execute-task-investigation.md` are the three templates that solicit
+ * `evidence`, one of the two gated types, and the first two shipped sending
+ * the literal string `{{verificationCommands}}` to the agent because nothing
+ * checked that any caller could satisfy them.
  *
  * `verificationCommands` is kept alongside its replacement: phase 4 gave the
  * commands to EvidenceCollector and rewrote `verify.md` to ask for the checks,

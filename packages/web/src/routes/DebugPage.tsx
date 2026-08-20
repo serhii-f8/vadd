@@ -12,6 +12,7 @@ const PROMPT_PHASES = [
   'propose',
   'plan',
   'execute-task',
+  'execute-task-investigation',
   'verify',
   'review',
 ] as const
