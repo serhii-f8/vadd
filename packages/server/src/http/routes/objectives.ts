@@ -604,6 +604,13 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
           .code(400)
           .send({ error: `integrate via "${action}" is M2; use commit, keep or discard` })
       }
+      if (action === 'commit' && objective.mode === 'investigation') {
+        // Design §4, amendment A15: an investigation objective has no diff by
+        // construction — there is nothing for the squash to act on.
+        return reply.code(400).send({
+          error: 'integrate via "commit" is not available for an investigation-mode objective',
+        })
+      }
       const runner = deps.runner
       if (!runner) return reply.code(500).send({ error: 'Workflow runner is not configured' })
 

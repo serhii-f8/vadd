@@ -211,6 +211,24 @@ test('M1 commands are rejected in M0', async () => {
   expect(res.statusCode).toBe(400)
 })
 
+test('rejects integrate: commit for an investigation-mode objective', async () => {
+  const { app, projectId } = await withProject()
+  const o = (
+    await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/objectives`,
+      payload: { title: 't', goalText: 'g', mode: 'investigation' },
+    })
+  ).json()
+  const res = await app.inject({
+    method: 'POST',
+    url: `/api/objectives/${o.id}/events`,
+    payload: { type: 'integrate', action: 'commit' },
+  })
+  expect(res.statusCode).toBe(400)
+  expect(res.json().error).toMatch(/investigation/)
+})
+
 test('creation and discard both append events', async () => {
   const { app, bus, projectId } = await withProject()
   const o = (
