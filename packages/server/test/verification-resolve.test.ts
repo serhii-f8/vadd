@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { resolveVerification } from '../src/verification/resolve.js'
+import { INVESTIGATION_VERIFICATION_SPEC, resolveVerification } from '../src/verification/resolve.js'
 
 let root: string
 beforeEach(() => {
@@ -113,5 +113,12 @@ describe('resolveVerification', () => {
     // resolver's job is only to produce it faithfully, not to reject it.
     const result = resolveVerification(root, { verify: { commands: [], checks: [] } })
     expect(result.kind).toBe('none')
+  })
+})
+
+describe('INVESTIGATION_VERIFICATION_SPEC', () => {
+  it('has no commands and exactly one manual check', () => {
+    expect(INVESTIGATION_VERIFICATION_SPEC.verify.commands).toEqual([])
+    expect(INVESTIGATION_VERIFICATION_SPEC.verify.checks).toHaveLength(1)
   })
 })

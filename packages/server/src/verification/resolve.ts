@@ -13,6 +13,23 @@ const EMPTY: VerificationSpec = {
   policy: { protectedGlobs: [], maxFastFixLines: 150 },
 }
 
+/**
+ * Investigation-mode objectives (amendment A15) have nothing to run — no
+ * commands, ever — so resolution for them never goes through
+ * `resolveVerification`'s repo auto-detection at all (see the route). This is
+ * their fixed default, mergeable with a per-objective override the same way
+ * any other resolved spec is (D10).
+ */
+export const INVESTIGATION_VERIFICATION_SPEC: VerificationSpec = {
+  verify: {
+    setup: [],
+    commands: [],
+    checks: ['Findings read and confirmed accurate'],
+    timeoutSec: 600,
+  },
+  policy: { protectedGlobs: [], maxFastFixLines: 150 },
+}
+
 type ConfigRead = { found: false } | { found: true; raw: unknown } | Resolution
 
 function readConfig(rootPath: string): ConfigRead {
