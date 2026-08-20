@@ -33,6 +33,7 @@ function agg(evidenceRows: unknown[], over: Record<string, unknown> = {}): Aggre
       baseSha: 'deadbeef',
       integrateAction: null,
       lowEnergy: false,
+      mode: 'standard',
     },
     state: 'awaitingReview',
     tasks: [],

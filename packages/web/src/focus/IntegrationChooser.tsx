@@ -21,10 +21,10 @@ const ACTIONS = [
 ] as const
 
 export function IntegrationChooser({
-  mode = 'standard',
+  mode,
   onCommand,
 }: {
-  mode?: 'standard' | 'fastfix' | 'investigation'
+  mode: 'standard' | 'fastfix' | 'investigation'
   onCommand: (body: Record<string, unknown>) => void
 }) {
   // An investigation objective has no diff by construction (design §4) — offering
