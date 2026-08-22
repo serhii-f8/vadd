@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { NewObjectiveDialog } from '../objectives/NewObjectiveDialog.js'
 import { NewProjectDialog } from '../projects/NewProjectDialog.js'
 import { ProjectsProvider, useProjects } from './ProjectsContext.js'
 import { ThemeToggle } from './ThemeToggle.js'
@@ -24,6 +25,7 @@ function Sidebar() {
   const { projects, selectedId, select, error } = useProjects()
   const hasProjects = projects !== null && projects.length > 0
   const [addingProject, setAddingProject] = useState(false)
+  const [addingObjective, setAddingObjective] = useState(false)
 
   return (
     <nav className="flex w-60 shrink-0 flex-col gap-3 border-r border-border bg-sidebar p-4">
@@ -66,7 +68,12 @@ function Sidebar() {
       </div>
 
       <div className="mt-2 flex flex-col items-start gap-1">
-        <Button variant="ghost" size="sm" disabled={!hasProjects}>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!hasProjects}
+          onClick={() => setAddingObjective(true)}
+        >
           <Plus />
           New objective
         </Button>
@@ -91,6 +98,7 @@ function Sidebar() {
       </div>
 
       <NewProjectDialog open={addingProject} onOpenChange={setAddingProject} />
+      <NewObjectiveDialog open={addingObjective} onOpenChange={setAddingObjective} />
     </nav>
   )
 }

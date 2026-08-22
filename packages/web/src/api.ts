@@ -129,11 +129,16 @@ export const api = {
       ),
     }).then(json<Project>),
 
-  createObjective: (projectId: string, title: string, goalText: string) =>
+  createObjective: (
+    projectId: string,
+    title: string,
+    goalText: string,
+    mode: 'standard' | 'fastfix' | 'investigation' = 'standard',
+  ) =>
     fetch(`/api/projects/${projectId}/objectives`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, goalText }),
+      body: JSON.stringify({ title, goalText, mode }),
     }).then(json<Objective>),
 
   sendPrompt: (
