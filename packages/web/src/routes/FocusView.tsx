@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { type Aggregate, api } from '../api.js'
 import { EvidencePanel } from '../evidence/EvidencePanel.js'
+import { AbandonButton } from '../focus/AbandonButton.js'
 import { AutoApprovalBanner } from '../focus/AutoApprovalBanner.js'
 import { ClarificationPrompt } from '../focus/ClarificationPrompt.js'
 import { DecisionCard } from '../focus/DecisionCard.js'
 import { IntegrationChooser } from '../focus/IntegrationChooser.js'
 import { LiveTask } from '../focus/LiveTask.js'
 import { PlanApproval } from '../focus/PlanApproval.js'
-import { primaryElementFor } from '../focus/primary.js'
+import { primaryElementFor, type ViewStateName } from '../focus/primary.js'
+import { statusFor } from './stateColor.js'
 
 export function FocusView() {
   const { id } = useParams<{ id: string }>()
@@ -94,11 +101,14 @@ export function FocusView() {
     return (
       <main className="mx-auto max-w-3xl p-6">
         {error !== null ? (
-          <p role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-sm">
-            {error}
-          </p>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         ) : (
-          <p className="text-sm text-gray-600">Loading…</p>
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
         )}
       </main>
     )
@@ -106,6 +116,7 @@ export function FocusView() {
 
   const state = aggregate.state
   const primary = primaryElementFor(state)
+  const status = statusFor(state as ViewStateName)
   /**
    * Pause and Abandon are offered only where they mean something.
    *
@@ -120,53 +131,50 @@ export function FocusView() {
 
   return (
     <main className="mx-auto max-w-3xl p-6">
-      <header className="mb-6 flex items-baseline justify-between gap-4">
+      <header className="sticky top-0 z-10 -mx-6 mb-6 flex items-baseline justify-between gap-4 border-b border-border bg-background px-6 py-4">
         <div>
           <Link to="/" className="text-sm underline">
             ← Objectives
           </Link>
-          <h1 className="text-xl font-semibold">{aggregate.objective.title}</h1>
-          <p className="text-sm text-gray-600">{state}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{aggregate.objective.title}</h1>
+          <Badge variant="outline" className="mt-1 gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${status.dot}`} aria-hidden="true" />
+            {status.label}
+            <span className="font-mono text-muted-foreground">{state}</span>
+          </Badge>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           {headerActions && (
             <>
-              <button
-                type="button"
-                className="rounded border px-3 py-1 text-sm"
+              <Button
+                variant="ghost"
+                size="sm"
                 aria-pressed={aggregate.objective.lowEnergy}
                 onClick={() =>
                   void onCommand({ type: 'set_low_energy', value: !aggregate.objective.lowEnergy })
                 }
               >
                 {aggregate.objective.lowEnergy ? 'Low Energy: On' : 'Low Energy: Off'}
-              </button>
-              <button
-                type="button"
-                className="rounded border px-3 py-1 text-sm"
-                onClick={() => void onCommand({ type: 'pause' })}
-              >
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => void onCommand({ type: 'pause' })}>
                 Pause
-              </button>
-              <button
-                type="button"
-                className="rounded border px-3 py-1 text-sm"
-                onClick={() => void onCommand({ type: 'abandon' })}
-              >
-                Abandon
-              </button>
+              </Button>
+              <AbandonButton
+                title={aggregate.objective.title}
+                onConfirm={() => void onCommand({ type: 'abandon' })}
+              />
             </>
           )}
-          <a className="text-sm underline" href={`/api/objectives/${aggregate.objective.id}/raw`}>
-            Raw
-          </a>
+          <Button variant="ghost" size="sm" asChild>
+            <a href={`/api/objectives/${aggregate.objective.id}/raw`}>Raw</a>
+          </Button>
         </div>
       </header>
 
       {error !== null && (
-        <p role="alert" className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm">
-          {error}
-        </p>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       <AutoApprovalBanner
@@ -189,7 +197,7 @@ export function FocusView() {
       {primary === 'setup' && (
         <section>
           <h2 className="text-lg font-medium">Setting up</h2>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             Installing this objective's dependencies in its worktree. Nothing to do yet.
           </p>
         </section>
@@ -202,29 +210,18 @@ export function FocusView() {
         <>
           <EvidencePanel aggregate={aggregate} onCommand={(b) => void onCommand(b)} />
           <div className="mt-4 flex gap-2">
-            <button
-              type="button"
-              className="rounded border px-3 py-1"
-              onClick={() => void onCommand({ type: 'approve_task' })}
-            >
-              Approve
-            </button>
-            <button
-              type="button"
-              className="rounded border px-3 py-1"
+            <Button onClick={() => void onCommand({ type: 'approve_task' })}>Approve</Button>
+            <Button
+              variant="outline"
               onClick={() =>
                 void onCommand({ type: 'revise', instruction: 'Address the failing evidence.' })
               }
             >
               Revise
-            </button>
-            <button
-              type="button"
-              className="rounded border px-3 py-1"
-              onClick={() => void onCommand({ type: 'rollback' })}
-            >
+            </Button>
+            <Button variant="outline" onClick={() => void onCommand({ type: 'rollback' })}>
               Roll back
-            </button>
+            </Button>
           </div>
         </>
       )}
@@ -244,24 +241,18 @@ export function FocusView() {
       {primary === 'resume' && (
         <>
           <div className="flex gap-2">
-            <button
-              type="button"
-              className="rounded border px-3 py-1"
+            <Button
               onClick={() => void onCommand({ type: state === 'paused' ? 'resume' : 'start' })}
             >
               {state === 'paused' ? 'Resume' : 'Start'}
-            </button>
+            </Button>
             {/* Only once a plan exists — `paused` before any task has a
                 checkpoint to roll back to, and the machine's own ROLLBACK
                 guard would refuse it. */}
             {state === 'paused' && aggregate.tasks.length > 0 && (
-              <button
-                type="button"
-                className="rounded border px-3 py-1"
-                onClick={() => void onCommand({ type: 'rollback' })}
-              >
+              <Button variant="outline" onClick={() => void onCommand({ type: 'rollback' })}>
                 Roll back
-              </button>
+              </Button>
             )}
           </div>
           {/*
@@ -283,15 +274,20 @@ export function FocusView() {
       {/* Secondary strip: the task list as Level 0 dots. Hidden in Low Energy
           Mode (D8) — that's the whole point of the mode. */}
       {!aggregate.objective.lowEnergy && aggregate.tasks.length > 0 && (
-        <ul className="mt-8 flex gap-1" aria-label="Tasks">
-          {aggregate.tasks.map((t) => (
-            <li
-              key={t.id}
-              title={`${t.title} — ${t.status}`}
-              className="h-2 w-2 rounded-full border"
-            />
-          ))}
-        </ul>
+        <TooltipProvider>
+          <ul className="mt-8 flex gap-1" aria-label="Tasks">
+            {aggregate.tasks.map((t) => (
+              <Tooltip key={t.id}>
+                <TooltipTrigger asChild>
+                  <li className="h-2 w-2 rounded-full border" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t.title} — {t.status}
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </ul>
+        </TooltipProvider>
       )}
     </main>
   )

@@ -306,7 +306,8 @@ describe('FocusView primary element by state', () => {
       'POST /api/objectives/o1/events': { status: 202, body: { ok: true } },
     })
     renderFocus()
-    await userEvent.click(await screen.findByRole('button', { name: /abandon/i }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Abandon' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Abandon objective' }))
     expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ type: 'abandon' })
   })
 
