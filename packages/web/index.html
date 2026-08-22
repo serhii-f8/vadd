@@ -3,7 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VADD — Debug</title>
+    <title>VADD</title>
+    <script>
+      // Applies the stored theme before first paint. Duplicated deliberately
+      // from ThemeProvider: React mounts too late to prevent the flash, and a
+      // shared module would need a bundle this must run before.
+      var t, dark
+      try {
+        t = localStorage.getItem('vadd.theme') || 'system'
+        dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
+        if (dark) document.documentElement.classList.add('dark')
+      } catch {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
