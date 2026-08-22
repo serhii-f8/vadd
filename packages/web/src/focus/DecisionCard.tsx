@@ -16,7 +16,7 @@ export function DecisionCard({
 
   return (
     <section>
-      <h2 className="mb-3 text-lg font-medium">{decision.question}</h2>
+      <h2 className="mb-3 text-lg font-medium text-foreground">{decision.question}</h2>
       <RadioGroup value={chosen} onValueChange={setChosen} className="space-y-3">
         {decision.options.map((o) => (
           <Card key={o.id} className={o.id === chosen ? 'ring-2 ring-primary' : undefined}>
@@ -57,8 +57,19 @@ export function DecisionCard({
           </Card>
         ))}
       </RadioGroup>
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
+        {/* §8's first listed action, and the common case: the recommendation is
+            already pre-selected, so requiring a separate Choose click was a
+            redundant step. */}
         <Button
+          onClick={() =>
+            onCommand({ type: 'decide', decisionId: decision.id, optionId: decision.recommendedId })
+          }
+        >
+          Approve recommended
+        </Button>
+        <Button
+          variant="outline"
           onClick={() => onCommand({ type: 'decide', decisionId: decision.id, optionId: chosen })}
         >
           Choose
@@ -68,6 +79,9 @@ export function DecisionCard({
           onClick={() => onCommand({ type: 'revise', instruction: 'Propose different options.' })}
         >
           Ask for alternatives
+        </Button>
+        <Button variant="ghost" onClick={() => onCommand({ type: 'pause' })}>
+          Pause
         </Button>
       </div>
     </section>
