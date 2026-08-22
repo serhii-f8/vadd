@@ -1,13 +1,16 @@
+import { CheckCircle2, CircleAlert, Info, XCircle } from 'lucide-react'
 import { type Aggregate, api } from '../api.js'
+import { Badge } from '../components/ui/badge.js'
 import { DiffList } from './DiffList.js'
 import { type EvidenceRow, groupEvidence } from './group.js'
 
-const GLYPH: Record<EvidenceRow['status'], string> = {
-  pass: '✅',
-  fail: '❌',
-  warn: '⚠️',
-  info: 'ℹ️',
-}
+const ICON: Record<EvidenceRow['status'], { Icon: typeof Info; className: string; label: string }> =
+  {
+    pass: { Icon: CheckCircle2, className: 'text-status-done', label: 'passed' },
+    fail: { Icon: XCircle, className: 'text-status-failed', label: 'failed' },
+    warn: { Icon: CircleAlert, className: 'text-status-attention', label: 'warning' },
+    info: { Icon: Info, className: 'text-status-idle', label: 'info' },
+  }
 
 function Row({
   row,
@@ -25,7 +28,7 @@ function Row({
   const expected =
     row.status === 'fail' && row.commandId !== null && expectFailing.includes(row.commandId)
   return (
-    <li className={`py-2 ${row.status === 'warn' ? 'text-amber-700' : ''}`}>
+    <li className={`py-2 ${row.status === 'warn' ? 'text-status-attention' : ''}`}>
       <div className="flex items-baseline gap-2">
         {tickable ? (
           <input
@@ -43,12 +46,15 @@ function Row({
             }
           />
         ) : (
-          <span aria-hidden>{GLYPH[row.status]}</span>
+          (() => {
+            const { Icon, className, label } = ICON[row.status]
+            return <Icon className={`size-4 shrink-0 ${className}`} aria-label={label} />
+          })()
         )}
         <span className="font-medium">{row.headline}</span>
-        {expected && <span className="text-xs text-amber-700">expected</span>}
+        {expected && <Badge variant="outline">expected</Badge>}
         {/* A7: a manual tick must never be mistaken for a command VADD ran. */}
-        {row.decidedBy === 'user' && <span className="text-xs text-gray-600">ticked by you</span>}
+        {row.decidedBy === 'user' && <Badge variant="secondary">ticked by you</Badge>}
         {row.artifactPath !== null && (
           <a className="text-xs underline" href={api.artifactUrl(row.id)}>
             log
@@ -56,7 +62,7 @@ function Row({
         )}
       </div>
       {row.summary.length > 0 && (
-        <ul className="ml-6 text-sm text-gray-600">
+        <ul className="ml-6 text-sm text-muted-foreground">
           {row.summary.map((s) => (
             <li key={s}>{s}</li>
           ))}
@@ -113,7 +119,7 @@ export function EvidencePanel({
       {group('Advisory', advisory)}
       {group('Warnings', warnings)}
       {required.length === 0 && advisory.length === 0 && warnings.length === 0 && (
-        <p className="text-sm text-gray-600">No evidence yet.</p>
+        <p className="text-sm text-muted-foreground">No evidence yet.</p>
       )}
       <DiffList objectiveId={aggregate.objective.id} />
     </div>

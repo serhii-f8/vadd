@@ -59,16 +59,18 @@ export function DiffList({ objectiveId }: { objectiveId: string }) {
               onClick={() => void show(f.path)}
             >
               <span>{f.path}</span>
-              <span className="text-gray-600">
+              <span className="text-muted-foreground">
                 +{f.added} −{f.removed}
                 {f.dirty && ' · uncommitted'}
               </span>
             </button>
             {open === f.path && loadError !== null && (
-              <p className="mt-1 text-xs text-red-600">Could not load diff: {loadError}</p>
+              <p className="mt-1 text-xs text-destructive">Could not load diff: {loadError}</p>
             )}
             {open === f.path && loadError === null && (
-              <Suspense fallback={<p className="mt-1 text-xs text-gray-600">Loading diff…</p>}>
+              <Suspense
+                fallback={<p className="mt-1 text-xs text-muted-foreground">Loading diff…</p>}
+              >
                 <DiffViewer diffText={text} />
               </Suspense>
             )}
