@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -34,6 +34,18 @@ export function NewProjectDialog({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  // Every open starts clean: the dialog instance is mounted unconditionally in
+  // AppShell (Radix needs it mounted to animate the close transition), so its
+  // state would otherwise survive a Cancel-and-reopen — a stale error sitting
+  // above a blank form, or a draft path silently reappearing.
+  useEffect(() => {
+    if (!open) return
+    setError(null)
+    setRepoPath('')
+    setName('')
+    setAgentKind('claude-code')
+  }, [open])
+
   const submit = async () => {
     if (repoPath.trim() === '') return
     setBusy(true)
@@ -47,8 +59,6 @@ export function NewProjectDialog({
       addProject(project)
       select(project.id)
       onOpenChange(false)
-      setRepoPath('')
-      setName('')
     } catch (e) {
       // The server's own message names the real cause — "Not a git repository:
       // <path>" from validateRepo, or "Repository is already registered". A

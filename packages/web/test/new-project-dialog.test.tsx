@@ -94,4 +94,39 @@ describe('NewProjectDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add project' }))
     expect(postBody(calls)).toBeUndefined()
   })
+
+  it('resets on reopen: no stale error, no stale path', async () => {
+    mockFetch(routes({ status: 400, body: { error: 'Not a git repository: /tmp/nope' } }))
+    const { rerender } = render(
+      <MemoryRouter>
+        <ProjectsProvider>
+          <NewProjectDialog open onOpenChange={() => undefined} />
+        </ProjectsProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByLabelText('Repository path')
+    await userEvent.type(screen.getByLabelText('Repository path'), '/tmp/nope')
+    await userEvent.click(screen.getByRole('button', { name: 'Add project' }))
+    await screen.findByRole('alert')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    rerender(
+      <MemoryRouter>
+        <ProjectsProvider>
+          <NewProjectDialog open={false} onOpenChange={() => undefined} />
+        </ProjectsProvider>
+      </MemoryRouter>,
+    )
+    rerender(
+      <MemoryRouter>
+        <ProjectsProvider>
+          <NewProjectDialog open onOpenChange={() => undefined} />
+        </ProjectsProvider>
+      </MemoryRouter>,
+    )
+
+    await screen.findByLabelText('Repository path')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect((screen.getByLabelText('Repository path') as HTMLInputElement).value).toBe('')
+  })
 })
