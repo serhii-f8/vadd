@@ -1,3 +1,4 @@
+import { scoreOption } from '@vadd/core'
 import { useState } from 'react'
 import type { Decision } from '../api.js'
 import { Badge } from '../components/ui/badge.js'
@@ -45,6 +46,11 @@ export function DecisionCard({
                         effort: {o.effort}
                       </Badge>
                     )}
+                    {/* Amendment A16: informational only — no reordering, no change to
+                        recommendedId or which option is pre-selected. */}
+                    <Badge variant="outline" className="ml-1">
+                      priority: {scoreOption(o).toFixed(2)}
+                    </Badge>
                   </div>
                 </div>
               </label>

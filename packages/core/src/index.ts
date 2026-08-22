@@ -63,3 +63,4 @@ export {
   VerificationSpec,
   type VerifyCommand,
 } from './schemas/verification.js'
+export { type ScorableOption, scoreOption } from './scoring/option-priority.js'
