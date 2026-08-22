@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowUp, X } from 'lucide-react'
 import { useState } from 'react'
 import type { PlanTask } from '../api.js'
 import { Badge } from '../components/ui/badge.js'
@@ -67,7 +68,7 @@ export function PlanApproval({
                       aria-label={`Move task ${i + 1} up`}
                       onClick={() => move(i, i - 1)}
                     >
-                      ↑
+                      <ArrowUp aria-hidden />
                     </Button>
                     <Button
                       variant="outline"
@@ -76,7 +77,7 @@ export function PlanApproval({
                       aria-label={`Move task ${i + 1} down`}
                       onClick={() => move(i, i + 1)}
                     >
-                      ↓
+                      <ArrowDown aria-hidden />
                     </Button>
                     <Button
                       variant="outline"
@@ -85,7 +86,7 @@ export function PlanApproval({
                       aria-label={`Remove task ${i + 1}`}
                       onClick={() => setEdits(edits.filter((_, j) => j !== i))}
                     >
-                      ✕
+                      <X aria-hidden />
                     </Button>
                   </div>
                   {parsedExpectFailing.length > 0 && (
@@ -105,7 +106,7 @@ export function PlanApproval({
                     htmlFor> paired with a matching id on Input passes cleanly and keeps the real
                     label→input association (click-to-focus, and the label's accessible role) —
                     not just the aria-label a screen reader alone would get. */}
-                  <label className="text-xs text-gray-600" htmlFor={expectFailingInputId}>
+                  <label className="text-xs text-muted-foreground" htmlFor={expectFailingInputId}>
                     Task {i + 1} expected failing commands
                     <Input
                       id={expectFailingInputId}
