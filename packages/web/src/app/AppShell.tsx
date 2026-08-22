@@ -1,4 +1,5 @@
 import { FolderPlus, Plus } from 'lucide-react'
+import { useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -10,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { NewProjectDialog } from '../projects/NewProjectDialog.js'
 import { ProjectsProvider, useProjects } from './ProjectsContext.js'
 import { ThemeToggle } from './ThemeToggle.js'
 
@@ -21,6 +23,7 @@ const NAV = [
 function Sidebar() {
   const { projects, selectedId, select, error } = useProjects()
   const hasProjects = projects !== null && projects.length > 0
+  const [addingProject, setAddingProject] = useState(false)
 
   return (
     <nav className="flex w-60 shrink-0 flex-col gap-3 border-r border-border bg-sidebar p-4">
@@ -67,7 +70,7 @@ function Sidebar() {
           <Plus />
           New objective
         </Button>
-        <Button variant="ghost" size="sm">
+        <Button variant="ghost" size="sm" onClick={() => setAddingProject(true)}>
           <FolderPlus />
           Add project
         </Button>
@@ -86,6 +89,8 @@ function Sidebar() {
           Debug
         </Link>
       </div>
+
+      <NewProjectDialog open={addingProject} onOpenChange={setAddingProject} />
     </nav>
   )
 }
