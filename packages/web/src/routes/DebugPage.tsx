@@ -84,7 +84,7 @@ export function DebugPage() {
       <h1 className="text-2xl font-semibold">VADD — Debug</h1>
 
       {error && (
-        <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+        <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
           {error}
         </div>
       )}
@@ -124,7 +124,7 @@ export function DebugPage() {
             Codex
           </label>
         </RadioGroup>
-        <ul className="text-sm text-gray-600">
+        <ul className="text-sm text-muted-foreground">
           {projects.map((p) => (
             <li key={p.id}>
               {p.name} — <code>{p.repoPath}</code> ({p.agentKind})
@@ -161,7 +161,7 @@ export function DebugPage() {
           Create in {projects[0]?.name ?? '—'}
         </button>
         {objective && (
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             <code>{objective.id}</code> · {objective.status} · branch{' '}
             <code>{objective.branchName}</code>
             <br />
@@ -242,11 +242,11 @@ export function DebugPage() {
         <h2 className="font-medium">4 · Live events ({events.length})</h2>
         <div className="max-h-[28rem] space-y-2 overflow-auto">
           {events.map((e) => (
-            <details key={e.id} className="rounded bg-gray-50 p-2 text-xs">
+            <details key={e.id} className="rounded bg-muted p-2 text-xs">
               <summary className="cursor-pointer">
-                <span className="font-mono text-gray-500">#{e.id}</span>{' '}
+                <span className="font-mono text-muted-foreground">#{e.id}</span>{' '}
                 <span className="font-medium">{e.type}</span>{' '}
-                <span className="text-gray-400">{e.createdAt}</span>
+                <span className="text-muted-foreground">{e.createdAt}</span>
               </summary>
               <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">
                 {JSON.stringify(e.payload, null, 2)}

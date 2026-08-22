@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Button } from '../components/ui/button.js'
+import { Input } from '../components/ui/input.js'
 
 /**
  * `clarifying`'s primary element.
@@ -32,16 +34,16 @@ export function ClarificationPrompt({
           onCommand({ type: 'answer_clarification', answer })
         }}
       >
-        <input
+        <Input
           type="text"
           aria-label="Answer"
-          className="flex-1 rounded border px-2 py-1"
+          className="flex-1"
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
         />
-        <button type="submit" className="rounded border px-3 py-1">
+        <Button type="submit" variant="outline">
           Answer
-        </button>
+        </Button>
       </form>
     </section>
   )

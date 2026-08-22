@@ -1,3 +1,5 @@
+import { Button } from '../components/ui/button.js'
+
 /**
  * Three genuinely different outcomes, each with its consequence spelled out:
  * a user cannot be expected to know which one deletes a branch.
@@ -36,14 +38,14 @@ export function IntegrationChooser({
       <ul className="space-y-2">
         {actions.map((a) => (
           <li key={a.action} className="flex items-baseline gap-3">
-            <button
+            <Button
               type="button"
-              className="rounded border px-3 py-1"
+              variant="outline"
               onClick={() => onCommand({ type: 'integrate', action: a.action })}
             >
               {a.label}
-            </button>
-            <span className="text-sm text-gray-600">{a.detail}</span>
+            </Button>
+            <span className="text-sm text-muted-foreground">{a.detail}</span>
           </li>
         ))}
       </ul>
