@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { ProjectsProvider, useProjects } from './ProjectsContext.js'
-import { ThemeProvider } from './ThemeProvider.js'
 import { ThemeToggle } from './ThemeToggle.js'
 
 const NAV = [
@@ -93,17 +92,15 @@ function Sidebar() {
 
 export function AppShell() {
   return (
-    <ThemeProvider>
-      <ProjectsProvider>
-        <div className="flex min-h-screen bg-background text-foreground">
-          <Sidebar />
-          <div className="min-w-0 flex-1">
-            <div className="mx-auto max-w-3xl p-8">
-              <Outlet />
-            </div>
+    <ProjectsProvider>
+      <div className="flex min-h-screen bg-background text-foreground">
+        <Sidebar />
+        <div className="min-w-0 flex-1">
+          <div className="mx-auto max-w-3xl p-8">
+            <Outlet />
           </div>
         </div>
-      </ProjectsProvider>
-    </ThemeProvider>
+      </div>
+    </ProjectsProvider>
   )
 }

@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppShell } from '../src/app/AppShell.js'
 import { useProjects } from '../src/app/ProjectsContext.js'
+import { ThemeProvider } from '../src/app/ThemeProvider.js'
 import { mockFetch } from './setup.js'
 
 const projects = [
@@ -31,14 +32,16 @@ function Probe() {
 
 function renderShell(initial = '/') {
   return render(
-    <MemoryRouter initialEntries={[initial]}>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route path="/" element={<Probe />} />
-          <Route path="/today" element={<p>today page</p>} />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+    <ThemeProvider>
+      <MemoryRouter initialEntries={[initial]}>
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route path="/" element={<Probe />} />
+            <Route path="/today" element={<p>today page</p>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </ThemeProvider>,
   )
 }
 
