@@ -1,9 +1,11 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppShell } from '../src/app/AppShell.js'
 import { useProjects } from '../src/app/ProjectsContext.js'
 import { ThemeProvider } from '../src/app/ThemeProvider.js'
+import { ObjectiveList } from '../src/routes/ObjectiveList.js'
 import { mockFetch } from './setup.js'
 
 const projects = [
@@ -106,5 +108,75 @@ describe('AppShell', () => {
     mockFetch({ 'GET /api/projects': { body: projects } })
     renderShell()
     expect(await screen.findByRole('button', { name: /Theme:/ })).toBeTruthy()
+  })
+
+  // The single test the whole shell refactor exists for: driving the real
+  // shadcn/Radix Select in the Sidebar, by hand, end to end, and watching a
+  // real page's content narrow in response — not calling `select()` from
+  // context directly, which is the shortcut that hid this gap in the first
+  // place (see ObjectiveList's own "narrows the board" test).
+  it('narrows a real page when the sidebar Select is driven by hand', async () => {
+    // jsdom implements neither of these, and Radix Select's pointer-capture
+    // handling throws without them on open/select — see the task-8 report
+    // for what plain `userEvent.click` did before this polyfill was added.
+    Element.prototype.hasPointerCapture = vi.fn(() => false)
+    Element.prototype.releasePointerCapture = vi.fn()
+    Element.prototype.scrollIntoView = vi.fn()
+
+    mockFetch({
+      'GET /api/projects': { body: projects },
+      'GET /api/objectives': {
+        body: [
+          {
+            id: 'o1',
+            projectId: 'p1',
+            title: 'Fix the login redirect',
+            status: 'executing',
+            worktreePath: '/tmp/wt1',
+            branchName: 'vadd/abc1',
+            integrateAction: null,
+            verifiedCount: 1,
+            totalCount: 3,
+          },
+        ],
+      },
+      'GET /api/objectives?projectId=p2': {
+        body: [
+          {
+            id: 'o2',
+            projectId: 'p2',
+            title: 'Wire the ACP adapter',
+            status: 'executing',
+            worktreePath: '/tmp/wt2',
+            branchName: 'vadd/abc2',
+            integrateAction: null,
+            verifiedCount: 0,
+            totalCount: 1,
+          },
+        ],
+      },
+    })
+
+    render(
+      <ThemeProvider>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route path="/" element={<ObjectiveList />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </ThemeProvider>,
+    )
+
+    expect(await screen.findByText('Fix the login redirect')).toBeTruthy()
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('combobox', { name: 'Project' }))
+    const option = await screen.findByRole('option', { name: 'vadd' })
+    await user.click(option)
+
+    expect(await screen.findByText('Wire the ACP adapter')).toBeTruthy()
+    expect(screen.queryByText('Fix the login redirect')).toBeNull()
   })
 })
