@@ -38,6 +38,14 @@ describe('DecisionCard actions', () => {
     expect(onCommand).toHaveBeenCalledWith({ type: 'decide', decisionId: 'd1', optionId: 'b' })
   })
 
+  it('approve recommended sends the recommendation even when another option is selected', async () => {
+    const onCommand = vi.fn()
+    render(<DecisionCard decision={decision} onCommand={onCommand} />)
+    await userEvent.click(screen.getByRole('radio', { name: 'Round at display time' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Approve recommended' }))
+    expect(onCommand).toHaveBeenCalledWith({ type: 'decide', decisionId: 'd1', optionId: 'b' })
+  })
+
   it('still allows choosing a different option', async () => {
     const onCommand = vi.fn()
     render(<DecisionCard decision={decision} onCommand={onCommand} />)
