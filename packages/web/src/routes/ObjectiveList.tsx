@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { api, type ObjectiveListRow } from '../api.js'
 import { useProjects } from '../app/ProjectsContext.js'
 import type { ViewStateName } from '../focus/primary.js'
@@ -51,34 +52,44 @@ export function ObjectiveList() {
         </div>
       )}
 
-      <ul className="flex flex-col">
-        {(objectives ?? []).map((o) => {
-          const status = statusFor(o.status as ViewStateName)
-          return (
-            <li key={o.id} className="border-b border-border last:border-b-0">
-              <Link
-                to={`/o/${o.id}`}
-                className="flex items-center gap-3 rounded-md px-2 py-3 hover:bg-muted"
-              >
-                <span
-                  role="img"
-                  aria-label={status.label}
-                  title={`${status.label} — ${o.status}`}
-                  className={`h-2 w-2 shrink-0 rounded-full ${status.dot}`}
-                />
-                <span className="min-w-0 flex-1 truncate font-medium">{o.title}</span>
-                {/* A8: a done objective whose work was thrown away must not
-                    look like one whose work was committed. */}
-                {o.integrateAction !== null && <Badge variant="outline">{o.integrateAction}</Badge>}
-                <span className="text-sm text-muted-foreground">{o.status}</span>
-                <span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">
-                  {o.verifiedCount}/{o.totalCount}
-                </span>
-              </Link>
-            </li>
-          )
-        })}
-      </ul>
+      <TooltipProvider>
+        <ul className="flex flex-col">
+          {(objectives ?? []).map((o) => {
+            const status = statusFor(o.status as ViewStateName)
+            return (
+              <li key={o.id} className="border-b border-border last:border-b-0">
+                <Link
+                  to={`/o/${o.id}`}
+                  className="flex items-center gap-3 rounded-md px-2 py-3 hover:bg-muted"
+                >
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        role="img"
+                        aria-label={status.label}
+                        className={`h-2 w-2 shrink-0 rounded-full ${status.dot}`}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {status.label} — {o.status}
+                    </TooltipContent>
+                  </Tooltip>
+                  <span className="min-w-0 flex-1 truncate font-medium">{o.title}</span>
+                  {/* A8: a done objective whose work was thrown away must not
+                      look like one whose work was committed. */}
+                  {o.integrateAction !== null && (
+                    <Badge variant="outline">{o.integrateAction}</Badge>
+                  )}
+                  <span className="text-sm text-muted-foreground">{o.status}</span>
+                  <span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">
+                    {o.verifiedCount}/{o.totalCount}
+                  </span>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      </TooltipProvider>
     </>
   )
 }
