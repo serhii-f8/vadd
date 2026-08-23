@@ -22,6 +22,8 @@ export type Objective = {
   lowEnergy: boolean
   /** D1's two paths, plus amendment A15's read-only investigation. */
   mode: 'standard' | 'fastfix' | 'investigation'
+  /** Already sent by the server on every response; only just declared client-side. */
+  updatedAt: string
 }
 
 /**
