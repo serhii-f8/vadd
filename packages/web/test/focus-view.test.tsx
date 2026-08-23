@@ -12,6 +12,9 @@ function aggregate(over: Record<string, unknown> = {}) {
     decisions: [],
     evidence: [],
     lastAutoApproval: null,
+    lastStatus: null,
+    lastAgentUpdateAt: null,
+    lastProblem: null,
     ...over,
     // `objective` is assigned last, deliberately after `...over`: `over` may
     // itself carry an `objective` key (every existing caller that overrides
@@ -264,7 +267,9 @@ describe('FocusView primary element by state', () => {
       },
     })
     renderFocus()
-    expect(await screen.findByText('Fix the guard')).toBeTruthy()
+    // Queried as the heading specifically: the running task's title now also
+    // appears in the plan list below, and a bare text query matches both.
+    expect(await screen.findByRole('heading', { name: 'Fix the guard' })).toBeTruthy()
     expect(screen.queryByTestId('log-stream')).toBeNull()
   })
 
@@ -528,7 +533,7 @@ describe('Low Energy Mode (amendment A12)', () => {
     expect(sent?.body).toEqual({ type: 'set_low_energy', value: true })
   })
 
-  it('hides the secondary task strip while lowEnergy is on', async () => {
+  it('hides the plan list while lowEnergy is on', async () => {
     mockFetch({
       'GET /api/objectives/o1': {
         body: aggregate({
@@ -549,10 +554,10 @@ describe('Low Energy Mode (amendment A12)', () => {
     })
     renderFocus()
     await screen.findByText(/executing/)
-    expect(screen.queryByLabelText('Tasks')).toBeNull()
+    expect(screen.queryByLabelText('Plan')).toBeNull()
   })
 
-  it('shows the secondary task strip while lowEnergy is off', async () => {
+  it('shows the plan list while lowEnergy is off', async () => {
     mockFetch({
       'GET /api/objectives/o1': {
         body: aggregate({
@@ -572,7 +577,7 @@ describe('Low Energy Mode (amendment A12)', () => {
     })
     renderFocus()
     await screen.findByText(/executing/)
-    expect(screen.getByLabelText('Tasks')).toBeTruthy()
+    expect(screen.getByLabelText('Plan')).toBeTruthy()
   })
 
   it('renders the auto-approval banner from the aggregate, not from the SSE payload', async () => {

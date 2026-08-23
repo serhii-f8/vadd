@@ -51,6 +51,16 @@ export type PlanTask = {
   status: 'pending' | 'running' | 'verifying' | 'verified' | 'failed' | 'skipped'
   /** Amendment A11. Null (not an empty array) when the row column is unset. */
   expectFailing: string[] | null
+  /**
+   * Already sent by the server on every response — the aggregate's task query
+   * is an unqualified `select()` — and only just declared client-side, the same
+   * situation `Objective.updatedAt` was in before A18. `startedAt` is what
+   * elapsed time is computed from; without it the Focus View had no timestamp
+   * to derive it from at all.
+   */
+  startedAt: string | null
+  finishedAt: string | null
+  checkpointRef: string | null
 }
 
 export type Decision = {
@@ -88,6 +98,15 @@ export type Aggregate = {
    * `awaitingReview`/`awaitingPlanApproval` are never actually rendered.
    */
   lastAutoApproval: { kind: 'task' | 'plan'; taskOrd: number | null; at: string } | null
+  /**
+   * The three activity signals, read off the append-only event log by
+   * `packages/server/src/http/activity.ts`. Like `lastAutoApproval`, the
+   * aggregate is the only channel they can reach the UI through: the frontend
+   * never reads SSE payloads (spec §7).
+   */
+  lastStatus: { headline: string; phase: string | null; at: string } | null
+  lastAgentUpdateAt: string | null
+  lastProblem: { type: string; message: string | null; at: string } | null
 }
 
 export type DiffFile = {

@@ -37,6 +37,7 @@ import { runIntegration } from '../../workflow/integrate.js'
 import type { WorkflowRunner } from '../../workflow/runner.js'
 import { loadSnapshot } from '../../workflow/store.js'
 import { cancelOpenTurn, renderTurnPrompt, runTurn, TurnRejected } from '../../workflow/turn.js'
+import { activityFor } from '../activity.js'
 import type { AppDeps } from '../app.js'
 
 /** ACP rejects with plain objects, so `String(err)` yields "[object Object]". */
@@ -422,6 +423,7 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
         .all(),
       decisions: db.select().from(decisions).where(eq(decisions.objectiveId, row.id)).all(),
       evidence: db.select().from(evidenceItems).where(eq(evidenceItems.objectiveId, row.id)).all(),
+      ...activityFor(db, row.id),
       lastAutoApproval: lastAutoApprovalEvent
         ? {
             kind: (lastAutoApprovalEvent.type === 'task_auto_approved' ? 'task' : 'plan') as

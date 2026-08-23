@@ -4,7 +4,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { type Aggregate, api } from '../api.js'
 import { EvidencePanel } from '../evidence/EvidencePanel.js'
 import { AbandonButton } from '../focus/AbandonButton.js'
@@ -14,7 +13,9 @@ import { DecisionCard } from '../focus/DecisionCard.js'
 import { IntegrationChooser } from '../focus/IntegrationChooser.js'
 import { LiveTask } from '../focus/LiveTask.js'
 import { PlanApproval } from '../focus/PlanApproval.js'
+import { ProblemAlert } from '../focus/ProblemAlert.js'
 import { primaryElementFor, type ViewStateName } from '../focus/primary.js'
+import { TaskList } from '../focus/TaskList.js'
 import { statusFor } from './stateColor.js'
 
 export function FocusView() {
@@ -128,6 +129,13 @@ export function FocusView() {
    */
   const headerActions = primary !== 'outcome' && primary !== 'setup'
   const decision = aggregate.decisions.find((d) => d.chosenId === null) ?? aggregate.decisions[0]
+  /**
+   * States where nothing is in flight and the user is owed a reason. `done`
+   * and `cancelled` are deliberately excluded: a completed objective that hit
+   * a transient failure on the way does not need it re-raised as an alert.
+   */
+  const showProblem =
+    state === 'paused' || state === 'failed' || state === 'setup_failed' || state === 'idle'
 
   return (
     <main className="mx-auto max-w-3xl p-6">
@@ -177,6 +185,17 @@ export function FocusView() {
         </Alert>
       )}
 
+      {/*
+        `lastProblem` is the newest problem the objective *ever* hit, not
+        necessarily a live one, so it is shown only in the states where the
+        user is looking at a stopped objective and wondering why. Carrying it
+        through a healthy run would turn a recovered failure into a permanent
+        red banner.
+      */}
+      {showProblem && aggregate.lastProblem !== null && (
+        <ProblemAlert problem={aggregate.lastProblem} />
+      )}
+
       <AutoApprovalBanner
         lastAutoApproval={aggregate.lastAutoApproval}
         onCommand={(b) => void onCommand(b)}
@@ -205,7 +224,13 @@ export function FocusView() {
       {primary === 'plan' && (
         <PlanApproval tasks={aggregate.tasks} onCommand={(b) => void onCommand(b)} />
       )}
-      {primary === 'live' && <LiveTask tasks={aggregate.tasks} />}
+      {primary === 'live' && (
+        <LiveTask
+          tasks={aggregate.tasks}
+          lastStatus={aggregate.lastStatus}
+          lastAgentUpdateAt={aggregate.lastAgentUpdateAt}
+        />
+      )}
       {primary === 'review' && (
         <>
           <EvidencePanel aggregate={aggregate} onCommand={(b) => void onCommand(b)} />
@@ -271,23 +296,13 @@ export function FocusView() {
         </>
       )}
 
-      {/* Secondary strip: the task list as Level 0 dots. Hidden in Low Energy
-          Mode (D8) — that's the whole point of the mode. */}
+      {/* The plan, in full. Hidden in Low Energy Mode (D8) — that's the whole
+          point of the mode. It replaces a strip of 8px dots whose titles were
+          reachable only one hover at a time. */}
       {!aggregate.objective.lowEnergy && aggregate.tasks.length > 0 && (
-        <TooltipProvider>
-          <ul className="mt-8 flex gap-1" aria-label="Tasks">
-            {aggregate.tasks.map((t) => (
-              <Tooltip key={t.id}>
-                <TooltipTrigger asChild>
-                  <li className="h-2 w-2 rounded-full border" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t.title} — {t.status}
-                </TooltipContent>
-              </Tooltip>
-            ))}
-          </ul>
-        </TooltipProvider>
+        <div className="mt-8">
+          <TaskList tasks={aggregate.tasks} />
+        </div>
       )}
     </main>
   )

@@ -12,6 +12,9 @@ function task(over: Partial<PlanTask> = {}): PlanTask {
     description: 'repro',
     status: 'pending',
     expectFailing: null,
+    startedAt: null,
+    finishedAt: null,
+    checkpointRef: null,
     ...over,
   }
 }

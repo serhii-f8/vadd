@@ -42,6 +42,9 @@ function agg(evidenceRows: unknown[], over: Record<string, unknown> = {}): Aggre
     evidence: evidenceRows,
     pendingClarification: null,
     lastAutoApproval: null,
+    lastStatus: null,
+    lastAgentUpdateAt: null,
+    lastProblem: null,
     ...over,
   } as Aggregate
 }

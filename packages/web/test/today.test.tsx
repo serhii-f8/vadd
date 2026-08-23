@@ -1,8 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
-import { ProjectsProvider, useProjects } from '../src/app/ProjectsContext.js'
+import { ProjectsProvider } from '../src/app/ProjectsContext.js'
 import { Today } from '../src/routes/Today.js'
 import { mockFetch } from './setup.js'
 
@@ -142,10 +142,18 @@ describe('Today', () => {
       'GET /api/projects/p2/today': { status: 500, body: { error: 'boom' } },
     })
 
+    /**
+     * Navigates rather than calling `select()`: selecting a project now lands
+     * on the objective list, which would unmount this page before it could
+     * clear anything. The regression this guards — a failed fetch for a newly
+     * selected project leaving the *previous* project's counts on screen under
+     * the new project's name — is still reachable, because `?project=` can
+     * change under this page by any route change that keeps it mounted.
+     */
     function Switcher() {
-      const { select } = useProjects()
+      const navigate = useNavigate()
       return (
-        <button type="button" onClick={() => select('p2')}>
+        <button type="button" onClick={() => navigate('/today?project=p2')}>
           switch project
         </button>
       )

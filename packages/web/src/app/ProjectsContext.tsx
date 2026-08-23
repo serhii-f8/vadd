@@ -7,7 +7,7 @@ import {
   useMemo,
   useState,
 } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, type Project } from '../api.js'
 
 type ProjectsValue = {
@@ -39,7 +39,8 @@ export function useProjects(): ProjectsValue {
 export function ProjectsProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const param = searchParams.get('project')
 
   useEffect(() => {
@@ -52,14 +53,24 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
       .catch((e: Error) => setError(e.message))
   }, [])
 
+  /**
+   * Selecting a project navigates to the objective list, it does not merely
+   * rewrite `?project=`.
+   *
+   * Every detail screen belongs to one project: the Focus View is scoped to a
+   * single objective, and an objective belongs to a single project. Rewriting
+   * the query string in place left the user on a screen belonging to the
+   * project they had just navigated away from, which made the switcher look
+   * broken — it appeared to do nothing at all.
+   *
+   * Only `project` is carried across. The other params a detail route may hold
+   * are scoped to that route and mean nothing on the list.
+   */
   const select = useCallback(
     (id: string | null) => {
-      const next = new URLSearchParams(searchParams)
-      if (id === null) next.delete('project')
-      else next.set('project', id)
-      setSearchParams(next)
+      navigate({ pathname: '/', search: id === null ? '' : `?project=${encodeURIComponent(id)}` })
     },
-    [searchParams, setSearchParams],
+    [navigate],
   )
 
   const addProject = useCallback((p: Project) => {
