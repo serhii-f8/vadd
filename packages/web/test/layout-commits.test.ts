@@ -51,6 +51,18 @@ describe('layoutCommits', () => {
     expect(laid.at(-1)?.lane).toBe(0)
   })
 
+  it('draws the fold as a diagonal rail, and does not leave the folded lane still open', () => {
+    const laid = layoutCommits(merged)
+    const byIsha = Object.fromEntries(laid.map((l) => [l.commit.sha, l]))
+    // `f`'s parent `r` is already waited for in lane 0 (n got there first),
+    // so `f`'s own lane 1 folds into it: a rail whose `from` and `to` differ,
+    // not a second rail that stays open forever.
+    expect(byIsha.f?.rails).toContainEqual({ from: 1, to: 0 })
+    // Once folded, lane 1 is closed — the root's row should draw only the
+    // one rail still open, not a leftover second one.
+    expect(byIsha.r?.rails).toEqual([{ from: 0, to: 0 }])
+  })
+
   it('reuses a lane freed by an ended branch', () => {
     //  z        parents [y]        lane 0
     //  y        parents [x]        lane 0
