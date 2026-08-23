@@ -17,9 +17,12 @@ export class GitError extends Error {
  * failures, and an exported one in `diff.ts` that did not — which is why
  * `verification/risk.ts` imported from the diff module purely to borrow it.
  *
- * `globalFlags` are git's own top-level flags — the ones that only parse
- * correctly *before* `-C` (`--no-optional-locks` among them). They cannot be
- * smuggled into `args`, which always lands after `-C <cwd>`.
+ * `globalFlags` are git's own top-level flags — the ones that must appear
+ * *before the subcommand* (`--no-optional-locks` among them). They cannot be
+ * smuggled into `args`, which always lands after the subcommand. Their
+ * position relative to `-C` is not what matters (`git -C /tmp
+ * --no-optional-locks version` parses fine); putting them first is simply the
+ * one arrangement that is always correct.
  */
 export async function git(
   cwd: string,

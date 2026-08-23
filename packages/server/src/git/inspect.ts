@@ -170,8 +170,9 @@ export async function readLog(
 
 export async function readStatus(worktreePath: string): Promise<StatusCounts> {
   // `-z` matters here specifically: a path can legally contain a newline.
-  // `--no-optional-locks` (a top-level flag, so it must precede `-C` — see
-  // `gitChecked`'s `globalFlags` parameter) stops git's own refresh-and-write
+  // `--no-optional-locks` (a top-level flag, so it must precede the
+  // subcommand — see `gitChecked`'s `globalFlags` parameter) stops the
+  // refresh-and-write
   // of `.git/index` as a read-time optimisation: this route is read-only,
   // and that write is a repository-file mutation this pass may not make.
   const out = await gitChecked(
