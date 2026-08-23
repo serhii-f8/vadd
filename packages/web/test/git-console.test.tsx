@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ProjectsProvider } from '../src/app/ProjectsContext.js'
 import { GitConsole } from '../src/routes/GitConsole.js'
 import { mockFetch } from './setup.js'
@@ -239,6 +239,112 @@ describe('GitConsole', () => {
     expect(calls.some((c) => c.url.includes(`before=${'e'.repeat(40)}`))).toBe(true)
     // olderLog's own hasMore is false — the control must not survive past it.
     expect(screen.queryByRole('button', { name: /load 50 more/i })).toBeNull()
+  })
+
+  it('degrades the History region on a bad ref without losing the topology', async () => {
+    // A stale or wrong `?ref=` — a bookmark, or a branch strip link into the
+    // wrong project (Item 1) — must not take the whole page down with it.
+    // `readLog`'s own guard produces a 400 with this exact message.
+    mockFetch({
+      'GET /api/projects': { body: projects },
+      'GET /api/projects/p1/git': { body: topology },
+      'GET /api/projects/p1/git/log': {
+        status: 400,
+        body: { error: 'Not a branch of this repository: nope' },
+      },
+    })
+    render(
+      <MemoryRouter initialEntries={['/git?project=p1&ref=nope']}>
+        <ProjectsProvider>
+          <Routes>
+            <Route path="/git" element={<GitConsole />} />
+          </Routes>
+        </ProjectsProvider>
+      </MemoryRouter>,
+    )
+    // Worktrees and branches still render — the topology fetch never failed.
+    expect(await screen.findByText('vadd/fdca5ca3')).toBeTruthy()
+    expect(screen.getByText('/home/u/.vadd/worktrees/p1/orphaned')).toBeTruthy()
+    // The log's own error is shown in place of the History region, not as a
+    // page-level alert that also hides the two sections above it.
+    expect(screen.getByText('Not a branch of this repository: nope')).toBeTruthy()
+    expect(screen.queryByText('feat: the map')).toBeNull()
+  })
+
+  it('shows an upstream branch alongside its name', async () => {
+    const withUpstream = {
+      ...topology,
+      branches: [
+        { ...topology.branches[0], upstream: 'origin/master' },
+        ...topology.branches.slice(1),
+      ],
+    }
+    mockFetch({
+      'GET /api/projects': { body: projects },
+      'GET /api/projects/p1/git': { body: withUpstream },
+      'GET /api/projects/p1/git/log': { body: log },
+    })
+    renderConsole()
+    expect(await screen.findByText('origin/master', { exact: false })).toBeTruthy()
+  })
+
+  it('discards a stale loadMore response that resolves after a fresh load() has already replaced the page', async () => {
+    // The exact race from Item 4: "Load 50 more" starts a fetch for an
+    // older page, held open; a `load()` (here, the "Refresh" button, the
+    // same trigger the real window-focus handler uses) fires and resolves
+    // first, replacing `commits` with a freshly fetched page 1. Only then
+    // does the held-open older-page fetch resolve. Without the generation
+    // guard, its `[...prev, ...l.commits]` append lands on top of the fresh
+    // page 1 regardless of how stale it is — this is what
+    // `screen.queryByText('init')` pins: `init` exists only in `olderLog`,
+    // the response the guard must discard.
+    let releaseOlder = (): void => {}
+    const olderGate = new Promise<void>((resolve) => {
+      releaseOlder = resolve
+    })
+    const calls: Array<{ url: string }> = []
+    vi.stubGlobal('fetch', async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      calls.push({ url })
+      const pathname = new URL(url, 'http://localhost').pathname
+      const respond = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      if (pathname === '/api/projects') return respond(projects)
+      if (pathname === '/api/projects/p1/git') return respond(topology)
+      if (pathname === '/api/projects/p1/git/log') {
+        if (url.includes('before=')) {
+          await olderGate
+          return respond(olderLog)
+        }
+        return respond(pagedLog)
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    renderConsole()
+    await screen.findByText('second commit')
+
+    await userEvent.click(screen.getByRole('button', { name: /load 50 more/i }))
+    // loadMore's fetch is now in flight, gated on `olderGate`.
+    await waitFor(() => expect(calls.some((c) => c.url.includes('before='))).toBe(true))
+
+    await userEvent.click(screen.getByRole('button', { name: /refresh/i }))
+    // load()'s own log fetch (no `before=`) resolves immediately, so the
+    // page is back to a fresh copy of `pagedLog` before the stale response
+    // is released below.
+    await waitFor(() => expect(screen.getAllByText('second commit')).toHaveLength(1))
+
+    releaseOlder()
+    // Give the (would-be) stale append a real chance to land before asserting
+    // it did not.
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(screen.queryByText('init')).toBeNull()
+    expect(screen.getAllByText('second commit')).toHaveLength(1)
   })
 
   it('guards loadMore against a double click racing the same page', async () => {

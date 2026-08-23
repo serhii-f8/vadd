@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { createDb } from '../src/db/client.js'
 import { EventBus } from '../src/events/event-bus.js'
@@ -106,11 +107,20 @@ test('the status route refuses a worktree this project does not have', async () 
 
 test('the log route refuses a ref that is not a branch of this repo', async () => {
   const { app, projectId } = await withProject()
+  // `--output=/tmp/pwned` is a genuine injection probe, not just an arbitrary
+  // bad string: it is a *valid* git option and would exit 0 if this ever
+  // reached a real git argv unguarded. A nonexistent branch name would also
+  // 400, but only because `readLog`'s own reachability check throws a
+  // `GitError` on a different code path — a status-code-only assertion is
+  // satisfied either way and does not prove this route's own branch-list
+  // guard exists at all.
   const res = await app.inject({
     method: 'GET',
     url: `/api/projects/${projectId}/git/log?ref=${encodeURIComponent('--output=/tmp/pwned')}`,
   })
   expect(res.statusCode).toBe(400)
+  expect(res.json().error).toContain('Not a branch')
+  expect(existsSync('/tmp/pwned')).toBe(false)
 })
 
 test('the log route refuses a before cursor that is not a sha', async () => {

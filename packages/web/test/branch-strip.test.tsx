@@ -7,21 +7,25 @@ describe('BranchStrip', () => {
   it('shows the branch and worktree the objective is working in', () => {
     render(
       <MemoryRouter>
-        <BranchStrip branchName="vadd/fdca5ca3" worktreePath="/home/u/.vadd/worktrees/p1/fdca" />
+        <BranchStrip
+          projectId="p1"
+          branchName="vadd/fdca5ca3"
+          worktreePath="/home/u/.vadd/worktrees/p1/fdca"
+        />
       </MemoryRouter>,
     )
     expect(screen.getByText('vadd/fdca5ca3')).toBeTruthy()
     expect(screen.getByText('/home/u/.vadd/worktrees/p1/fdca')).toBeTruthy()
   })
 
-  it('links through to the console for that branch', () => {
+  it("links through to the console for that branch, scoped to the objective's project", () => {
     render(
       <MemoryRouter>
-        <BranchStrip branchName="vadd/fdca5ca3" worktreePath="/tmp/wt" />
+        <BranchStrip projectId="p1" branchName="vadd/fdca5ca3" worktreePath="/tmp/wt" />
       </MemoryRouter>,
     )
     expect(screen.getByRole('link', { name: /vadd\/fdca5ca3/ }).getAttribute('href')).toBe(
-      '/git?ref=vadd%2Ffdca5ca3',
+      '/git?project=p1&ref=vadd%2Ffdca5ca3',
     )
   })
 
@@ -36,7 +40,7 @@ describe('BranchStrip', () => {
     // element" — only the real `return null` guard produces the former.
     const { container } = render(
       <MemoryRouter>
-        <BranchStrip branchName={null} worktreePath={null} />
+        <BranchStrip projectId="p1" branchName={null} worktreePath={null} />
       </MemoryRouter>,
     )
     expect(container.textContent).toBe('')

@@ -44,7 +44,10 @@ export function ownerOfBranch(name: string, objectives: OwnedObjective[]): Owner
   return VADD_BRANCH.test(name) ? { kind: 'orphan' } : { kind: 'user' }
 }
 
-/** True when `path` is `root` itself or lives beneath it. */
+/**
+ * True when `path` lives strictly beneath `root`. `path === root` does not
+ * count — the main checkout must not be classed as an orphan of itself.
+ */
 function isUnder(path: string, root: string): boolean {
   const rel = relative(resolve(root), resolve(path))
   // A sibling like `<root>-backup` yields a relative path starting with '..',

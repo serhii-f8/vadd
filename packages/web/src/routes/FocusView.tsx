@@ -152,6 +152,7 @@ export function FocusView() {
             <span className="font-mono text-muted-foreground">{state}</span>
           </Badge>
           <BranchStrip
+            projectId={aggregate.objective.projectId}
             branchName={aggregate.objective.branchName}
             worktreePath={aggregate.objective.worktreePath}
           />

@@ -8,9 +8,11 @@ import { Link } from 'react-router-dom'
  * exists is worse than no strip at all.
  */
 export function BranchStrip({
+  projectId,
   branchName,
   worktreePath,
 }: {
+  projectId: string
   branchName: string | null
   worktreePath: string | null
 }) {
@@ -18,7 +20,10 @@ export function BranchStrip({
   return (
     <p className="flex flex-wrap items-baseline gap-x-3 text-xs text-muted-foreground">
       {branchName !== null && (
-        <Link to={`/git?ref=${encodeURIComponent(branchName)}`} className="underline">
+        <Link
+          to={`/git?project=${encodeURIComponent(projectId)}&ref=${encodeURIComponent(branchName)}`}
+          className="underline"
+        >
           {branchName}
         </Link>
       )}

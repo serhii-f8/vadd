@@ -397,6 +397,23 @@ describe('FocusView primary element by state', () => {
   })
 })
 
+describe('FocusView: the branch strip links through to the scoped console', () => {
+  // The fourth test-in-this-plan that could not fail: nothing outside
+  // branch-strip.test.tsx referenced `BranchStrip` before this, so deleting
+  // the `<BranchStrip>` JSX from FocusView broke zero tests. This asserts
+  // the seam directly — both the objective's project and its branch must
+  // reach the href, or a second-project install's Focus View links to a
+  // `/git` scoped to the wrong project (see Item 1 of the review).
+  it('renders a link whose href carries both the project and the branch', async () => {
+    mockFetch({ 'GET /api/objectives/o1': { body: aggregate({ state: 'executing' }) } })
+    renderFocus()
+    await screen.findByText(/executing/)
+    expect(screen.getByRole('link', { name: /vadd\/abc12345/ }).getAttribute('href')).toBe(
+      '/git?project=p1&ref=vadd%2Fabc12345',
+    )
+  })
+})
+
 describe('FocusView: no header actions while setup runs', () => {
   it('offers neither Pause nor Abandon in creating', async () => {
     mockFetch({ 'GET /api/objectives/o1': { body: aggregate({ state: 'creating' }) } })

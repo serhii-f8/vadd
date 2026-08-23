@@ -16,7 +16,18 @@ export function GitConsole() {
   const [topology, setTopology] = useState<GitTopology | null>(null)
   const [commits, setCommits] = useState<GitCommit[]>([])
   const [hasMore, setHasMore] = useState(false)
+  /** Page-level: the topology fetch failed, so there is nothing to render. */
   const [error, setError] = useState<string | null>(null)
+  /**
+   * History-region-only: the topology loaded fine (worktrees and branches
+   * are real and worth showing) but the log fetch — the one most likely to
+   * fail, since a stale or wrong `?ref=` from a bookmark or another
+   * project's branch strip lands here — did not. Kept separate from `error`
+   * so a bad `ref` degrades the History section instead of taking down the
+   * whole page (mirrors `ProjectsContext`'s "a stale bookmark should
+   * degrade, not break").
+   */
+  const [logError, setLogError] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   /**
    * `setLoadingMore` does not resolve synchronously, so two clicks landing
@@ -27,26 +38,47 @@ export function GitConsole() {
    * two clicks land.
    */
   const loadingMoreRef = useRef(false)
+  /**
+   * Discards a stale response rather than letting it land after a newer
+   * fetch already replaced state. `load()` (fired by mount, the "Refresh"
+   * button, or the window-focus handler) and `loadMore()` both read the
+   * generation they started with and re-check it after every `await`; a
+   * `loadMore` in flight when a `load()` starts is the exact race that used
+   * to append a stale older page onto a freshly reloaded first page.
+   */
+  const generationRef = useRef(0)
 
   const load = useCallback(async () => {
     if (selectedId === null) return
+    const gen = ++generationRef.current
     // Cleared before the fetch: a failure must not leave the previous
     // project's topology on screen under the new project's name — the same
     // stale-data bug the daily summary already had to fix once.
     setError(null)
+    setLogError(null)
+    let t: GitTopology
     try {
-      const [t, l] = await Promise.all([
-        api.getGitTopology(selectedId),
-        api.getGitLog(selectedId, { ref }),
-      ])
-      setTopology(t)
-      setCommits(l.commits)
-      setHasMore(l.hasMore)
+      t = await api.getGitTopology(selectedId)
     } catch (e) {
+      if (gen !== generationRef.current) return
       setTopology(null)
       setCommits([])
       setHasMore(false)
       setError((e as Error).message)
+      return
+    }
+    if (gen !== generationRef.current) return
+    setTopology(t)
+    try {
+      const l = await api.getGitLog(selectedId, { ref })
+      if (gen !== generationRef.current) return
+      setCommits(l.commits)
+      setHasMore(l.hasMore)
+    } catch (e) {
+      if (gen !== generationRef.current) return
+      setCommits([])
+      setHasMore(false)
+      setLogError((e as Error).message)
     }
   }, [selectedId, ref])
 
@@ -63,12 +95,15 @@ export function GitConsole() {
     if (last === undefined) return
     loadingMoreRef.current = true
     setLoadingMore(true)
+    const gen = ++generationRef.current
     try {
       const l = await api.getGitLog(selectedId, { ref, before: last.sha })
+      if (gen !== generationRef.current) return
       setCommits((prev) => [...prev, ...l.commits])
       setHasMore(l.hasMore)
     } catch (e) {
-      setError((e as Error).message)
+      if (gen !== generationRef.current) return
+      setLogError((e as Error).message)
     } finally {
       loadingMoreRef.current = false
       setLoadingMore(false)
@@ -130,6 +165,9 @@ export function GitConsole() {
               {topology.branches.map((b) => (
                 <li key={b.name} className="flex items-baseline gap-2 text-sm">
                   <span className="min-w-0 flex-1 truncate">{b.name}</span>
+                  {b.upstream !== null && (
+                    <span className="shrink-0 text-xs text-muted-foreground">→ {b.upstream}</span>
+                  )}
                   {b.isCurrent && <span className="shrink-0 text-xs">current</span>}
                   <OwnerBadge owner={b.owner} />
                 </li>
@@ -139,17 +177,25 @@ export function GitConsole() {
 
           <section>
             <h2 className="mb-2 text-lg font-medium">History</h2>
-            <CommitLog commits={commits} />
-            {hasMore && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2"
-                disabled={loadingMore}
-                onClick={() => void loadMore()}
-              >
-                Load 50 more
-              </Button>
+            {logError !== null ? (
+              <Alert variant="destructive">
+                <AlertDescription>{logError}</AlertDescription>
+              </Alert>
+            ) : (
+              <>
+                <CommitLog commits={commits} />
+                {hasMore && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    disabled={loadingMore}
+                    onClick={() => void loadMore()}
+                  >
+                    Load 50 more
+                  </Button>
+                )}
+              </>
             )}
           </section>
         </>

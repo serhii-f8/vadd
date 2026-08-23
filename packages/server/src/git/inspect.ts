@@ -170,7 +170,15 @@ export async function readLog(
 
 export async function readStatus(worktreePath: string): Promise<StatusCounts> {
   // `-z` matters here specifically: a path can legally contain a newline.
-  const out = await gitChecked(worktreePath, ['status', '--porcelain=v1', '-z'])
+  // `--no-optional-locks` (a top-level flag, so it must precede `-C` — see
+  // `gitChecked`'s `globalFlags` parameter) stops git's own refresh-and-write
+  // of `.git/index` as a read-time optimisation: this route is read-only,
+  // and that write is a repository-file mutation this pass may not make.
+  const out = await gitChecked(
+    worktreePath,
+    ['status', '--porcelain=v1', '-z'],
+    ['--no-optional-locks'],
+  )
   const counts = { staged: 0, unstaged: 0, untracked: 0 }
   // Porcelain v1 -z records are NUL-terminated; a rename record is followed by
   // a second NUL-terminated path, which `skipNext` consumes.
