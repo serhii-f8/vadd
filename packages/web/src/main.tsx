@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import './index.css'
 import { AppShell } from './app/AppShell.js'
 import { ThemeProvider } from './app/ThemeProvider.js'
+import { QuestMap } from './map/QuestMap.js'
 import { DebugPage } from './routes/DebugPage.js'
 import { FocusView } from './routes/FocusView.js'
 import { ObjectiveList } from './routes/ObjectiveList.js'
@@ -20,6 +21,7 @@ createRoot(root).render(
             <Route path="/" element={<ObjectiveList />} />
             <Route path="/o/:id" element={<FocusView />} />
             <Route path="/today" element={<Today />} />
+            <Route path="/map" element={<QuestMap />} />
           </Route>
           {/* M0's page, deliberately outside the shell: it is the raw escape
               hatch (M1 design §8.2) and must keep working when the shell is

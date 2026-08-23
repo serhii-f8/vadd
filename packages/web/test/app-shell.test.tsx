@@ -56,11 +56,12 @@ describe('AppShell', () => {
     }))
   })
 
-  it('renders navigation to both destinations', async () => {
+  it('renders navigation to all destinations', async () => {
     mockFetch({ 'GET /api/projects': { body: projects } })
     renderShell()
     expect(await screen.findByRole('link', { name: 'Objectives' })).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Today' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Map' })).toBeTruthy()
   })
 
   it('marks the active route', async () => {

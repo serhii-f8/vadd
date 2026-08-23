@@ -19,6 +19,7 @@ import { ThemeToggle } from './ThemeToggle.js'
 const NAV = [
   { to: '/', label: 'Objectives' },
   { to: '/today', label: 'Today' },
+  { to: '/map', label: 'Map' },
 ] as const
 
 function Sidebar() {

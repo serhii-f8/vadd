@@ -69,6 +69,16 @@ export function mockFetch(routes: Record<string, Route | (() => Route)>): {
 beforeEach(() => {
   FakeEventSource.instances = []
   vi.stubGlobal('EventSource', FakeEventSource)
+  // jsdom has no `ResizeObserver`, and `@xyflow/react` calls it on mount —
+  // same class of gap as `EventSource` above, same class of fix.
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  )
 })
 
 afterEach(() => {

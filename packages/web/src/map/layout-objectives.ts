@@ -26,8 +26,12 @@ export function layoutObjectives(objectives: ObjectiveListRow[]): MappedNode[] {
 
   const result: MappedNode[] = []
   for (const tone of TONE_ORDER) {
-    const rows = [...(byTone.get(tone) ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    rows.forEach((objective, row) => result.push({ id: objective.id, column: tone, row, objective }))
+    const rows = [...(byTone.get(tone) ?? [])].sort((a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt),
+    )
+    rows.forEach((objective, row) => {
+      result.push({ id: objective.id, column: tone, row, objective })
+    })
   }
   return result
 }
