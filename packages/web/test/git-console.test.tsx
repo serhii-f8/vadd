@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
@@ -239,5 +239,32 @@ describe('GitConsole', () => {
     expect(calls.some((c) => c.url.includes(`before=${'e'.repeat(40)}`))).toBe(true)
     // olderLog's own hasMore is false — the control must not survive past it.
     expect(screen.queryByRole('button', { name: /load 50 more/i })).toBeNull()
+  })
+
+  it('guards loadMore against a double click racing the same page', async () => {
+    const { calls } = mockFetch({
+      'GET /api/projects': { body: projects },
+      'GET /api/projects/p1/git': { body: topology },
+      'GET /api/projects/p1/git/log?limit=50': { body: pagedLog },
+      [`GET /api/projects/p1/git/log?before=${'e'.repeat(40)}&limit=50`]: { body: olderLog },
+    })
+    renderConsole()
+    await screen.findByText('second commit')
+
+    const loadMoreBtn = screen.getByRole('button', { name: /load 50 more/i })
+    // Two clicks fired back to back, synchronously, before the first fetch
+    // settles — `fireEvent` (unlike `userEvent`) dispatches synchronously
+    // with no delay between them, which is what actually reproduces the
+    // race: both onClick handlers run before either fetch has resolved.
+    fireEvent.click(loadMoreBtn)
+    fireEvent.click(loadMoreBtn)
+
+    // Tolerant of a duplicate render while waiting for the fetch(es) to
+    // settle — the assertions below are what actually pin the behaviour.
+    await waitFor(() => expect(screen.queryAllByText('init').length).toBeGreaterThan(0))
+
+    const beforeCalls = calls.filter((c) => c.url.includes(`before=${'e'.repeat(40)}`))
+    expect(beforeCalls).toHaveLength(1)
+    expect(screen.getAllByText('init')).toHaveLength(1)
   })
 })

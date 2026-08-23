@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,16 @@ export function GitConsole() {
   const [commits, setCommits] = useState<GitCommit[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
+  /**
+   * `setLoadingMore` does not resolve synchronously, so two clicks landing
+   * before the first render flush both see `loadingMore === false` and both
+   * fire — a real double-click race, not a hypothetical one. The ref is
+   * checked and flipped synchronously, before the first `await`, so the
+   * second click's call returns immediately no matter how close together the
+   * two clicks land.
+   */
+  const loadingMoreRef = useRef(false)
 
   const load = useCallback(async () => {
     if (selectedId === null) return
@@ -48,14 +58,20 @@ export function GitConsole() {
    */
   const loadMore = useCallback(async () => {
     if (selectedId === null) return
+    if (loadingMoreRef.current) return
     const last = commits[commits.length - 1]
     if (last === undefined) return
+    loadingMoreRef.current = true
+    setLoadingMore(true)
     try {
       const l = await api.getGitLog(selectedId, { ref, before: last.sha })
       setCommits((prev) => [...prev, ...l.commits])
       setHasMore(l.hasMore)
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      loadingMoreRef.current = false
+      setLoadingMore(false)
     }
   }, [selectedId, ref, commits])
 
@@ -125,7 +141,13 @@ export function GitConsole() {
             <h2 className="mb-2 text-lg font-medium">History</h2>
             <CommitLog commits={commits} />
             {hasMore && (
-              <Button variant="outline" size="sm" className="mt-2" onClick={() => void loadMore()}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+              >
                 Load 50 more
               </Button>
             )}
