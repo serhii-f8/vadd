@@ -1,6 +1,7 @@
 import type { RiskPolicyConfig } from '@vadd/core'
 import { classifyTaskRisk } from '@vadd/core'
-import { git, objectiveDiff } from '../git/diff.js'
+import { objectiveDiff } from '../git/diff.js'
+import { git } from '../git/run.js'
 
 const JS_TS_EXTENSION = /\.(ts|tsx|js|jsx)$/
 

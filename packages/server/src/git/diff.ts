@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { execa } from 'execa'
+import { git } from './run.js'
 
 export type DiffFile = {
   path: string
@@ -15,11 +16,6 @@ export type DiffFile = {
 export type DiffSummary = {
   files: DiffFile[]
   totals: { files: number; added: number; removed: number }
-}
-
-export async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await execa('git', ['-C', cwd, ...args])
-  return stdout
 }
 
 /**

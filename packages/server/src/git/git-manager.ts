@@ -2,26 +2,9 @@ import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { execa } from 'execa'
+import { GitError, gitChecked as git } from './run.js'
 
-export class GitError extends Error {
-  constructor(
-    message: string,
-    readonly code: 'ENOENT' | 'ENOTREPO' | 'EGIT',
-  ) {
-    super(message)
-    this.name = 'GitError'
-  }
-}
-
-async function git(repoPath: string, args: string[]): Promise<string> {
-  try {
-    const { stdout } = await execa('git', ['-C', repoPath, ...args])
-    return stdout
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err)
-    throw new GitError(`git ${args.join(' ')} failed: ${detail}`, 'EGIT')
-  }
-}
+export { GitError } from './run.js'
 
 /**
  * Returns the repository toplevel. The two failure modes get distinct codes
