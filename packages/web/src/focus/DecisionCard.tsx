@@ -1,4 +1,4 @@
-import { scoreOption } from '@vadd/core'
+import { scoreOption } from '@vadd/core/scoring/option-priority.js'
 import { useState } from 'react'
 import type { Decision } from '../api.js'
 import { Badge } from '../components/ui/badge.js'

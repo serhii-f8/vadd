@@ -5,7 +5,8 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./scoring/option-priority.js": "./src/scoring/option-priority.ts"
   },
   "dependencies": {
     "xstate": "^5.20.1",
