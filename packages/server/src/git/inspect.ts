@@ -1,4 +1,4 @@
-import { gitChecked } from './run.js'
+import { GitError, gitChecked } from './run.js'
 
 export type BranchRow = { name: string; sha: string; isCurrent: boolean; upstream: string | null }
 
@@ -81,11 +81,36 @@ export async function listWorktreesDetailed(repoPath: string): Promise<WorktreeR
   return rows
 }
 
+/**
+ * Bound on how far back `before` pagination will search for the cursor's
+ * ordinal position within `tip`'s history. A UI paging 50 commits at a time
+ * never realistically approaches this, so exceeding it means the cursor is
+ * stale, from a different `ref`, or otherwise not `tip`'s own history — a
+ * genuine caller bug, which should fail loudly rather than silently return
+ * page 1 again.
+ */
+const CURSOR_SEARCH_LIMIT = 10_000
+
 export async function readLog(
   repoPath: string,
   opts: { ref?: string; limit: number; before?: string },
 ): Promise<CommitRow[]> {
   const tip = opts.ref ?? 'HEAD'
+
+  // A freshly `git init`ed repo with no commits has no HEAD target at all
+  // (an "unborn" branch) — `validateRepo` only checks `rev-parse
+  // --show-toplevel`, so this is reachable in production. `git log` on it
+  // exits 128, which would otherwise surface as a throw here while
+  // `listBranches`/`listWorktreesDetailed` both degrade gracefully on the
+  // same input. Detect the no-commits case explicitly up front rather than
+  // blanket-catching the log call below, so a genuine git failure there
+  // still throws.
+  try {
+    await gitChecked(repoPath, ['rev-parse', '--verify', 'HEAD'])
+  } catch {
+    return []
+  }
+
   const args = [
     'log',
     `--format=%H${US}%P${US}%s${US}%an${US}%aI${US}%D${RS}`,
@@ -98,13 +123,25 @@ export async function readLog(
   // is silently dropped, since it is not an ancestor of the cursor. `<sha>^`
   // has the same problem plus failing outright on a root commit. The
   // correct continuation keeps walking `tip`, skipping past the cursor's
-  // ordinal position in *that* walk — found with a cheap shas-only pass.
+  // ordinal position in *that* walk — found with a bounded, shas-only pass.
+  //
+  // Accepted risk, not fixed: this is two sequential git calls, so a commit
+  // landing on `tip` between the lookup below and the paged log above could
+  // shift the index by one. Low risk for single-user localhost use.
   if (opts.before !== undefined) {
-    const shas = (await gitChecked(repoPath, ['log', '--format=%H', tip]))
+    const shas = (
+      await gitChecked(repoPath, ['log', '--format=%H', `--max-count=${CURSOR_SEARCH_LIMIT}`, tip])
+    )
       .split('\n')
       .filter((l) => l !== '')
     const idx = shas.indexOf(opts.before)
-    args.push(`--skip=${idx === -1 ? 0 : idx + 1}`, tip)
+    if (idx === -1) {
+      throw new GitError(
+        `readLog: cursor ${opts.before} was not found in the first ${CURSOR_SEARCH_LIMIT} commits of ${tip}`,
+        'EGIT',
+      )
+    }
+    args.push(`--skip=${idx + 1}`, tip)
   } else {
     args.push(tip)
   }

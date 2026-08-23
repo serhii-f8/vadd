@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { listBranches, listWorktreesDetailed, readLog, readStatus } from '../src/git/inspect.js'
+import { GitError } from '../src/git/run.js'
 import { makeTempRepo } from './fixtures/temp-repo.js'
 
 /**
@@ -26,6 +27,26 @@ function repoWithMerge(): { repo: string; main: string } {
   g('add', '-A')
   g('commit', '-qm', 'on main')
   g('merge', '-q', '--no-ff', 'feat', '-m', 'merge feat')
+  return { repo, main }
+}
+
+/**
+ * A repo with two branches that never merge: `main` stays at the root
+ * commit, `other` gets one more commit of its own. `other`'s tip is
+ * genuinely unreachable from `main` — no shared merge brings it back in,
+ * unlike `repoWithMerge`'s `feat`.
+ */
+function repoWithDivergentBranches(): { repo: string; main: string } {
+  const repo = makeTempRepo()
+  const g = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { stdio: 'pipe' })
+  const main = execFileSync('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD'], {
+    encoding: 'utf8',
+  }).trim()
+  g('checkout', '-qb', 'other')
+  writeFileSync(join(repo, 'x.txt'), 'x\n')
+  g('add', '-A')
+  g('commit', '-qm', 'on other')
+  g('checkout', '-q', main)
   return { repo, main }
 }
 
@@ -76,6 +97,48 @@ test('readLog pages with before, excluding the cursor commit itself', async () =
 test('readLog honours limit', async () => {
   const { repo } = repoWithMerge()
   expect(await readLog(repo, { limit: 2 })).toHaveLength(2)
+})
+
+test('readLog filters to a given ref, excluding commits unique to other branches', async () => {
+  const { repo } = repoWithMerge()
+  const onFeat = await readLog(repo, { ref: 'feat', limit: 50 })
+  // `feat`'s own tip never gained "on main" or "merge feat" — those exist
+  // only on the main branch's history, which this ref must not pull in.
+  expect(onFeat.map((c) => c.subject)).toEqual(['on feat', 'init'])
+})
+
+test('readLog throws when before names a commit not reachable from ref', async () => {
+  const { repo, main } = repoWithDivergentBranches()
+  const otherLog = await readLog(repo, { ref: 'other', limit: 50 })
+  const foreignCursor = otherLog[0]?.sha
+  if (!foreignCursor) throw new Error('fixture needs a commit on other')
+
+  // A stale cursor, or one from a different ref, must not silently fall
+  // back to page 1 — that turns a genuine caller bug into a UI glitch.
+  try {
+    await readLog(repo, { ref: main, limit: 50, before: foreignCursor })
+    expect.unreachable('expected readLog to throw for an unreachable cursor')
+  } catch (err) {
+    expect(err).toBeInstanceOf(GitError)
+    expect((err as GitError).code).toBe('EGIT')
+    expect((err as Error).message).toContain(foreignCursor)
+  }
+})
+
+test('readLog still pages correctly when the cursor is reachable', async () => {
+  const { repo } = repoWithMerge()
+  const all = await readLog(repo, { ref: 'feat', limit: 50 })
+  const cursor = all[0]
+  if (!cursor) throw new Error('fixture needs at least one commit on feat')
+  const page = await readLog(repo, { ref: 'feat', limit: 50, before: cursor.sha })
+  expect(page.map((c) => c.sha)).not.toContain(cursor.sha)
+  expect(page[0]?.sha).toBe(all[1]?.sha)
+})
+
+test('readLog returns an empty array for a repository with no commits', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'vadd-repo-empty-'))
+  execFileSync('git', ['-C', repo, 'init', '-q'], { stdio: 'pipe' })
+  expect(await readLog(repo, { limit: 50 })).toEqual([])
 })
 
 test('listWorktreesDetailed reports the main checkout and a linked worktree', async () => {
