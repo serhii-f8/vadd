@@ -15,6 +15,7 @@ export function GitConsole() {
 
   const [topology, setTopology] = useState<GitTopology | null>(null)
   const [commits, setCommits] = useState<GitCommit[]>([])
+  const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -30,12 +31,33 @@ export function GitConsole() {
       ])
       setTopology(t)
       setCommits(l.commits)
+      setHasMore(l.hasMore)
     } catch (e) {
       setTopology(null)
       setCommits([])
+      setHasMore(false)
       setError((e as Error).message)
     }
   }, [selectedId, ref])
+
+  /**
+   * Fetches the next page using the last currently-loaded commit's sha as
+   * the cursor, and appends rather than replaces. A failed "load more"
+   * leaves whatever is already on screen alone — it does not reset
+   * `topology` or `commits` the way a failed `load()` does.
+   */
+  const loadMore = useCallback(async () => {
+    if (selectedId === null) return
+    const last = commits[commits.length - 1]
+    if (last === undefined) return
+    try {
+      const l = await api.getGitLog(selectedId, { ref, before: last.sha })
+      setCommits((prev) => [...prev, ...l.commits])
+      setHasMore(l.hasMore)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }, [selectedId, ref, commits])
 
   useEffect(() => {
     void load()
@@ -102,6 +124,11 @@ export function GitConsole() {
           <section>
             <h2 className="mb-2 text-lg font-medium">History</h2>
             <CommitLog commits={commits} />
+            {hasMore && (
+              <Button variant="outline" size="sm" className="mt-2" onClick={() => void loadMore()}>
+                Load 50 more
+              </Button>
+            )}
           </section>
         </>
       )}

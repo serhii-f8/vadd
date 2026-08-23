@@ -83,6 +83,42 @@ const log = {
   hasMore: false,
 }
 
+const pagedLog = {
+  commits: [
+    {
+      sha: 'a'.repeat(40),
+      parents: ['e'.repeat(40)],
+      subject: 'feat: the map',
+      author: 'S',
+      at: '2026-08-23T10:00:00Z',
+      refs: ['master'],
+    },
+    {
+      sha: 'e'.repeat(40),
+      parents: ['d'.repeat(40)],
+      subject: 'second commit',
+      author: 'S',
+      at: '2026-08-22T12:00:00Z',
+      refs: [],
+    },
+  ],
+  hasMore: true,
+}
+
+const olderLog = {
+  commits: [
+    {
+      sha: 'd'.repeat(40),
+      parents: [],
+      subject: 'init',
+      author: 'S',
+      at: '2026-08-22T10:00:00Z',
+      refs: [],
+    },
+  ],
+  hasMore: false,
+}
+
 function renderConsole() {
   return render(
     <MemoryRouter initialEntries={['/git?project=p1']}>
@@ -168,5 +204,40 @@ describe('GitConsole', () => {
     await userEvent.click(screen.getByRole('button', { name: /refresh/i }))
 
     await waitFor(() => expect(calls.filter((c) => c.url.endsWith('/git')).length).toBe(before + 1))
+  })
+
+  it('has no load-more control when there is nothing older', async () => {
+    mockFetch({
+      'GET /api/projects': { body: projects },
+      'GET /api/projects/p1/git': { body: topology },
+      'GET /api/projects/p1/git/log': { body: log },
+    })
+    renderConsole()
+    await screen.findByText('feat: the map')
+    expect(screen.queryByRole('button', { name: /load 50 more/i })).toBeNull()
+  })
+
+  it('shows a load-more control when there is older history, fetches the next page by the last loaded sha, and appends rather than replaces', async () => {
+    const { calls } = mockFetch({
+      'GET /api/projects': { body: projects },
+      'GET /api/projects/p1/git': { body: topology },
+      'GET /api/projects/p1/git/log?limit=50': { body: pagedLog },
+      [`GET /api/projects/p1/git/log?before=${'e'.repeat(40)}&limit=50`]: { body: olderLog },
+    })
+    renderConsole()
+    await screen.findByText('second commit')
+
+    const loadMore = screen.getByRole('button', { name: /load 50 more/i })
+    await userEvent.click(loadMore)
+
+    // Appended, not replaced: the first page's commits are still on screen
+    // alongside the newly fetched older page.
+    await screen.findByText('init')
+    expect(screen.getByText('feat: the map')).toBeTruthy()
+    expect(screen.getByText('second commit')).toBeTruthy()
+
+    expect(calls.some((c) => c.url.includes(`before=${'e'.repeat(40)}`))).toBe(true)
+    // olderLog's own hasMore is false — the control must not survive past it.
+    expect(screen.queryByRole('button', { name: /load 50 more/i })).toBeNull()
   })
 })

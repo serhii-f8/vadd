@@ -1,5 +1,5 @@
 import type { GitCommit } from '../api.js'
-import { laneCount, layoutCommits } from './layout-commits.js'
+import { laneCount, layoutCommits, type RailSegment } from './layout-commits.js'
 
 const LANE_WIDTH = 12
 
@@ -7,9 +7,30 @@ const LANE_WIDTH = 12
  * The rail gutter is drawn as monospace text rather than SVG: it is a fixed
  * grid of columns, it inherits the row height for free, and it stays aligned
  * when the browser reflows the subject beside it.
+ *
+ * Reads the row's real `rails`, not just its own `lane`: a segment where
+ * `from === to` is a straight pass-through (`│`); a segment where
+ * `from !== to` is a diagonal — a branch joining or leaving — rendered as
+ * `×`, visually distinct from a straight rail. The commit's own lane always
+ * gets its dot, even on a row where that lane is also the source of an
+ * outgoing diagonal (a divergence) or the target of one (a convergence).
+ * A lane with no segment touching it at all is blank, not a decorative bar.
  */
-function railText(lane: number, lanes: number): string {
-  const cells = Array.from({ length: lanes }, (_, i) => (i === lane ? '●' : '│'))
+function railText(lane: number, lanes: number, rails: RailSegment[]): string {
+  const cells: string[] = []
+  for (let i = 0; i < lanes; i++) {
+    if (i === lane) {
+      cells.push('●')
+      continue
+    }
+    const diagonal = rails.some((r) => r.from !== r.to && (r.from === i || r.to === i))
+    if (diagonal) {
+      cells.push('×')
+      continue
+    }
+    const straight = rails.some((r) => r.from === r.to && r.from === i)
+    cells.push(straight ? '│' : ' ')
+  }
   return cells.join('')
 }
 
@@ -19,14 +40,14 @@ export function CommitLog({ commits }: { commits: GitCommit[] }) {
 
   return (
     <ol className="flex flex-col" aria-label="History">
-      {laid.map(({ commit, lane }) => (
+      {laid.map(({ commit, lane, rails }) => (
         <li key={commit.sha} className="flex items-baseline gap-3 py-0.5 text-sm">
           <span
             aria-hidden
             className="shrink-0 font-mono text-xs text-muted-foreground"
             style={{ width: `${lanes * LANE_WIDTH}px` }}
           >
-            {railText(lane, lanes)}
+            {railText(lane, lanes, rails)}
           </span>
           <code className="shrink-0 text-xs text-muted-foreground">{commit.sha.slice(0, 7)}</code>
           <span className="min-w-0 flex-1 truncate">{commit.subject}</span>
