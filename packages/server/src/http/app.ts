@@ -5,6 +5,7 @@ import type { EventBus } from '../events/event-bus.js'
 import type { WorkflowRunner } from '../workflow/runner.js'
 import { registerEventRoutes } from './routes/events.js'
 import { registerEvidenceRoutes } from './routes/evidence.js'
+import { registerGitRoutes } from './routes/git.js'
 import { registerObjectiveRoutes } from './routes/objectives.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerSettingsRoutes } from './routes/settings.js'
@@ -28,6 +29,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   registerObjectiveRoutes(app, deps)
   registerEventRoutes(app, deps)
   registerEvidenceRoutes(app, deps)
+  registerGitRoutes(app, deps)
   registerSettingsRoutes(app, deps)
   return app
 }
