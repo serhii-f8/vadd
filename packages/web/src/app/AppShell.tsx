@@ -20,6 +20,7 @@ const NAV = [
   { to: '/', label: 'Objectives' },
   { to: '/today', label: 'Today' },
   { to: '/map', label: 'Map' },
+  { to: '/git', label: 'Git' },
 ] as const
 
 function Sidebar() {

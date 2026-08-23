@@ -8,6 +8,7 @@ import { type Aggregate, api } from '../api.js'
 import { EvidencePanel } from '../evidence/EvidencePanel.js'
 import { AbandonButton } from '../focus/AbandonButton.js'
 import { AutoApprovalBanner } from '../focus/AutoApprovalBanner.js'
+import { BranchStrip } from '../focus/BranchStrip.js'
 import { ClarificationPrompt } from '../focus/ClarificationPrompt.js'
 import { DecisionCard } from '../focus/DecisionCard.js'
 import { IntegrationChooser } from '../focus/IntegrationChooser.js'
@@ -150,6 +151,10 @@ export function FocusView() {
             {status.label}
             <span className="font-mono text-muted-foreground">{state}</span>
           </Badge>
+          <BranchStrip
+            branchName={aggregate.objective.branchName}
+            worktreePath={aggregate.objective.worktreePath}
+          />
         </div>
         <div className="flex items-center gap-2">
           {headerActions && (

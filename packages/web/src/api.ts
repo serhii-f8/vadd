@@ -128,6 +128,45 @@ export type TodaySummary = {
   checksPassed: number
 }
 
+export type GitOwner =
+  | { kind: 'vadd'; objectiveId: string; objectiveTitle: string; objectiveStatus: string }
+  | { kind: 'orphan' }
+  | { kind: 'user' }
+
+export type GitBranch = {
+  name: string
+  sha: string
+  isCurrent: boolean
+  upstream: string | null
+  owner: GitOwner
+}
+
+export type GitWorktree = {
+  path: string
+  branch: string | null
+  head: string
+  isMain: boolean
+  locked: boolean
+  prunable: boolean
+  owner: GitOwner
+}
+
+export type GitTopology = {
+  mainRepoPath: string
+  currentBranch: string | null
+  branches: GitBranch[]
+  worktrees: GitWorktree[]
+}
+
+export type GitCommit = {
+  sha: string
+  parents: string[]
+  subject: string
+  author: string
+  at: string
+  refs: string[]
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string }
@@ -207,4 +246,22 @@ export const api = {
 
   /** A plain URL, not a fetch: the panel renders it as a link the user can open. */
   artifactUrl: (evidenceId: string) => `/api/evidence/${evidenceId}/artifact`,
+
+  getGitTopology: (projectId: string) =>
+    fetch(`/api/projects/${projectId}/git`).then(json<GitTopology>),
+
+  getGitLog: (projectId: string, opts: { ref?: string; before?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams()
+    if (opts.ref !== undefined) q.set('ref', opts.ref)
+    if (opts.before !== undefined) q.set('before', opts.before)
+    q.set('limit', String(opts.limit ?? 50))
+    return fetch(`/api/projects/${projectId}/git/log?${q}`).then(
+      json<{ commits: GitCommit[]; hasMore: boolean }>,
+    )
+  },
+
+  getGitStatus: (projectId: string, worktree: string) =>
+    fetch(`/api/projects/${projectId}/git/status?worktree=${encodeURIComponent(worktree)}`).then(
+      json<{ staged: number; unstaged: number; untracked: number }>,
+    ),
 }
