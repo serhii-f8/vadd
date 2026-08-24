@@ -12,6 +12,17 @@ export type MutationKind = {
   rewritesHistory: boolean
   /** Produces a commit, so `policy.protectedGlobs` must be applied first. */
   createsCommit: boolean
+  /**
+   * Whether `reset --hard beforeSha` would actually undo this operation.
+   *
+   * False for anything whose effect is not local. A push changes nothing in
+   * this repository, so a record would name the current HEAD — and the
+   * console's undo control would then offer to reset the local branch, which
+   * un-pushes nothing and desynchronizes local from the remote just written
+   * to, in one click, under a label that says it is restoring something.
+   * Offering nothing is strictly better than offering that.
+   */
+  undoable: boolean
 }
 
 export type MutationTarget = {
@@ -145,8 +156,9 @@ export async function withGitMutation<T>(
     report.clearedCheckpoints.sort((a, b) => a.ord - b.ord)
   }
 
-  // 4. Undo record. Skipped when there was no HEAD to return to.
-  if (beforeSha !== null) {
+  // 4. Undo record. Skipped when there was no HEAD to return to, and when the
+  //    operation's effect is not local — see `MutationKind.undoable`.
+  if (beforeSha !== null && kind.undoable) {
     const at = new Date().toISOString()
     deps.db
       .insert(gitUndo)

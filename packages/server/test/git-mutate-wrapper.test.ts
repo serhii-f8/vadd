@@ -25,7 +25,7 @@ function target(repo: string, over: Record<string, unknown> = {}) {
   }
 }
 
-const NO_FLAGS = { rewritesHistory: false, createsCommit: false }
+const NO_FLAGS = { rewritesHistory: false, createsCommit: false, undoable: true }
 
 test('a permitted mutation runs and reports', async () => {
   const { deps, repo } = setup()
@@ -112,4 +112,38 @@ test('a successful mutation emits an event', async () => {
   bus.subscribe(null, (e) => seen.push(e.type))
   await withGitMutation(deps, target(repo), NO_FLAGS, 'Test op', async () => null)
   expect(seen).toContain('git_mutation')
+})
+
+test('an operation declared not undoable writes no undo record', async () => {
+  const { deps, db, repo } = setup()
+  const out = await withGitMutation(
+    deps,
+    target(repo),
+    { rewritesHistory: false, createsCommit: false, undoable: false },
+    'Push master to origin',
+    async () => null,
+  )
+  expect(out.ok).toBe(true)
+  // Nothing local changed, so a record would name the current HEAD — and the
+  // console's UndoBanner would then offer to `reset --hard` the local branch,
+  // which does not un-push anything and desynchronizes local from the remote
+  // that was just written to. One click, under a label saying "restore".
+  expect(db.select().from(gitUndo).all()).toHaveLength(0)
+})
+
+test('an undoable operation still records, and a later un-undoable one does not erase it', async () => {
+  const { deps, db, repo } = setup()
+  await withGitMutation(deps, target(repo), NO_FLAGS, 'Commit staged changes', async () => null)
+  await withGitMutation(
+    deps,
+    target(repo),
+    { rewritesHistory: false, createsCommit: false, undoable: false },
+    'Push master to origin',
+    async () => null,
+  )
+  const rows = db.select().from(gitUndo).all()
+  // The commit is still the thing an undo would restore. A push must not
+  // silently consume the undo step the previous local operation earned.
+  expect(rows).toHaveLength(1)
+  expect(rows[0]?.describes).toBe('Commit staged changes')
 })

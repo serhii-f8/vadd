@@ -292,10 +292,14 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
     return reply.code(200).send({ report: out.report })
   }
 
-  const PLAIN: MutationKind = { rewritesHistory: false, createsCommit: false }
-  const COMMITS: MutationKind = { rewritesHistory: false, createsCommit: true }
-  const REWRITES_AND_COMMITS: MutationKind = { rewritesHistory: true, createsCommit: true }
-  const REWRITES: MutationKind = { rewritesHistory: true, createsCommit: false }
+  const PLAIN: MutationKind = { rewritesHistory: false, createsCommit: false, undoable: true }
+  const COMMITS: MutationKind = { rewritesHistory: false, createsCommit: true, undoable: true }
+  const REWRITES_AND_COMMITS: MutationKind = {
+    rewritesHistory: true,
+    createsCommit: true,
+    undoable: true,
+  }
+  const REWRITES: MutationKind = { rewritesHistory: true, createsCommit: false, undoable: true }
 
   type PathsBody = { worktree?: unknown; paths?: unknown }
 

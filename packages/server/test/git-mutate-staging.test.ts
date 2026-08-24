@@ -23,8 +23,8 @@ function target(repo: string, protectedGlobs: string[] = []) {
   return { worktreePath: repo, owner: { kind: 'user' as const }, objective: null, protectedGlobs }
 }
 
-const STAGE = { rewritesHistory: false, createsCommit: false }
-const COMMIT = { rewritesHistory: false, createsCommit: true }
+const STAGE = { rewritesHistory: false, createsCommit: false, undoable: true }
+const COMMIT = { rewritesHistory: false, createsCommit: true, undoable: true }
 
 function statusOf(repo: string): string {
   return execFileSync('git', ['-C', repo, 'status', '--porcelain'], { encoding: 'utf8' })

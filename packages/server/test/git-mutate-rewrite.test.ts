@@ -29,7 +29,7 @@ function target(repo: string, objectiveId: string) {
   }
 }
 
-const REWRITE = { rewritesHistory: true, createsCommit: true }
+const REWRITE = { rewritesHistory: true, createsCommit: true, undoable: true }
 
 function checkpoints(db: ReturnType<typeof createDb>, objectiveId: string) {
   return db
