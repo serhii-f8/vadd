@@ -271,3 +271,35 @@ async function isAncestor(worktreePath: string, sha: string): Promise<boolean> {
     return false
   }
 }
+
+export async function createBranch(
+  ctx: MutationContext,
+  name: string,
+  from: string | null,
+): Promise<void> {
+  await gitChecked(ctx.worktreePath, from === null ? ['branch', name] : ['branch', name, from])
+}
+
+export async function deleteBranch(repoPath: string, name: string): Promise<void> {
+  // `-d`, not `-D`: refuse to delete a branch whose work is not merged.
+  // A caller who genuinely wants that can delete it from a terminal, where
+  // git's own warning is in front of them.
+  await gitChecked(repoPath, ['branch', '-d', name])
+}
+
+export async function checkoutBranch(ctx: MutationContext, branch: string): Promise<void> {
+  await gitChecked(ctx.worktreePath, ['checkout', branch])
+}
+
+export async function stashPush(ctx: MutationContext): Promise<void> {
+  await gitChecked(ctx.worktreePath, ['stash', 'push', '--include-untracked'])
+}
+
+export async function stashPop(ctx: MutationContext): Promise<void> {
+  await gitChecked(ctx.worktreePath, ['stash', 'pop'])
+}
+
+/** The undo itself. Resets to a sha recorded before an earlier mutation. */
+export async function undoTo(ctx: MutationContext, beforeSha: string): Promise<void> {
+  await gitChecked(ctx.worktreePath, ['reset', '--hard', beforeSha])
+}
