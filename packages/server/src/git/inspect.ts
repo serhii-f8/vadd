@@ -206,16 +206,27 @@ export async function readStatus(worktreePath: string): Promise<StatusCounts> {
 export type AheadBehind = { ahead: number; behind: number }
 
 /**
- * How far `branch` has diverged from its own upstream, or null when it has none.
+ * How far `branch` has diverged from its own upstream.
  *
  * Purely local: both refs are already on disk, so this makes no network call
  * and belongs here rather than in `remote.ts`. The counts are only as fresh as
  * the last fetch, which is honest — VADD never contacts a remote on its own.
+ *
+ * Returns null in two distinct cases that this deliberately does not tell
+ * apart: no upstream is configured (the common case, `rev-parse @{upstream}`
+ * fails), or the upstream is configured but the counts could not be computed
+ * (a corrupt or partially-pruned object store, `rev-list` fails). Both are
+ * "we cannot tell you", and the topology route renders nothing for either —
+ * a third state to distinguish a rare edge case from the common one would be
+ * over-engineering. What null must never mean is an unhandled rejection: the
+ * whole `Promise.all` over every branch in the topology route sits above
+ * this, so one branch's git failure must degrade to null here rather than
+ * reject and 500 the entire console — the same "degrade in place, don't
+ * blank the page" rule Pass A's review already fixed once for the log fetch.
  */
 export async function aheadBehind(repoPath: string, branch: string): Promise<AheadBehind | null> {
-  let upstream: string
   try {
-    upstream = (
+    const upstream = (
       await gitChecked(repoPath, [
         'rev-parse',
         '--abbrev-ref',
@@ -223,20 +234,19 @@ export async function aheadBehind(repoPath: string, branch: string): Promise<Ahe
         `${branch}@{upstream}`,
       ])
     ).trim()
+
+    // `--left-right --count A...B` prints "<left>\t<right>": commits reachable
+    // from A but not B, then B but not A. With A the local branch, left is
+    // ahead and right is behind.
+    const out = await gitChecked(repoPath, [
+      'rev-list',
+      '--left-right',
+      '--count',
+      `${branch}...${upstream}`,
+    ])
+    const [ahead = '0', behind = '0'] = out.trim().split(/\s+/)
+    return { ahead: Number(ahead), behind: Number(behind) }
   } catch {
-    // Exit is non-zero precisely when there is no upstream configured.
     return null
   }
-
-  // `--left-right --count A...B` prints "<left>\t<right>": commits reachable
-  // from A but not B, then B but not A. With A the local branch, left is
-  // ahead and right is behind.
-  const out = await gitChecked(repoPath, [
-    'rev-list',
-    '--left-right',
-    '--count',
-    `${branch}...${upstream}`,
-  ])
-  const [ahead = '0', behind = '0'] = out.trim().split(/\s+/)
-  return { ahead: Number(ahead), behind: Number(behind) }
 }

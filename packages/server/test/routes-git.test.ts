@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { createDb } from '../src/db/client.js'
@@ -240,4 +240,35 @@ test('the topology route reports ahead/behind for a tracked branch', async () =>
   const master = body.branches.find((b: { name: string }) => b.name === 'master')
   expect(master.ahead).toBe(1)
   expect(master.behind).toBe(0)
+})
+
+test('the topology route degrades to null ahead/behind rather than 500ing when one branch cannot be computed', async () => {
+  const { app, repo, projectId } = await withProject()
+  execFileSync('git', ['-C', repo, 'branch', 'untracked-branch'], { stdio: 'pipe' })
+  makeBareRemote(repo)
+  execFileSync('git', ['-C', repo, 'push', '-qu', 'origin', 'master'], { stdio: 'pipe' })
+
+  // Corrupt the remote-tracking ref's own object rather than remove the ref
+  // or its branch config: `rev-parse ...@{upstream}` is a pure ref-name
+  // lookup and still resolves ("origin/master") without needing the object,
+  // but `rev-list`, which must actually walk the commit, then fails — the
+  // one failure mode `aheadBehind`'s original guard (wrapping only
+  // `rev-parse`) did not cover. Deleting the ref outright, or leaving stale
+  // `branch.*.remote`/`branch.*.merge` config, both fail at the `rev-parse`
+  // step instead, which was already safe before this fix.
+  const sha = execFileSync('git', ['-C', repo, 'rev-parse', 'refs/remotes/origin/master'], {
+    encoding: 'utf8',
+  }).trim()
+  unlinkSync(join(repo, '.git', 'objects', sha.slice(0, 2), sha.slice(2)))
+
+  const res = await app.inject({ method: 'GET', url: `/api/projects/${projectId}/git` })
+  expect(res.statusCode).toBe(200)
+  const body = res.json()
+  expect(body.branches.map((b: { name: string }) => b.name).sort()).toEqual([
+    'master',
+    'untracked-branch',
+  ])
+  const master = body.branches.find((b: { name: string }) => b.name === 'master')
+  expect(master.ahead).toBeNull()
+  expect(master.behind).toBeNull()
 })
