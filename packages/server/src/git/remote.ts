@@ -163,3 +163,28 @@ export async function pullFastForward(worktreePath: string, remote: string): Pro
   const branch = (await git(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
   await gitRemote(worktreePath, ['pull', '--ff-only', remote, branch])
 }
+
+/**
+ * Publishes `branch` to `remote`.
+ *
+ * No force, in any form, including `--force-with-lease`: it is irreversible on
+ * a machine VADD does not control, and it sits outside the undo model
+ * entirely — which is exactly why push declares `undoable: false`. A push that
+ * would not fast-forward the remote is refused by git itself, and that refusal
+ * is the correct outcome rather than something to work around.
+ *
+ * `--set-upstream` only when the caller explicitly asked. Inferring it would
+ * silently give a branch a tracking relationship the user never chose, which
+ * then changes what a later bare `pull` means.
+ */
+export async function pushBranch(
+  worktreePath: string,
+  remote: string,
+  branch: string,
+  setUpstream: boolean,
+): Promise<void> {
+  const args = ['push']
+  if (setUpstream) args.push('--set-upstream')
+  args.push(remote, branch)
+  await gitRemote(worktreePath, args)
+}

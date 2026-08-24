@@ -9,6 +9,7 @@ import {
   gitRemote,
   listRemotes,
   pullFastForward,
+  pushBranch,
   RemoteError,
 } from '../src/git/remote.js'
 import { cloneOf, makeBareRemote } from './fixtures/bare-remote.js'
@@ -202,4 +203,58 @@ test('a fast-forward pull leaves every existing commit reachable', async () => {
   execFileSync('git', ['-C', repo, 'merge-base', '--is-ancestor', original, 'HEAD'], {
     stdio: 'pipe',
   })
+})
+
+function remoteHead(bare: string, branch: string): string {
+  return execFileSync('git', ['-C', bare, 'rev-parse', branch], { encoding: 'utf8' }).trim()
+}
+
+test('push moves the ref on the remote', async () => {
+  const repo = makeTempRepo()
+  const bare = makeBareRemote(repo)
+
+  await pushBranch(repo, 'origin', 'master', false)
+
+  expect(remoteHead(bare, 'master')).toBe(head(repo))
+})
+
+test('setUpstream records the tracking branch; without it none is set', async () => {
+  const repo = makeTempRepo()
+  makeBareRemote(repo)
+
+  await pushBranch(repo, 'origin', 'master', false)
+  const withoutUpstream = execFileSync(
+    'git',
+    ['-C', repo, 'for-each-ref', '--format=%(upstream:short)', 'refs/heads/master'],
+    { encoding: 'utf8' },
+  ).trim()
+  // Asserted before the second push: without this the closing assertion
+  // holds against an implementation that always sets an upstream.
+  expect(withoutUpstream).toBe('')
+
+  await pushBranch(repo, 'origin', 'master', true)
+  const upstream = execFileSync(
+    'git',
+    ['-C', repo, 'for-each-ref', '--format=%(upstream:short)', 'refs/heads/master'],
+    { encoding: 'utf8' },
+  ).trim()
+  expect(upstream).toBe('origin/master')
+})
+
+test('a push that would not fast-forward the remote is refused, not forced', async () => {
+  const repo = makeTempRepo()
+  const bare = makeBareRemote(repo)
+  const { clone } = seedRemoteAhead(repo, bare)
+  const remoteBefore = remoteHead(bare, 'master')
+
+  // Diverge locally from what the remote now holds.
+  writeFileSync(join(repo, 'local-only.txt'), 'y\n')
+  execFileSync('git', ['-C', repo, 'add', '-A'], { stdio: 'pipe' })
+  execFileSync('git', ['-C', repo, 'commit', '-qm', 'made here'], { stdio: 'pipe' })
+
+  await expect(pushBranch(repo, 'origin', 'master', false)).rejects.toThrow(RemoteError)
+  // The remote is untouched. Nothing in this pass may overwrite history on a
+  // machine VADD does not control — force push is out of scope entirely.
+  expect(remoteHead(bare, 'master')).toBe(remoteBefore)
+  expect(clone).toBeTruthy()
 })
