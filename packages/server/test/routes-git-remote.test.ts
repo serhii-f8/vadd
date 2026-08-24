@@ -203,7 +203,7 @@ test('a remote failure inside a gated mutation answers 502 too', async () => {
   expect(res.statusCode).toBe(502)
 })
 
-test('a detached worktree is refused with 400 rather than pulling into HEAD', async () => {
+test('a detached worktree is refused with 409 rather than pulling into HEAD', async () => {
   const { app, repo, projectId } = await withProject()
   execFileSync('git', ['-C', repo, 'checkout', '-q', '--detach'], { stdio: 'pipe' })
   const res = await app.inject({
@@ -211,8 +211,11 @@ test('a detached worktree is refused with 400 rather than pulling into HEAD', as
     url: `/api/projects/${projectId}/git/pull`,
     payload: { worktree: repo, remote: 'origin' },
   })
-  // 400, not 502: nothing was asked of the remote, and the user is the one
-  // who can fix it. This is the one RemoteError that overrides the default.
-  expect(res.statusCode).toBe(400)
+  // 409, following the design's taxonomy: the arguments are all well-formed
+  // (so not 400) and no remote was asked anything (so not 502) — it is a
+  // state that blocks the operation, like the in-flight gate's own refusal.
+  // It reaches the wire through `declaredStatus`, which is duck-typed and so
+  // needs no relationship at all between this error and `RemoteError`.
+  expect(res.statusCode).toBe(409)
   expect(res.json().error).toMatch(/detached/i)
 })

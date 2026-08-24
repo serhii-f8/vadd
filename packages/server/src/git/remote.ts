@@ -16,16 +16,16 @@ export class RemoteError extends Error {
    * ever sees `withGitMutation`'s stringified `error`, and a message that
    * legitimately begins with "502:" would be indistinguishable from a tag.
    *
-   * 502 by default, which is the whole point of the class — the remote
-   * refused, VADD did not fail. Overridable for the one case that is neither:
-   * a refusal this module makes *before* any command runs, which no remote
-   * ever saw and which the user fixes themselves (see `pullFastForward`'s
-   * detached-HEAD guard). Answering 502 there would name the wrong culprit.
+   * Fixed at 502, which is the whole point of the class — the remote refused,
+   * VADD did not fail. A local condition that blocks a remote operation
+   * before it starts is a different fact and gets its own error type
+   * (`WorktreeStateError`); carrying it here would make the class name a lie.
    */
+  readonly status = 502
+
   constructor(
     message: string,
     readonly timedOut: boolean,
-    readonly status: number = 502,
   ) {
     super(message)
     this.name = 'RemoteError'
@@ -195,6 +195,29 @@ export async function fetchRemote(repoPath: string, remote: string): Promise<voi
 }
 
 /**
+ * A local condition that blocks a remote operation before it starts.
+ *
+ * 409, following the design's taxonomy: 400 is a malformed argument, and a
+ * detached HEAD's arguments are all perfectly well-formed — it is a *state*
+ * that blocks the operation, the same category as the in-flight gate refusing
+ * a busy objective. 502 would be worse still, naming a remote that was never
+ * asked anything.
+ *
+ * Deliberately not a `RemoteError` with a different status: an error class
+ * called `RemoteError` carrying a purely local condition misleads whoever
+ * reads it next. It needs no shared base and no export — `declaredStatus` is
+ * duck-typed precisely so that any thrown error can name its own status.
+ */
+class WorktreeStateError extends Error {
+  readonly status = 409
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'WorktreeStateError'
+  }
+}
+
+/**
  * Fast-forwards the worktree's current branch from `remote`.
  *
  * `--ff-only` is load-bearing, not a default. Dropping it does not produce a
@@ -225,12 +248,10 @@ export async function pullFastForward(worktreePath: string, remote: string): Pro
     // `fatal: couldn't find remote ref HEAD`, which the route then reported
     // as a 502 — blaming the remote for a purely local condition. Refused
     // instead of half-supported, the same way squash/reword/drop refuse a
-    // mid-branch sha. 400, not 502: no remote was involved.
-    throw new RemoteError(
+    // mid-branch sha.
+    throw new WorktreeStateError(
       'This worktree is on a detached HEAD, so there is no branch to fast-forward. ' +
         'Check out a branch first.',
-      false,
-      400,
     )
   }
   await gitRemote(worktreePath, ['pull', '--ff-only', remote, branch])

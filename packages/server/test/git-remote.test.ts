@@ -314,6 +314,9 @@ test('pullFastForward refuses a detached HEAD instead of pulling into it', async
   execFileSync('git', ['-C', repo, 'checkout', '-q', '--detach'], { stdio: 'pipe' })
   // `rev-parse --abbrev-ref HEAD` returns the literal string `HEAD` here, so
   // without the guard VADD would run `git pull --ff-only origin HEAD`.
-  await expect(pullFastForward(repo, 'origin')).rejects.toThrow(RemoteError)
+  // Asserted on the message rather than the class: the class is local to
+  // `remote.ts` and unexported on purpose, and what the route needs from it
+  // is the status, which the route test pins.
   await expect(pullFastForward(repo, 'origin')).rejects.toThrow(/detached/i)
+  await expect(pullFastForward(repo, 'origin')).rejects.toThrow(/check out a branch/i)
 })
