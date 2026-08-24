@@ -258,3 +258,38 @@ test('a push that would not fast-forward the remote is refused, not forced', asy
   expect(remoteHead(bare, 'master')).toBe(remoteBefore)
   expect(clone).toBeTruthy()
 })
+
+test('a credential embedded in a remote url is never put on the wire', async () => {
+  const repo = makeTempRepo()
+  execFileSync(
+    'git',
+    ['-C', repo, 'remote', 'add', 'creds', 'https://alice:ghp_secret@github.com/me/x.git'],
+    { stdio: 'pipe' },
+  )
+  const [remote] = await listRemotes(repo)
+  // Host and path stay, because they are what makes the value readable at
+  // all; only the userinfo goes. Asserted both ways round so the test cannot
+  // pass by returning some other redacted-looking string.
+  expect(remote?.fetchUrl).toBe('https://***@github.com/me/x.git')
+  expect(remote?.pushUrl).toBe('https://***@github.com/me/x.git')
+  expect(remote?.fetchUrl).not.toContain('ghp_secret')
+})
+
+test('an scp-style remote comes back byte-identical', async () => {
+  const repo = makeTempRepo()
+  // The regression guard. `git@github.com:me/x.git` carries an `@` and NO
+  // credential — it is the ordinary ssh form — so a redaction that strips
+  // everything before an `@` turns every ssh remote in the console into
+  // nonsense.
+  const url = 'git@github.com:me/x.git'
+  execFileSync('git', ['-C', repo, 'remote', 'add', 'ssh', url], { stdio: 'pipe' })
+  expect((await listRemotes(repo))[0]?.fetchUrl).toBe(url)
+})
+
+test('a local-path remote comes back byte-identical', async () => {
+  const repo = makeTempRepo()
+  const bare = makeBareRemote(repo)
+  const [remote] = await listRemotes(repo)
+  expect(remote?.fetchUrl).toBe(bare)
+  expect(remote?.pushUrl).toBe(bare)
+})

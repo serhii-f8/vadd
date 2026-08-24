@@ -118,6 +118,33 @@ export async function gitRemote(
 }
 
 /**
+ * A url with any userinfo replaced by `***`, for display only.
+ *
+ * A remote url may embed a live credential — `https://user:token@host/x.git`,
+ * and also `https://<token>@host/x.git`, where the whole userinfo *is* the
+ * secret and there is no `:` to split on. VADD stores no credentials and
+ * offers no field to enter one, so a token reaching the browser could only
+ * ever have come from the user's own config; it would still be painted on
+ * screen, and this project records demo GIFs of that screen. The whole
+ * userinfo goes, not just the part after a colon, because either half can be
+ * the secret.
+ *
+ * Anchored on `scheme://` deliberately. An scp-style remote,
+ * `git@github.com:me/x.git`, contains an `@` and NO credential — it is the
+ * ordinary ssh form — and a regex that merely strips everything before an `@`
+ * mangles it into nonsense. It has no `://`, so it never matches here.
+ * A local path (`/tmp/vadd-bare-xxxx`) has no `://` either.
+ *
+ * `[^/@]` cannot cross a `/`, so a url whose *path* contains an `@`
+ * (`https://host/me/x@y.git`) is left alone.
+ */
+const URL_USERINFO = /^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^/@]+@/
+
+function redactUserinfo(url: string): string {
+  return url.replace(URL_USERINFO, '$1***@')
+}
+
+/**
  * The remotes this repository already has. Reads `.git/config`; no network.
  *
  * Names come from `git remote` one per line, then each url is asked for by
@@ -134,8 +161,15 @@ export async function listRemotes(repoPath: string): Promise<RemoteInfo[]> {
 
   const out: RemoteInfo[] = []
   for (const name of names) {
-    const fetchUrl = (await gitRemote(repoPath, ['remote', 'get-url', name])).trim()
-    const pushUrl = (await gitRemote(repoPath, ['remote', 'get-url', '--push', name])).trim()
+    // Redacted here rather than in the UI: this is the only place a remote
+    // url is read, so redacting at the source means no later caller has to
+    // remember to. Nothing is lost functionally — every git argument VADD
+    // builds names a remote by NAME and lets git read the url out of the
+    // repository's own config, so no redacted string is ever passed back.
+    const fetchUrl = redactUserinfo((await gitRemote(repoPath, ['remote', 'get-url', name])).trim())
+    const pushUrl = redactUserinfo(
+      (await gitRemote(repoPath, ['remote', 'get-url', '--push', name])).trim(),
+    )
     out.push({ name, fetchUrl, pushUrl })
   }
   return out
