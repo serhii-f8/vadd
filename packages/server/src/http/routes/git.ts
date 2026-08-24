@@ -16,6 +16,7 @@ import {
   checkoutBranch,
   commitStaged,
   createBranch,
+  declaredStatus,
   deleteBranch,
   discardPaths,
   dropCommit,
@@ -32,6 +33,7 @@ import {
 } from '../../git/mutate.js'
 import { guardOperation, type OperationName } from '../../git/mutation-guards.js'
 import { type OwnedObjective, ownerOfBranch, ownerOfWorktree } from '../../git/provenance.js'
+import { fetchRemote, listRemotes, pullFastForward, pushBranch } from '../../git/remote.js'
 import { GitError } from '../../git/run.js'
 import { worktreePathFor } from '../../paths.js'
 import type { AppDeps } from '../app.js'
@@ -677,4 +679,118 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
       return reply.code(200).send({ report: out.report })
     },
   )
+
+  // ---------------------------------------------------------------------
+  // Remote operations (amendment A20).
+  // ---------------------------------------------------------------------
+
+  /** A push changes nothing locally, so there is nothing an undo could restore. */
+  const REMOTE_PLAIN: MutationKind = {
+    rewritesHistory: false,
+    createsCommit: false,
+    undoable: false,
+  }
+  /** A fast-forward only advances the local ref, which `reset --hard` returns. */
+  const REMOTE_PULL: MutationKind = {
+    rewritesHistory: false,
+    createsCommit: false,
+    undoable: true,
+  }
+
+  /**
+   * A remote name, checked against what the repository already has.
+   *
+   * This is the mechanism amendment A20 rests on: no route accepts a URL, so
+   * there is no input through which VADD can be pointed at a host the user did
+   * not configure with their own hands. Same rule as `ref` on the log route —
+   * validated against a real list, never against a character filter.
+   */
+  async function knownRemote(p: Project, value: unknown): Promise<string | null> {
+    if (typeof value !== 'string' || value === '') return null
+    const remotes = await listRemotes(p.repoPath)
+    return remotes.some((r) => r.name === value) ? value : null
+  }
+
+  app.get<{ Params: { id: string } }>('/api/projects/:id/git/remotes', async (req, reply) => {
+    const p = project(req.params.id)
+    if (!p) return reply.code(404).send({ error: 'Project not found' })
+    return { remotes: await listRemotes(p.repoPath) }
+  })
+
+  app.post<{ Params: { id: string }; Body: { remote?: unknown } }>(
+    '/api/projects/:id/git/fetch',
+    async (req, reply) => {
+      const p = project(req.params.id)
+      if (!p) return reply.code(404).send({ error: 'Project not found' })
+      const remote = await knownRemote(p, req.body?.remote)
+      if (remote === null) {
+        return reply.code(400).send({ error: 'Not a remote of this repository' })
+      }
+
+      // Deliberately outside `withGitMutation`, the same way `branch/delete`
+      // is: a fetch updates remote-tracking refs only, so it has no worktree
+      // to be gated against and no HEAD an undo could be recorded from. It
+      // still emits its own event, so the console sees it like any other.
+      try {
+        await fetchRemote(p.repoPath, remote)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        return reply.code(declaredStatus(err)).send({ error: message })
+      }
+      const describes = `Fetch ${remote}`
+      bus.emit({ type: 'git_mutation', payload: { describes } })
+      return reply.code(200).send({ report: { describes } })
+    },
+  )
+
+  app.post<{ Params: { id: string }; Body: { worktree?: unknown; remote?: unknown } }>(
+    '/api/projects/:id/git/pull',
+    async (req, reply) => {
+      const p = project(req.params.id)
+      if (!p) return reply.code(404).send({ error: 'Project not found' })
+      const remote = await knownRemote(p, req.body?.remote)
+      if (remote === null) {
+        return reply.code(400).send({ error: 'Not a remote of this repository' })
+      }
+      // No branch argument: `pullFastForward` resolves the worktree's own
+      // current branch, so there is no way to ask one worktree to pull
+      // another branch into itself.
+      return mutate(
+        reply,
+        req.params.id,
+        req.body ?? {},
+        'pull',
+        REMOTE_PULL,
+        () => `Pull from ${remote}`,
+        (ctx) => pullFastForward(ctx.worktreePath, remote),
+      )
+    },
+  )
+
+  app.post<{
+    Params: { id: string }
+    Body: { worktree?: unknown; remote?: unknown; branch?: unknown; setUpstream?: unknown }
+  }>('/api/projects/:id/git/push', async (req, reply) => {
+    const p = project(req.params.id)
+    if (!p) return reply.code(404).send({ error: 'Project not found' })
+    const remote = await knownRemote(p, req.body?.remote)
+    if (remote === null) {
+      return reply.code(400).send({ error: 'Not a remote of this repository' })
+    }
+    const branches = await listBranches(p.repoPath)
+    const branch = req.body?.branch
+    const known = typeof branch === 'string' && branches.some((b) => b.name === branch)
+
+    return mutate(
+      reply,
+      req.params.id,
+      req.body ?? {},
+      'push',
+      REMOTE_PLAIN,
+      () => `Push ${branch} to ${remote}`,
+      (ctx) =>
+        pushBranch(ctx.worktreePath, remote, branch as string, req.body?.setUpstream === true),
+      () => (known ? null : 'Not a branch of this repository'),
+    )
+  })
 }

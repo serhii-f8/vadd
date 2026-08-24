@@ -17,6 +17,8 @@ export type OperationName =
   | 'createWorktree'
   | 'removeWorktree'
   | 'undo'
+  | 'pull'
+  | 'push'
 
 export type GuardVerdict = { allowed: true } | { allowed: false; reason: string }
 

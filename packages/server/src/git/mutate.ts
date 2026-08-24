@@ -57,6 +57,26 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+/**
+ * The HTTP status an error declares for itself, or 500.
+ *
+ * `withGitMutation` is generic over what `run` throws and keeps only the
+ * message, so the error's type is gone by the time a route reads the outcome
+ * — and "your remote refused this" (502) and "VADD did something wrong" (500)
+ * are different facts the user answers differently. Reading a numeric
+ * `status` off the error keeps that one fact typed and greppable, rather than
+ * prefixing it onto the message, where a message that legitimately begins
+ * with "502:" would be misread as a status.
+ *
+ * Deliberately duck-typed rather than an `instanceof RemoteError` check: this
+ * wrapper is the generic mutation path and has no business importing the one
+ * module allowed to reach a network.
+ */
+export function declaredStatus(err: unknown): number {
+  const status = (err as { status?: unknown } | null | undefined)?.status
+  return typeof status === 'number' ? status : 500
+}
+
 /** HEAD, or null in a repository with no commits yet. */
 async function headSha(worktreePath: string): Promise<string | null> {
   try {
@@ -129,7 +149,7 @@ export async function withGitMutation<T>(
     // Deliberately no undo record: one for an operation that never happened
     // would offer to restore the state the repo is already in, and would
     // replace a real record from the previous mutation.
-    return { ok: false, status: 500, error: message }
+    return { ok: false, status: declaredStatus(err), error: message }
   }
 
   // 3. Checkpoint repair. Only for a VADD-owned target — a repo-level

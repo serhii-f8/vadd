@@ -61,6 +61,8 @@ test('every operation name has a verdict for every owner kind', () => {
     'createWorktree',
     'removeWorktree',
     'undo',
+    'pull',
+    'push',
   ] as const
   for (const op of ops) {
     for (const owner of [VADD, ORPHAN, USER]) {

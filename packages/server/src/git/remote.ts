@@ -9,6 +9,15 @@ import { git } from './run.js'
  * need different responses from the user.
  */
 export class RemoteError extends Error {
+  /**
+   * The HTTP status this failure deserves, read back by `declaredStatus`.
+   *
+   * Carried on the error rather than encoded into its message: the route only
+   * ever sees `withGitMutation`'s stringified `error`, and a message that
+   * legitimately begins with "502:" would be indistinguishable from a tag.
+   */
+  readonly status = 502
+
   constructor(
     message: string,
     readonly timedOut: boolean,
