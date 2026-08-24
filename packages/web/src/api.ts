@@ -138,8 +138,17 @@ export type GitBranch = {
   sha: string
   isCurrent: boolean
   upstream: string | null
+  /**
+   * `null` means BOTH "no upstream configured" and "the counts could not be
+   * computed" — the console renders nothing in either case rather than
+   * guessing which.
+   */
+  ahead: number | null
+  behind: number | null
   owner: GitOwner
 }
+
+export type GitRemote = { name: string; fetchUrl: string; pushUrl: string }
 
 export type GitWorktree = {
   path: string
@@ -291,6 +300,9 @@ export const api = {
     fetch(`/api/projects/${projectId}/git/status?worktree=${encodeURIComponent(worktree)}`).then(
       json<{ staged: number; unstaged: number; untracked: number }>,
     ),
+
+  getGitRemotes: (projectId: string) =>
+    fetch(`/api/projects/${projectId}/git/remotes`).then(json<{ remotes: GitRemote[] }>),
 
   /**
    * Amendment A19's mutations. One method, because every route has the same

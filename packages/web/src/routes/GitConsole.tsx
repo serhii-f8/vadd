@@ -3,7 +3,14 @@ import { useSearchParams } from 'react-router-dom'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ApiError, api, type GitCommit, type GitMutationReport, type GitTopology } from '../api.js'
+import {
+  ApiError,
+  api,
+  type GitCommit,
+  type GitMutationReport,
+  type GitRemote,
+  type GitTopology,
+} from '../api.js'
 import { useProjects } from '../app/ProjectsContext.js'
 import { CommitLog } from '../git/CommitLog.js'
 import { ConfirmButton } from '../git/ConfirmButton.js'
@@ -16,8 +23,17 @@ export function GitConsole() {
   const ref = searchParams.get('ref') ?? undefined
 
   const [topology, setTopology] = useState<GitTopology | null>(null)
+  const [remotes, setRemotes] = useState<GitRemote[]>([])
   const [commits, setCommits] = useState<GitCommit[]>([])
   const [hasMore, setHasMore] = useState(false)
+  /**
+   * Remotes-section-only, the same "degrade in place" shape as `logError`
+   * below: a remotes fetch is a separate request from the topology fetch it
+   * loads alongside, and a failure there must not blank worktrees/branches
+   * that loaded fine — the exact bug this console already had to fix once
+   * for the log fetch.
+   */
+  const [remotesError, setRemotesError] = useState<string | null>(null)
   /** Page-level: the topology fetch failed, so there is nothing to render. */
   const [error, setError] = useState<string | null>(null)
   /**
@@ -89,6 +105,7 @@ export function GitConsole() {
     // stale-data bug the daily summary already had to fix once.
     setError(null)
     setLogError(null)
+    setRemotesError(null)
     let t: GitTopology
     try {
       t = await api.getGitTopology(selectedId)
@@ -97,6 +114,7 @@ export function GitConsole() {
       setTopology(null)
       setCommits([])
       setHasMore(false)
+      setRemotes([])
       setError((e as Error).message)
       return
     }
@@ -112,6 +130,18 @@ export function GitConsole() {
       setCommits([])
       setHasMore(false)
       setLogError((e as Error).message)
+    }
+    // Independent of the log fetch above: a bad `?ref=` and a remotes
+    // failure are unrelated causes, and one degrading must not take the
+    // other's already-loaded section down with it.
+    try {
+      const r = await api.getGitRemotes(selectedId)
+      if (gen !== generationRef.current) return
+      setRemotes(r.remotes)
+    } catch (e) {
+      if (gen !== generationRef.current) return
+      setRemotes([])
+      setRemotesError((e as Error).message)
     }
   }, [selectedId, ref])
 
@@ -151,22 +181,35 @@ export function GitConsole() {
    * `withGitMutation` exists on the server side.
    */
   const runMutation = useCallback(
-    async (op: string, body: { worktree: string } & Record<string, unknown>) => {
+    async (op: string, body: Record<string, unknown>) => {
       if (selectedId === null) return
       setBusy(true)
       setOutcome(null)
       try {
         const { report } = await api.gitMutate(selectedId, op, body)
         setOutcome({ kind: 'ok', report })
-        setUndoable(op === 'undo' ? null : report.describes)
+        // `fetch` and `push` are declared `undoable: false` server-side (a
+        // fetch touches no local ref at all, and a push changes nothing
+        // locally to restore — see `packages/server/src/git/remote.ts`'s
+        // `MutationKind` constants). An Undo banner here would offer to
+        // reset the local branch and "un-push" nothing: a real,
+        // desynchronising action under a label promising to undo one.
+        setUndoable(op === 'undo' || op === 'fetch' || op === 'push' ? null : report.describes)
       } catch (e) {
         // The server names the objective it refused for; the worktree
-        // lookup is only a fallback for an error that carries no body.
+        // lookup is only a fallback for an error that carries no body, and
+        // `fetch` sends no `worktree` at all (it targets no worktree).
         const named = e instanceof ApiError ? e.body.objectiveId : undefined
+        const worktree = body.worktree
         setOutcome({
           kind: 'refused',
           message: (e as Error).message,
-          objectiveId: typeof named === 'string' ? named : objectiveOf(body.worktree),
+          objectiveId:
+            typeof named === 'string'
+              ? named
+              : typeof worktree === 'string'
+                ? objectiveOf(worktree)
+                : null,
         })
       } finally {
         setBusy(false)
@@ -303,6 +346,38 @@ export function GitConsole() {
           </section>
 
           <section>
+            <h2 className="mb-2 text-lg font-medium">Remotes</h2>
+            {remotesError !== null ? (
+              <Alert variant="destructive">
+                <AlertDescription>{remotesError}</AlertDescription>
+              </Alert>
+            ) : (
+              <ul className="flex flex-col gap-1" aria-label="Remotes">
+                {remotes.map((r) => (
+                  <li key={r.name} className="flex items-baseline gap-2 text-sm">
+                    <span className="shrink-0 font-medium">{r.name}</span>
+                    <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                      {r.fetchUrl}
+                    </code>
+                    {/* Shown only when it diverges — most remotes push where they fetch. */}
+                    {r.pushUrl !== r.fetchUrl && (
+                      <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                        push: {r.pushUrl}
+                      </code>
+                    )}
+                    <ConfirmButton
+                      label="Fetch"
+                      confirmLabel={`Fetch ${r.name}?`}
+                      disabled={busy}
+                      onConfirm={() => void runMutation('fetch', { remote: r.name })}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section>
             <h2 className="mb-2 text-lg font-medium">Branches</h2>
             <ul className="flex flex-col gap-1" aria-label="Branches">
               {topology.branches.map((b) => (
@@ -311,8 +386,56 @@ export function GitConsole() {
                   {b.upstream !== null && (
                     <span className="shrink-0 text-xs text-muted-foreground">→ {b.upstream}</span>
                   )}
+                  {b.ahead !== null && (
+                    <span className="shrink-0 text-xs text-muted-foreground">{b.ahead} ahead</span>
+                  )}
+                  {b.behind !== null && (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {b.behind} behind
+                    </span>
+                  )}
                   {b.isCurrent && <span className="shrink-0 text-xs">current</span>}
                   <OwnerBadge owner={b.owner} />
+                  {/*
+                    One control per remote rather than guessing which of
+                    several a click meant — the common single-remote case
+                    still reads as one plain "Push" button.
+                  */}
+                  {remotes.map((r) => (
+                    <ConfirmButton
+                      key={`push-${r.name}`}
+                      label={remotes.length > 1 ? `Push to ${r.name}` : 'Push'}
+                      confirmLabel={
+                        b.owner.kind === 'vadd'
+                          ? `Push ${b.name}? The remote copy outlives integrate: discard.`
+                          : `Push ${b.name} to ${r.name}?`
+                      }
+                      disabled={busy}
+                      onConfirm={() =>
+                        void runMutation('push', {
+                          worktree: topology.mainRepoPath,
+                          remote: r.name,
+                          branch: b.name,
+                          setUpstream: b.upstream === null,
+                        })
+                      }
+                    />
+                  ))}
+                  {b.isCurrent &&
+                    remotes.map((r) => (
+                      <ConfirmButton
+                        key={`pull-${r.name}`}
+                        label={remotes.length > 1 ? `Pull from ${r.name}` : 'Pull'}
+                        confirmLabel={`Pull from ${r.name}?`}
+                        disabled={busy}
+                        onConfirm={() =>
+                          void runMutation('pull', {
+                            worktree: topology.mainRepoPath,
+                            remote: r.name,
+                          })
+                        }
+                      />
+                    ))}
                   {b.owner.kind !== 'vadd' && !b.isCurrent && (
                     <ConfirmButton
                       label="Delete branch"
