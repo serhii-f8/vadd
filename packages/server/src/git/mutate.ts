@@ -1,0 +1,137 @@
+import type { Db } from '../db/client.js'
+import { gitUndo } from '../db/schema.js'
+import type { EventBus } from '../events/event-bus.js'
+import { gateForStatus } from './mutation-gate.js'
+import type { Owner } from './provenance.js'
+import { gitChecked } from './run.js'
+
+export type MutationKind = {
+  /** Rewrites existing commits, so stored checkpoint shas may be invalidated. */
+  rewritesHistory: boolean
+  /** Produces a commit, so `policy.protectedGlobs` must be applied first. */
+  createsCommit: boolean
+}
+
+export type MutationTarget = {
+  worktreePath: string
+  owner: Owner
+  /** The objective row when `owner.kind === 'vadd'`; null otherwise. */
+  objective: { id: string; status: string; branchName: string | null } | null
+  /** Resolved verification spec's protected globs. Empty when none. */
+  protectedGlobs: string[]
+}
+
+export type MutationReport = {
+  describes: string
+  /** Paths a `protectedGlobs` rule kept out of a commit. */
+  excludedPaths: string[]
+  /** Tasks whose `checkpointRef` was nulled by a rewrite. */
+  clearedCheckpoints: { taskId: string; ord: number; title: string }[]
+}
+
+export type MutationContext = {
+  worktreePath: string
+  /** HEAD before the operation, or null in a repo with no commits. */
+  beforeSha: string | null
+  report: MutationReport
+}
+
+export type MutationOutcome<T> =
+  | { ok: true; result: T; report: MutationReport }
+  | { ok: false; status: number; error: string }
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+/** HEAD, or null in a repository with no commits yet. */
+async function headSha(worktreePath: string): Promise<string | null> {
+  try {
+    return (await gitChecked(worktreePath, ['rev-parse', '--verify', 'HEAD'])).trim()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Every git mutation goes through here.
+ *
+ * Fourteen operations share four cross-cutting concerns — the gate, the undo
+ * record, `protectedGlobs`, and checkpoint repair — and this codebase's whole
+ * defect history is a rule applied in one place and not another
+ * (`protectedGlobs` enforced only in the squash; a guard pinned by a test a
+ * different code path also satisfied; `rails` computed by a layer the
+ * renderer ignored). Encoding the concerns once turns "forgot one" into a
+ * missing flag on a single line.
+ */
+export async function withGitMutation<T>(
+  deps: { db: Db; bus: EventBus },
+  target: MutationTarget,
+  kind: MutationKind,
+  describes: string,
+  run: (ctx: MutationContext) => Promise<T>,
+): Promise<MutationOutcome<T>> {
+  // 1. Gate. Only a VADD-owned target has VADD activity to collide with.
+  if (target.objective !== null) {
+    const verdict = gateForStatus(target.objective.status)
+    if (!verdict.allowed) return { ok: false, status: 409, error: verdict.reason }
+  }
+
+  const report: MutationReport = { describes, excludedPaths: [], clearedCheckpoints: [] }
+  const beforeSha = await headSha(target.worktreePath)
+  const ctx: MutationContext = { worktreePath: target.worktreePath, beforeSha, report }
+
+  // 2. `protectedGlobs` — Task 4 inserts its stage here, before `run`.
+
+  let result: T
+  try {
+    result = await run(ctx)
+  } catch (err) {
+    const message = errorMessage(err)
+    deps.bus.emit({
+      objectiveId: target.objective?.id ?? null,
+      type: 'git_mutation_failed',
+      payload: { describes, message },
+    })
+    // Deliberately no undo record: one for an operation that never happened
+    // would offer to restore the state the repo is already in, and would
+    // replace a real record from the previous mutation.
+    return { ok: false, status: 500, error: message }
+  }
+
+  // 3. Checkpoint repair — Task 5 inserts its stage here, after `run`.
+
+  // 4. Undo record. Skipped when there was no HEAD to return to.
+  if (beforeSha !== null) {
+    const at = new Date().toISOString()
+    deps.db
+      .insert(gitUndo)
+      .values({
+        worktreePath: target.worktreePath,
+        objectiveId: target.objective?.id ?? null,
+        branch: target.objective?.branchName ?? null,
+        beforeSha,
+        describes,
+        at,
+      })
+      .onConflictDoUpdate({
+        target: gitUndo.worktreePath,
+        set: {
+          objectiveId: target.objective?.id ?? null,
+          branch: target.objective?.branchName ?? null,
+          beforeSha,
+          describes,
+          at,
+        },
+      })
+      .run()
+  }
+
+  deps.bus.emit({
+    objectiveId: target.objective?.id ?? null,
+    type: 'git_mutation',
+    payload: { describes, report },
+  })
+
+  return { ok: true, result, report }
+}
