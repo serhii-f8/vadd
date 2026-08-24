@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { gitRemote, listRemotes, RemoteError } from '../src/git/remote.js'
@@ -30,19 +32,52 @@ test('a failing remote command throws RemoteError carrying git own message', asy
   )
 })
 
-test('interactive prompting is disabled, so a missing credential cannot hang', async () => {
+test('a missing credential cannot hang, even against a real 401 and the user own GIT_ASKPASS', async () => {
+  // `127.0.0.1:1` (this test's original target) refuses the TCP connection
+  // instantly, before git ever reaches an auth decision — so it could not
+  // discriminate GIT_TERMINAL_PROMPT=0's presence at all, and did not: a
+  // mutation removing NO_PROMPT_ENV entirely left this test passing.
+  // Measured directly against a real local server that returns 401
+  // WWW-Authenticate: Basic (no external network — 127.0.0.1 only): git
+  // consults GIT_ASKPASS *before* any terminal prompt, an askpass helper
+  // needs no TTY, and execa merges `env` with `process.env` by default — so
+  // a user's own GIT_ASKPASS (GNOME keyring, Git Credential Manager, an IDE
+  // integration) is inherited into the child and hangs the request even
+  // with GIT_TERMINAL_PROMPT=0 set. This test stands up that real 401
+  // server and plants a blocking askpass in `process.env` to prove
+  // `gitRemote` overrides it.
+  const server = createServer((_req, res) => {
+    res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="vadd"' })
+    res.end()
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  const port = (server.address() as AddressInfo).port
+
   const repo = makeTempRepo()
-  // A remote that does not exist locally and cannot be reached without
-  // credentials. With GIT_TERMINAL_PROMPT unset git may block forever waiting
-  // for input nobody can type; with it set to 0 it fails immediately.
-  execFileSync('git', ['-C', repo, 'remote', 'add', 'fake', 'https://127.0.0.1:1/x.git'], {
+  execFileSync('git', ['-C', repo, 'remote', 'add', 'auth', `http://127.0.0.1:${port}/repo.git`], {
     stdio: 'pipe',
   })
-  const started = Date.now()
-  await expect(gitRemote(repo, ['fetch', 'fake'], 20_000)).rejects.toThrow(RemoteError)
-  // Bounded well under the timeout: this is the assertion that a hang would
-  // fail. A prompt would sit until the 20s timeout fired.
-  expect(Date.now() - started).toBeLessThan(15_000)
+
+  const askpass = join(repo, '..', 'blocking-askpass.sh')
+  // Sleeps well past gitRemote's own 2s timeout below: if the user's
+  // GIT_ASKPASS survived into the child, this is what would hang the
+  // request instead of the 401 failing it fast.
+  writeFileSync(askpass, '#!/bin/sh\nsleep 30\n', { mode: 0o755 })
+
+  const previousAskpass = process.env.GIT_ASKPASS
+  process.env.GIT_ASKPASS = askpass
+  try {
+    const started = Date.now()
+    await expect(gitRemote(repo, ['fetch', 'auth'], 2_000)).rejects.toThrow(RemoteError)
+    // Bounded well under gitRemote's own 2s timeout: this is the assertion
+    // that a surviving askpass would fail. A blocked askpass would sit until
+    // that timeout fired instead.
+    expect(Date.now() - started).toBeLessThan(1_000)
+  } finally {
+    if (previousAskpass === undefined) delete process.env.GIT_ASKPASS
+    else process.env.GIT_ASKPASS = previousAskpass
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
 })
 
 test('a command that outruns its timeout is killed and reports timedOut', async () => {

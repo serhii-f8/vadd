@@ -32,6 +32,14 @@ const GRACE_MS = 5_000
  * prompt for a key passphrase. There is nobody to type an answer and no way to
  * surface the prompt, so the request hangs and the wrapper never reports.
  *
+ * `GIT_ASKPASS` is set empty because it is consulted BEFORE any terminal
+ * prompt and an askpass helper needs no TTY, so `GIT_TERMINAL_PROMPT=0`
+ * alone does not stop it — measured hanging indefinitely against a server
+ * that returns 401 while every other mitigation here was in place. `execa`
+ * merges `env` with `process.env`, so a user's own askpass (GNOME keyring,
+ * Git Credential Manager, an IDE integration) is inherited into this child
+ * unless it is overridden here.
+ *
  * `StrictHostKeyChecking` is deliberately left alone: auto-accepting an
  * unknown host key is a security decision that is not VADD's to make silently,
  * and in batch mode an unknown host fails with a message the user recognises.
@@ -39,6 +47,7 @@ const GRACE_MS = 5_000
 const NO_PROMPT_ENV = {
   GIT_TERMINAL_PROMPT: '0',
   GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
+  GIT_ASKPASS: '',
 } as const
 
 function killGroup(pid: number | undefined, signal: NodeJS.Signals): void {
