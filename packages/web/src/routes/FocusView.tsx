@@ -11,6 +11,7 @@ import { AutoApprovalBanner } from '../focus/AutoApprovalBanner.js'
 import { BranchStrip } from '../focus/BranchStrip.js'
 import { ClarificationPrompt } from '../focus/ClarificationPrompt.js'
 import { DecisionCard } from '../focus/DecisionCard.js'
+import { GitStrip } from '../focus/GitStrip.js'
 import { IntegrationChooser } from '../focus/IntegrationChooser.js'
 import { LiveTask } from '../focus/LiveTask.js'
 import { PlanApproval } from '../focus/PlanApproval.js'
@@ -18,6 +19,17 @@ import { ProblemAlert } from '../focus/ProblemAlert.js'
 import { primaryElementFor, type ViewStateName } from '../focus/primary.js'
 import { TaskList } from '../focus/TaskList.js'
 import { statusFor } from './stateColor.js'
+
+/**
+ * Where the Focus View offers A19's git controls: the states in which the
+ * objective is stopped and the worktree is the user's to work in.
+ *
+ * Deliberately a small allow-list rather than "not busy". The busy set is the
+ * server's to enforce; this is a narrower editorial question — which screens
+ * should carry a git control at all — and an allow-list makes a new state's
+ * answer an explicit decision instead of a default.
+ */
+const GIT_STATES = new Set(['paused', 'awaitingReview', 'failed'])
 
 export function FocusView() {
   const { id } = useParams<{ id: string }>()
@@ -30,6 +42,15 @@ export function FocusView() {
    */
   const [loadError, setLoadError] = useState<string | null>(null)
   const [commandError, setCommandError] = useState<string | null>(null)
+  /**
+   * What A19's one-step undo would restore on this objective's worktree.
+   *
+   * Held here rather than fetched: `git_undo` has no read route, and the only
+   * record this surface can honestly offer is the one it just created. A
+   * mutation made elsewhere — the `/git` console, a terminal — is not
+   * something the Focus View should claim it can undo.
+   */
+  const [gitUndoable, setGitUndoable] = useState<string | null>(null)
   const error = commandError ?? loadError
   /** Guards against a refetch storm when events arrive faster than the fetch. */
   const inFlight = useRef(false)
@@ -189,6 +210,38 @@ export function FocusView() {
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
+      )}
+
+      {/*
+        Amendment A19's Focus View subset, under two conditions.
+
+        There must be a worktree to act on: `integrate: commit` and `discard`
+        both clear the column, and offering to commit into a directory that no
+        longer exists is the mistake `BranchStrip` already guards against.
+
+        And the objective must be stopped. Spec §8 fixes one primary element
+        per state, and a commit box standing next to a clarification prompt's
+        own input — in a state where the agent is mid-turn and nothing the
+        user commits would survive the next checkpoint — is exactly the "not
+        becoming a git client" line the design draws. This is the same
+        reasoning `ProblemAlert` below already uses: show it where the user is
+        looking at a stopped objective and wondering what to do with it. The
+        server gates every mutation regardless; this only decides where to
+        offer one.
+      */}
+      {aggregate.objective.worktreePath !== null && GIT_STATES.has(state) && (
+        <div className="mb-4">
+          <GitStrip
+            projectId={aggregate.objective.projectId}
+            worktreePath={aggregate.objective.worktreePath}
+            status={state}
+            undoable={gitUndoable}
+            onDone={(next) => {
+              setGitUndoable(next)
+              void refetch()
+            }}
+          />
+        </div>
       )}
 
       {/*
