@@ -3,10 +3,12 @@ import { useSearchParams } from 'react-router-dom'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { api, type GitCommit, type GitTopology } from '../api.js'
+import { ApiError, api, type GitCommit, type GitMutationReport, type GitTopology } from '../api.js'
 import { useProjects } from '../app/ProjectsContext.js'
 import { CommitLog } from '../git/CommitLog.js'
+import { ConfirmButton } from '../git/ConfirmButton.js'
 import { OwnerBadge } from '../git/OwnerBadge.js'
+import { UndoBanner } from '../git/UndoBanner.js'
 
 export function GitConsole() {
   const { selectedId } = useProjects()
@@ -47,6 +49,37 @@ export function GitConsole() {
    * to append a stale older page onto a freshly reloaded first page.
    */
   const generationRef = useRef(0)
+
+  /**
+   * The outcome of the last mutation, rendered in place beneath the header.
+   *
+   * Deliberately not a toast: a refusal names a state the user has to act on
+   * (§3's Pause), and a rewrite names tasks that just lost their rollback
+   * point. Both are things to read, not things to glimpse.
+   */
+  const [outcome, setOutcome] = useState<
+    | { kind: 'ok'; report: GitMutationReport }
+    | { kind: 'refused'; message: string; objectiveId: string | null }
+    | null
+  >(null)
+  const [undoable, setUndoable] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  /**
+   * The objective a 409 refers to, so the refusal can offer its Pause.
+   *
+   * Read off the worktree the operation targeted rather than parsed out of
+   * the message: the message is prose for the user, and reconstructing an id
+   * from prose is the kind of coupling that breaks the next time the wording
+   * changes.
+   */
+  const objectiveOf = useCallback(
+    (worktreePath: string): string | null => {
+      const w = topology?.worktrees.find((x) => x.path === worktreePath)
+      return w?.owner.kind === 'vadd' ? w.owner.objectiveId : null
+    },
+    [topology],
+  )
 
   const load = useCallback(async () => {
     if (selectedId === null) return
@@ -110,6 +143,39 @@ export function GitConsole() {
     }
   }, [selectedId, ref, commits])
 
+  /**
+   * Runs one mutation and reports its outcome in place.
+   *
+   * Every route answers the same two shapes — `{ report }` or an `error` —
+   * so this is written once rather than per control, for the same reason
+   * `withGitMutation` exists on the server side.
+   */
+  const runMutation = useCallback(
+    async (op: string, body: { worktree: string } & Record<string, unknown>) => {
+      if (selectedId === null) return
+      setBusy(true)
+      setOutcome(null)
+      try {
+        const { report } = await api.gitMutate(selectedId, op, body)
+        setOutcome({ kind: 'ok', report })
+        setUndoable(op === 'undo' ? null : report.describes)
+      } catch (e) {
+        // The server names the objective it refused for; the worktree
+        // lookup is only a fallback for an error that carries no body.
+        const named = e instanceof ApiError ? e.body.objectiveId : undefined
+        setOutcome({
+          kind: 'refused',
+          message: (e as Error).message,
+          objectiveId: typeof named === 'string' ? named : objectiveOf(body.worktree),
+        })
+      } finally {
+        setBusy(false)
+      }
+      await load()
+    },
+    [selectedId, objectiveOf, load],
+  )
+
   useEffect(() => {
     void load()
   }, [load])
@@ -139,6 +205,56 @@ export function GitConsole() {
         </Alert>
       )}
 
+      {outcome?.kind === 'refused' && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+            <span>{outcome.message}</span>
+            {outcome.objectiveId !== null && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void api
+                    .command(outcome.objectiveId as string, { type: 'pause' })
+                    .then(() => load())
+                }}
+              >
+                Pause objective
+              </Button>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {outcome?.kind === 'ok' && (
+        <Alert>
+          <AlertDescription className="flex flex-col gap-1">
+            <span>{outcome.report.describes}</span>
+            {(outcome.report.excludedPaths ?? []).length > 0 && (
+              <span className="text-sm">
+                Kept out of the commit by policy.protectedGlobs:{' '}
+                {(outcome.report.excludedPaths ?? []).join(', ')}
+              </span>
+            )}
+            {(outcome.report.clearedCheckpoints ?? []).length > 0 && (
+              <span className="text-sm">
+                These tasks lost their rollback point:{' '}
+                {(outcome.report.clearedCheckpoints ?? []).map((c) => c.title).join(', ')}
+              </span>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <UndoBanner
+        describes={undoable}
+        busy={busy}
+        onUndo={() => {
+          const main = topology?.mainRepoPath
+          if (main !== undefined) void runMutation('undo', { worktree: main })
+        }}
+      />
+
       {topology === null && error === null && <Skeleton className="h-8 w-full" />}
 
       {topology !== null && (
@@ -154,6 +270,33 @@ export function GitConsole() {
                   </span>
                   {w.prunable && <span className="shrink-0 text-xs">prunable</span>}
                   <OwnerBadge owner={w.owner} />
+                  <ConfirmButton
+                    label="Stash"
+                    confirmLabel="Stash all changes here?"
+                    disabled={busy}
+                    onConfirm={() => void runMutation('stash', { worktree: w.path })}
+                  />
+                  {/*
+                    Refused on a VADD-owned worktree, so it is not offered
+                    there either: /diff, rollback and integrate: discard all
+                    depend on objectives.branchName, and discard deletes the
+                    branch it is handed. The server refuses this
+                    independently — the UI hiding it is convenience, not the
+                    guard.
+                  */}
+                  {w.owner.kind !== 'vadd' && topology.currentBranch !== null && (
+                    <ConfirmButton
+                      label="Switch branch"
+                      confirmLabel={`Switch to ${topology.currentBranch}?`}
+                      disabled={busy}
+                      onConfirm={() =>
+                        void runMutation('checkout', {
+                          worktree: w.path,
+                          branch: topology.currentBranch as string,
+                        })
+                      }
+                    />
+                  )}
                 </li>
               ))}
             </ul>
@@ -170,6 +313,28 @@ export function GitConsole() {
                   )}
                   {b.isCurrent && <span className="shrink-0 text-xs">current</span>}
                   <OwnerBadge owner={b.owner} />
+                  {b.owner.kind !== 'vadd' && !b.isCurrent && (
+                    <ConfirmButton
+                      label="Delete branch"
+                      confirmLabel={`Delete ${b.name}?`}
+                      disabled={busy}
+                      onConfirm={() => {
+                        if (selectedId === null) return
+                        setBusy(true)
+                        setOutcome(null)
+                        void api
+                          .gitMutate(selectedId, 'branch/delete', { name: b.name })
+                          .then(({ report }) => setOutcome({ kind: 'ok', report }))
+                          .catch((e: Error) =>
+                            setOutcome({ kind: 'refused', message: e.message, objectiveId: null }),
+                          )
+                          .finally(() => {
+                            setBusy(false)
+                            void load()
+                          })
+                      }}
+                    />
+                  )}
                 </li>
               ))}
             </ul>
@@ -183,6 +348,42 @@ export function GitConsole() {
               </Alert>
             ) : (
               <>
+                {commits[0] !== undefined && (
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    {/*
+                      Only the tip. Squash, reword and drop are all narrowed
+                      to ranges ending at HEAD: rewriting mid-branch needs a
+                      rebase, and a rebase that conflicts stops in a state
+                      this pass has no UI for (design §11).
+                    */}
+                    <ConfirmButton
+                      label="Drop commit"
+                      confirmLabel={`Really drop “${commits[0].subject}”?`}
+                      disabled={busy}
+                      onConfirm={() =>
+                        void runMutation('drop', {
+                          worktree: topology.mainRepoPath,
+                          sha: (commits[0] as GitCommit).sha,
+                        })
+                      }
+                    />
+                    {commits[1] !== undefined && (
+                      <ConfirmButton
+                        label="Squash last two"
+                        confirmLabel="Squash the last two commits into one?"
+                        disabled={busy}
+                        onConfirm={() =>
+                          void runMutation('squash', {
+                            worktree: topology.mainRepoPath,
+                            from: (commits[1] as GitCommit).sha,
+                            to: (commits[0] as GitCommit).sha,
+                            message: (commits[1] as GitCommit).subject,
+                          })
+                        }
+                      />
+                    )}
+                  </div>
+                )}
                 <CommitLog commits={commits} />
                 {hasMore && (
                   <Button

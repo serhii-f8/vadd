@@ -278,7 +278,17 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
     }
 
     const out = await withGitMutation({ db, bus }, target, kind, describes(target), run)
-    if (!out.ok) return reply.code(out.status).send({ error: out.error })
+    if (!out.ok) {
+      // The objective is named on the refusal, not left to the client to
+      // infer. A 409 is answerable — the UI pairs it with a Pause — and the
+      // client cannot reliably work out *which* objective is in the way:
+      // a commit-level operation targets the main checkout, whose own owner
+      // is `user`. Reconstructing it from the message would mean parsing
+      // prose written for a human.
+      return reply
+        .code(out.status)
+        .send({ error: out.error, objectiveId: target.objective?.id ?? null })
+    }
     return reply.code(200).send({ report: out.report })
   }
 

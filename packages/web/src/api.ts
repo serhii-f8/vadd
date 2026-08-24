@@ -151,6 +151,14 @@ export type GitWorktree = {
   owner: GitOwner
 }
 
+export type GitMutationReport = {
+  describes: string
+  /** Paths a `policy.protectedGlobs` rule kept out of a commit. */
+  excludedPaths?: string[]
+  /** Tasks whose rollback point a rewrite destroyed. */
+  clearedCheckpoints?: { taskId: string; ord: number; title: string }[]
+}
+
 export type GitTopology = {
   mainRepoPath: string
   currentBranch: string | null
@@ -167,10 +175,29 @@ export type GitCommit = {
   refs: string[]
 }
 
+/**
+ * An error that keeps the response body.
+ *
+ * `message` is unchanged, so every existing `(e as Error).message` call site
+ * behaves exactly as before; the body is there for the callers that need a
+ * field the message cannot honestly carry — the objective a git refusal
+ * names, so the console can offer its Pause without parsing prose.
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body: Record<string, unknown>,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string }
-    throw new Error(body.error ?? `${res.status} ${res.statusText}`)
+    throw new ApiError(body.error ?? `${res.status} ${res.statusText}`, res.status, body)
   }
   return res.json() as Promise<T>
 }
@@ -264,4 +291,16 @@ export const api = {
     fetch(`/api/projects/${projectId}/git/status?worktree=${encodeURIComponent(worktree)}`).then(
       json<{ staged: number; unstaged: number; untracked: number }>,
     ),
+
+  /**
+   * Amendment A19's mutations. One method, because every route has the same
+   * shape — a body naming its target, a `{ report }` on success — and sixteen
+   * near-identical wrappers would be sixteen places for one to drift.
+   */
+  gitMutate: (projectId: string, op: string, body: Record<string, unknown>) =>
+    fetch(`/api/projects/${projectId}/git/${op}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(json<{ report: GitMutationReport }>),
 }
