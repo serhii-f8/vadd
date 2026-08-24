@@ -31,6 +31,7 @@ import {
   unstagePaths,
   withGitMutation,
 } from '../../git/mutate.js'
+import { gateForStatus } from '../../git/mutation-gate.js'
 import { guardOperation, type OperationName } from '../../git/mutation-guards.js'
 import { type OwnedObjective, ownerOfBranch, ownerOfWorktree } from '../../git/provenance.js'
 import { fetchRemote, listRemotes, pullFastForward, pushBranch } from '../../git/remote.js'
@@ -704,9 +705,19 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
    * there is no input through which VADD can be pointed at a host the user did
    * not configure with their own hands. Same rule as `ref` on the log route —
    * validated against a real list, never against a character filter.
+   *
+   * The list check alone does NOT make the value safe to place in an argv,
+   * which is what this comment used to claim. Measured on git 2.43.0: `git
+   * remote add -- '--upload-pack=/bin/echo' <url>` succeeds and `git remote`
+   * prints that name back verbatim, so a listed name really can be
+   * option-shaped. `remote.ts` puts `--` in front of every remote it passes to
+   * git, which is the fix that matters; the leading-`-` refusal below is the
+   * second layer, and it also keeps `listRemotes` — which asks git for each
+   * url by name — from being handed one.
    */
   async function knownRemote(p: Project, value: unknown): Promise<string | null> {
     if (typeof value !== 'string' || value === '') return null
+    if (value.startsWith('-')) return null
     const remotes = await listRemotes(p.repoPath)
     return remotes.some((r) => r.name === value) ? value : null
   }
@@ -780,6 +791,33 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
     const branches = await listBranches(p.repoPath)
     const branch = req.body?.branch
     const known = typeof branch === 'string' && branches.some((b) => b.name === branch)
+
+    // The in-flight gate, resolved from the BRANCH rather than the worktree.
+    //
+    // `withGitMutation`'s own gate keys on `target.objective`, which
+    // `resolveTarget` fills in from `ownerOfWorktree`. Push is the one
+    // operation whose subject is not the worktree it runs in: the console
+    // sends `worktree: mainRepoPath` for every branch row, whose owner is
+    // `user`, so `target.objective` was null and **no gate ran at all** — an
+    // objective mid-`executing` could have its half-written checkpoints
+    // published to a shared remote, with `undoable: false` and no route
+    // anywhere in VADD that deletes a remote branch.
+    //
+    // Fixed here rather than in the console, and deliberately: an exclusion
+    // that lives only in the UI leaves the HTTP path open, which this project
+    // has already had to correct once (A15's `integrate: commit`, refused in
+    // `IntegrationChooser` while the route still accepted it).
+    if (known) {
+      const branchOwner = ownerOfBranch(branch as string, ownedObjectives(p.id))
+      if (branchOwner.kind === 'vadd') {
+        const verdict = gateForStatus(branchOwner.objectiveStatus)
+        if (!verdict.allowed) {
+          return reply
+            .code(409)
+            .send({ error: verdict.reason, objectiveId: branchOwner.objectiveId })
+        }
+      }
+    }
 
     return mutate(
       reply,

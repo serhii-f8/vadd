@@ -126,7 +126,13 @@ test('a URL is not accepted as a remote, on every route', async () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/projects/${projectId}/git/${route.name}`,
-      payload: route.body(repo, 'https://example.com/evil.git'),
+      // `127.0.0.1:9` (discard) rather than a real host: equally a URL and
+      // equally rejected, but if this guard ever regresses the committed
+      // suite still makes no outbound request. The original value here was
+      // `https://example.com/evil.git`, which is what the guard's own
+      // mutation-checks deliberately reached — four times, in a mutated tree
+      // — and is exactly what CI must never do by accident.
+      payload: route.body(repo, 'https://127.0.0.1:9/evil.git'),
     })
     expect(res.statusCode, route.name).toBe(400)
     expect(res.json().error, route.name).toMatch(/remote/i)
@@ -171,6 +177,39 @@ test('a busy objective refuses pull with 409 but permits fetch', async () => {
     payload: { remote: 'origin' },
   })
   expect(fetched.statusCode).toBe(200)
+})
+
+test('a busy objective refuses a push of ITS branch, from the main checkout', async () => {
+  const { app, db, repo, projectId } = await withProject()
+  const objective = (
+    await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/objectives`,
+      payload: { title: 't', goalText: 'g' },
+    })
+  ).json()
+  db.update(objectives).set({ status: 'executing' }).where(eq(objectives.id, objective.id)).run()
+
+  // Exactly what the console sends: the gate keys on the worktree, and the
+  // per-branch push control targets the MAIN checkout, whose owner is `user`
+  // — so `withGitMutation`'s own gate saw `objective: null` and never ran.
+  // Publishing here would put a half-written turn's checkpoints on a shared
+  // remote, `undoable: false`, with no route in VADD that deletes a remote
+  // branch.
+  const res = await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/git/push`,
+    payload: {
+      worktree: repo,
+      remote: 'origin',
+      branch: objective.branchName,
+      setUpstream: false,
+    },
+  })
+  expect(res.statusCode).toBe(409)
+  expect(res.json().error).toContain('executing')
+  // The refusal names the objective in the way, as every other 409 does.
+  expect(res.json().objectiveId).toBe(objective.id)
 })
 
 test('a remote failure answers 502, not 500', async () => {

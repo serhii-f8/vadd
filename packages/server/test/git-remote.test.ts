@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import {
@@ -65,7 +66,12 @@ test('a missing credential cannot hang, even against a real 401 and the user own
     stdio: 'pipe',
   })
 
-  const askpass = join(repo, '..', 'blocking-askpass.sh')
+  // Its own temp directory, not `join(repo, '..')` — that is the shared
+  // system temp root, so the earlier version left a mode-0755 script called
+  // `blocking-askpass.sh` sitting in `/tmp` after every run, and handed it to
+  // git as `GIT_ASKPASS`. Removed in the `finally` below.
+  const scriptDir = mkdtempSync(join(tmpdir(), 'vadd-askpass-'))
+  const askpass = join(scriptDir, 'blocking-askpass.sh')
   // Sleeps well past gitRemote's own 2s timeout below: if the user's
   // GIT_ASKPASS survived into the child, this is what would hang the
   // request instead of the 401 failing it fast.
@@ -83,6 +89,7 @@ test('a missing credential cannot hang, even against a real 401 and the user own
   } finally {
     if (previousAskpass === undefined) delete process.env.GIT_ASKPASS
     else process.env.GIT_ASKPASS = previousAskpass
+    rmSync(scriptDir, { recursive: true, force: true })
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 })
@@ -101,7 +108,10 @@ test('a command that outruns its timeout is killed and reports timedOut', async 
   // `git` leader: confirmed by hand that killing the leader pid alone leaves
   // `sleep 30` running as an orphan, while `killGroup`'s negative-pid kill
   // reaches it.
-  const script = join(repo, '..', 'slow-upload-pack.sh')
+  // Its own temp directory, cleaned up below: `join(repo, '..')` is the shared
+  // system temp root, and the earlier version left this script in `/tmp`.
+  const scriptDir = mkdtempSync(join(tmpdir(), 'vadd-uploadpack-'))
+  const script = join(scriptDir, 'slow-upload-pack.sh')
   writeFileSync(script, '#!/bin/sh\nexec sleep 30\n', { mode: 0o755 })
   const started = Date.now()
   try {
@@ -110,6 +120,8 @@ test('a command that outruns its timeout is killed and reports timedOut', async 
   } catch (err) {
     expect(err).toBeInstanceOf(RemoteError)
     expect((err as RemoteError).timedOut).toBe(true)
+  } finally {
+    rmSync(scriptDir, { recursive: true, force: true })
   }
   // execa's own timeout signals the process VADD spawned and not the command
   // underneath it — phase 4 measured a `sleep 5` under a 1s timeout taking
@@ -193,10 +205,15 @@ test('a fast-forward pull leaves every existing commit reachable', async () => {
   const repo = makeTempRepo()
   const bare = makeBareRemote(repo)
   const original = head(repo)
-  seedRemoteAhead(repo, bare)
+  const { sha } = seedRemoteAhead(repo, bare)
 
   await pullFastForward(repo, 'origin')
 
+  // Asserted FIRST, and load-bearing. `seedRemoteAhead` does not move this
+  // repo's HEAD, so without this line `original === head(repo)` on entry and
+  // `merge-base --is-ancestor X X` exits 0 — a `pullFastForward` that did
+  // nothing at all passed the ancestry check below.
+  expect(head(repo)).toBe(sha)
   // This is why pull needs no checkpoint repair: a fast-forward only advances
   // a ref along existing history, so every recorded checkpointRef stays
   // reachable. `rewritesHistory` is correctly false.
@@ -319,4 +336,75 @@ test('pullFastForward refuses a detached HEAD instead of pulling into it', async
   // is the status, which the route test pins.
   await expect(pullFastForward(repo, 'origin')).rejects.toThrow(/detached/i)
   await expect(pullFastForward(repo, 'origin')).rejects.toThrow(/check out a branch/i)
+})
+
+test('an option-shaped remote name is passed as a value, not executed as an option', async () => {
+  const repo = makeTempRepo()
+  // Measured on git 2.43.0, not assumed: `git remote add` accepts this name
+  // (behind its own `--`) and `git remote` prints it back verbatim, so the
+  // "validated against a real list" guard in `routes/git.ts` does NOT by
+  // itself mean a name cannot be read as an option.
+  const hostile = '--upload-pack=/bin/echo'
+  execFileSync('git', ['-C', repo, 'remote', 'add', '--', hostile, '/nonexistent/nowhere.git'], {
+    stdio: 'pipe',
+  })
+  expect((await listRemotes(repo)).map((r) => r.name)).toEqual([hostile])
+
+  let message = ''
+  try {
+    await fetchRemote(repo, hostile)
+    throw new Error('should have thrown')
+  } catch (err) {
+    expect(err).toBeInstanceOf(RemoteError)
+    message = (err as RemoteError).message
+  }
+  // The discriminating pair. Without `--`, git parses the name as
+  // `--upload-pack` and really runs `/bin/echo` as the transport, whose
+  // output it then fails to read as protocol ("bad line length character").
+  // With `--`, the name is a remote, its configured url is resolved, and the
+  // failure is about that url instead. No network either way: the url is a
+  // local path that does not exist.
+  expect(message).toMatch(/does not appear to be a git repository/)
+  expect(message).not.toMatch(/protocol error/)
+})
+
+test('a user own core.sshCommand survives, with BatchMode appended to it', async () => {
+  const repo = makeTempRepo()
+  const dir = mkdtempSync(join(tmpdir(), 'vadd-ssh-'))
+  const log = join(dir, 'argv.log')
+  const fakeSsh = join(dir, 'fake-ssh.sh')
+  // Records the argv git hands it and fails. Never opens a socket, and
+  // `example.invalid` is a reserved TLD that resolves nowhere — nothing in
+  // this test can reach a network.
+  writeFileSync(fakeSsh, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexit 1\n`, { mode: 0o755 })
+  execFileSync('git', ['-C', repo, 'remote', 'add', 'sshr', 'git@example.invalid:me/x.git'], {
+    stdio: 'pipe',
+  })
+  const identity = join(dir, 'id_test')
+  execFileSync('git', ['-C', repo, 'config', 'core.sshCommand', `${fakeSsh} -i ${identity}`], {
+    stdio: 'pipe',
+  })
+
+  // The runner's own environment must not decide this test's answer: git
+  // reads GIT_SSH_COMMAND ahead of core.sshCommand, which is exactly the
+  // precedence `userSshCommand` reproduces.
+  const previous = process.env.GIT_SSH_COMMAND
+  delete process.env.GIT_SSH_COMMAND
+  try {
+    await expect(fetchRemote(repo, 'sshr')).rejects.toThrow(RemoteError)
+    const argv = readFileSync(log, 'utf8')
+    // A fixed `GIT_SSH_COMMAND: 'ssh -o BatchMode=yes'` discards the user's
+    // own ssh command wholesale — measured, the script below was never
+    // invoked at all — and a user whose key lives behind `-i` then gets
+    // `Permission denied (publickey)` reported by VADD as a 502 blaming the
+    // remote. Design §4 and amendment A20 both promise the opposite.
+    expect(argv).toContain(`-i ${identity}`)
+    // And the batch-mode mitigation still binds: git shell-interprets the
+    // value, so the appended option arrives as one more argument.
+    expect(argv).toContain('-o BatchMode=yes')
+  } finally {
+    if (previous === undefined) delete process.env.GIT_SSH_COMMAND
+    else process.env.GIT_SSH_COMMAND = previous
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

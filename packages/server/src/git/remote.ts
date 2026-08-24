@@ -40,6 +40,34 @@ const DEFAULT_TIMEOUT_MS = 120_000
 const GRACE_MS = 5_000
 
 /**
+ * The ssh command the user's own git would have used, before VADD adds to it.
+ *
+ * Reproduces git's own precedence, measured on git 2.43.0 rather than assumed:
+ * with `GIT_SSH_COMMAND` exported, a repository's `core.sshCommand` was not
+ * consulted at all (a fake ssh recording its argv was never invoked); with the
+ * env var unset it was, and ran as `-i <key> ... git@host git-upload-pack ...`.
+ *
+ * `GIT_SSH` — the legacy variable naming a bare program path rather than a
+ * shell string — is deliberately NOT composed here, and a user who sets only
+ * that one still has it superseded by the value below. Composing it would mean
+ * shell-quoting a path under rules that differ from how git itself reads the
+ * variable, and the realistic configurations (`core.sshCommand`,
+ * `GIT_SSH_COMMAND`) are both already shell strings. Recorded rather than
+ * silently papered over; design §4 states the same limitation.
+ */
+async function userSshCommand(cwd: string): Promise<string> {
+  const fromEnv = process.env.GIT_SSH_COMMAND
+  if (fromEnv !== undefined && fromEnv.trim() !== '') return fromEnv
+  try {
+    const configured = (await git(cwd, ['config', '--get', 'core.sshCommand'])).trim()
+    if (configured !== '') return configured
+  } catch {
+    // `config --get` exits 1 when the key is unset, which `execa` throws on.
+  }
+  return 'ssh'
+}
+
+/**
  * The environment that makes a credential failure fail *fast*.
  *
  * A network git command run from a server process can block forever: with no
@@ -53,17 +81,39 @@ const GRACE_MS = 5_000
  * that returns 401 while every other mitigation here was in place. `execa`
  * merges `env` with `process.env`, so a user's own askpass (GNOME keyring,
  * Git Credential Manager, an IDE integration) is inherited into this child
- * unless it is overridden here.
+ * unless it is overridden here. That override IS deliberate: an askpass
+ * helper's whole purpose is to answer a prompt interactively, which is the
+ * one thing this process cannot allow.
+ *
+ * `GIT_SSH_COMMAND` is COMPOSED, not replaced, and that is the difference
+ * between this override and the askpass one. A fixed `ssh -o BatchMode=yes`
+ * discards the user's own `core.sshCommand` wholesale — measured: a repo
+ * configured with `-i <key>` saw its ssh command silently unused, which for a
+ * real user means `Permission denied (publickey)` reported by VADD as a 502
+ * blaming the remote for VADD's own substitution. Design §4 and amendment A20
+ * both promise VADD "inherits whatever the user's own git already uses", so
+ * the user's string is kept and `-o BatchMode=yes` appended to it: git
+ * shell-interprets the value, so a trailing option binds as one more argument
+ * (measured: `-i <key> -o BatchMode=yes ... git@host`). A `plink`-style
+ * command that does not understand `-o` would be broken by the append — but
+ * it was equally broken by the wholesale replacement it replaces.
  *
  * `StrictHostKeyChecking` is deliberately left alone: auto-accepting an
  * unknown host key is a security decision that is not VADD's to make silently,
  * and in batch mode an unknown host fails with a message the user recognises.
+ *
+ * Costs one extra local `git config` subprocess per network call. Measured in
+ * milliseconds against a network operation bounded at two minutes, and the
+ * alternative — caching per cwd — would hold a stale answer across a user
+ * editing their own config.
  */
-const NO_PROMPT_ENV = {
-  GIT_TERMINAL_PROMPT: '0',
-  GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
-  GIT_ASKPASS: '',
-} as const
+async function noPromptEnv(cwd: string): Promise<Record<string, string>> {
+  return {
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_SSH_COMMAND: `${await userSshCommand(cwd)} -o BatchMode=yes`,
+    GIT_ASKPASS: '',
+  }
+}
 
 function killGroup(pid: number | undefined, signal: NodeJS.Signals): void {
   if (pid === undefined) return
@@ -92,7 +142,7 @@ export async function gitRemote(
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<string> {
   const child = execa('git', ['-C', cwd, ...args], {
-    env: NO_PROMPT_ENV,
+    env: await noPromptEnv(cwd),
     all: true,
     reject: false,
     detached: true,
@@ -156,6 +206,32 @@ function redactUserinfo(url: string): string {
 }
 
 /**
+ * `--` before every caller-supplied remote name, so git reads it as a value.
+ *
+ * Amendment A20 rests on "no route accepts a URL": every operation takes a
+ * remote *name* validated against `git remote`'s own list. That guard was
+ * written believing a listed name could not be option-shaped. **Measured on
+ * git 2.43.0, it can:** `git remote add -- '--upload-pack=/bin/echo'
+ * /tmp/nowhere.git` succeeds, `git remote` then prints the name verbatim, and
+ * `git fetch '--upload-pack=/bin/echo'` really did execute `/bin/echo` as the
+ * transport (`fatal: protocol error: bad line length character: /tmp` — that
+ * is echo's own output being read as git protocol). With `--` in front, the
+ * same argv resolves the configured url instead and fails as a value
+ * (`fatal: '/tmp/nowhere.git' does not appear to be a git repository`).
+ *
+ * Reaching that state requires the user's own hostile `.git/config`, so the
+ * practical risk is low — but the claim that a list-validated name cannot be
+ * an option sits in the permanent spec, and this project records what was
+ * observed rather than what was assumed. All three forms were verified to
+ * parse: `fetch -- <remote>`, `pull --ff-only -- <remote> <branch>`,
+ * `push [--set-upstream] -- <remote> <branch>`.
+ */
+const END_OF_OPTIONS = {
+  fetch: ['fetch', '--'],
+  pull: ['pull', '--ff-only', '--'],
+} as const
+
+/**
  * The remotes this repository already has. Reads `.git/config`; no network.
  *
  * Names come from `git remote` one per line, then each url is asked for by
@@ -177,9 +253,11 @@ export async function listRemotes(repoPath: string): Promise<RemoteInfo[]> {
     // remember to. Nothing is lost functionally — every git argument VADD
     // builds names a remote by NAME and lets git read the url out of the
     // repository's own config, so no redacted string is ever passed back.
-    const fetchUrl = redactUserinfo((await gitRemote(repoPath, ['remote', 'get-url', name])).trim())
+    const fetchUrl = redactUserinfo(
+      (await gitRemote(repoPath, ['remote', 'get-url', '--', name])).trim(),
+    )
     const pushUrl = redactUserinfo(
-      (await gitRemote(repoPath, ['remote', 'get-url', '--push', name])).trim(),
+      (await gitRemote(repoPath, ['remote', 'get-url', '--push', '--', name])).trim(),
     )
     out.push({ name, fetchUrl, pushUrl })
   }
@@ -189,9 +267,11 @@ export async function listRemotes(repoPath: string): Promise<RemoteInfo[]> {
 /**
  * Updates remote-tracking refs. Touches no local branch and no working tree,
  * which is why the in-flight gate does not apply to it.
+ *
+ * See `END_OF_OPTIONS` for why the `--` is load-bearing rather than habit.
  */
 export async function fetchRemote(repoPath: string, remote: string): Promise<void> {
-  await gitRemote(repoPath, ['fetch', remote])
+  await gitRemote(repoPath, [...END_OF_OPTIONS.fetch, remote])
 }
 
 /**
@@ -254,7 +334,7 @@ export async function pullFastForward(worktreePath: string, remote: string): Pro
         'Check out a branch first.',
     )
   }
-  await gitRemote(worktreePath, ['pull', '--ff-only', remote, branch])
+  await gitRemote(worktreePath, [...END_OF_OPTIONS.pull, remote, branch])
 }
 
 /**
@@ -278,6 +358,9 @@ export async function pushBranch(
 ): Promise<void> {
   const args = ['push']
   if (setUpstream) args.push('--set-upstream')
-  args.push(remote, branch)
+  // `--` last, after every option this function adds: it ends option parsing,
+  // so anything before it is still read as an option and anything after it is
+  // not. See `END_OF_OPTIONS`.
+  args.push('--', remote, branch)
   await gitRemote(worktreePath, args)
 }

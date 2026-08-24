@@ -248,14 +248,18 @@ test('the topology route degrades to null ahead/behind rather than 500ing when o
   makeBareRemote(repo)
   execFileSync('git', ['-C', repo, 'push', '-qu', 'origin', 'master'], { stdio: 'pipe' })
 
-  // Corrupt the remote-tracking ref's own object rather than remove the ref
-  // or its branch config: `rev-parse ...@{upstream}` is a pure ref-name
-  // lookup and still resolves ("origin/master") without needing the object,
-  // but `rev-list`, which must actually walk the commit, then fails — the
-  // one failure mode `aheadBehind`'s original guard (wrapping only
-  // `rev-parse`) did not cover. Deleting the ref outright, or leaving stale
-  // `branch.*.remote`/`branch.*.merge` config, both fail at the `rev-parse`
-  // step instead, which was already safe before this fix.
+  // Delete the loose object the remote-tracking ref points at, rather than
+  // removing the ref or its branch config. Note what this does and does not
+  // isolate: immediately after `push -qu`, `master` and `origin/master` name
+  // the SAME commit, so the object deleted below is the shared tip, not a
+  // remote-only one. That is fine for what this test discriminates —
+  // `rev-parse ...@{upstream}` is a pure ref-name lookup and still resolves
+  // ("origin/master") without ever reading object content, while `rev-list`,
+  // which must walk the commit, then fails. That is the one failure mode
+  // `aheadBehind`'s original guard (wrapping only `rev-parse`) did not cover.
+  // Deleting the ref outright, or leaving stale `branch.*.remote`/
+  // `branch.*.merge` config, both fail at the `rev-parse` step instead, which
+  // was already safe before this fix.
   const sha = execFileSync('git', ['-C', repo, 'rev-parse', 'refs/remotes/origin/master'], {
     encoding: 'utf8',
   }).trim()

@@ -188,12 +188,17 @@ export function GitConsole() {
       try {
         const { report } = await api.gitMutate(selectedId, op, body)
         setOutcome({ kind: 'ok', report })
-        // `fetch` and `push` are declared `undoable: false` server-side (a
-        // fetch touches no local ref at all, and a push changes nothing
-        // locally to restore — see `packages/server/src/git/remote.ts`'s
-        // `MutationKind` constants). An Undo banner here would offer to
-        // reset the local branch and "un-push" nothing: a real,
-        // desynchronising action under a label promising to undo one.
+        // Neither `fetch` nor `push` leaves anything an undo could restore,
+        // by two different mechanisms — worth stating precisely, because the
+        // earlier wording here named one mechanism for both and was wrong
+        // about `fetch`. `push` runs through `withGitMutation` declaring
+        // `undoable: false` (`REMOTE_PLAIN` in
+        // `packages/server/src/http/routes/git.ts`), so no `git_undo` row is
+        // written. `fetch` never constructs a `MutationKind` at all — it sits
+        // outside the wrapper entirely, following `branch/delete`'s
+        // precedent, because it moves no local ref. An Undo banner for either
+        // would offer to reset the local branch and "un-push" nothing: a
+        // real, desynchronising action under a label promising to undo one.
         setUndoable(op === 'undo' || op === 'fetch' || op === 'push' ? null : report.describes)
       } catch (e) {
         // The server names the objective it refused for; the worktree
@@ -405,9 +410,16 @@ export function GitConsole() {
                     <ConfirmButton
                       key={`push-${r.name}`}
                       label={remotes.length > 1 ? `Push to ${r.name}` : 'Push'}
+                      /*
+                        Both arms name the remote. The VADD arm used to drop
+                        it, so with two remotes configured the two push
+                        buttons on one `vadd/<8hex>` row showed identical
+                        armed text naming neither — at the exact moment of
+                        the destructive second click.
+                      */
                       confirmLabel={
                         b.owner.kind === 'vadd'
-                          ? `Push ${b.name}? The remote copy outlives integrate: discard.`
+                          ? `Push ${b.name} to ${r.name}? The remote copy outlives integrate: discard.`
                           : `Push ${b.name} to ${r.name}?`
                       }
                       disabled={busy}

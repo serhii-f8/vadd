@@ -74,7 +74,13 @@ function errorMessage(err: unknown): string {
  */
 export function declaredStatus(err: unknown): number {
   const status = (err as { status?: unknown } | null | undefined)?.status
-  return typeof status === 'number' ? status : 500
+  // Clamped to the range Fastify can actually send. `status` is read off an
+  // arbitrary thrown value, and a library that happens to carry a numeric
+  // `.status` meaning something else — an exit code, say — would otherwise
+  // reach `reply.code()` and throw `ERR_HTTP_INVALID_STATUS_CODE` there,
+  // turning a handled failure into an unhandled one.
+  if (typeof status !== 'number' || !Number.isInteger(status)) return 500
+  return status >= 400 && status <= 599 ? status : 500
 }
 
 /** HEAD, or null in a repository with no commits yet. */
