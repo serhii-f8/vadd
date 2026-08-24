@@ -1,4 +1,5 @@
 import { execa } from 'execa'
+import { git } from './run.js'
 
 /**
  * A failure of a network-capable git command.
@@ -129,4 +130,33 @@ export async function listRemotes(repoPath: string): Promise<RemoteInfo[]> {
     out.push({ name, fetchUrl, pushUrl })
   }
   return out
+}
+
+/**
+ * Updates remote-tracking refs. Touches no local branch and no working tree,
+ * which is why the in-flight gate does not apply to it.
+ */
+export async function fetchRemote(repoPath: string, remote: string): Promise<void> {
+  await gitRemote(repoPath, ['fetch', remote])
+}
+
+/**
+ * Fast-forwards the worktree's current branch from `remote`.
+ *
+ * `--ff-only` is load-bearing, not a default. A merge-producing pull can stop
+ * in a conflicted state, and conflict resolution is out of scope (Pass B's
+ * §11) — there is no UI here that could finish one. It also means no
+ * checkpoint repair is needed: a fast-forward advances a ref along existing
+ * history and invalidates no recorded `checkpointRef`.
+ *
+ * The branch is resolved and passed explicitly (via `run.ts`'s local,
+ * network-free `git`) rather than left for `git pull` to infer, because a
+ * VADD-created branch has no `branch.<name>.merge` upstream config — it was
+ * never cloned into existence — and a bare `git pull --ff-only <remote>`
+ * against one refuses with "you must specify a branch", found by running
+ * this against a real repo rather than assumed.
+ */
+export async function pullFastForward(worktreePath: string, remote: string): Promise<void> {
+  const branch = (await git(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+  await gitRemote(worktreePath, ['pull', '--ff-only', remote, branch])
 }

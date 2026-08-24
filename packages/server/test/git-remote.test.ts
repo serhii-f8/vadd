@@ -4,8 +4,14 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import { gitRemote, listRemotes, RemoteError } from '../src/git/remote.js'
-import { makeBareRemote } from './fixtures/bare-remote.js'
+import {
+  fetchRemote,
+  gitRemote,
+  listRemotes,
+  pullFastForward,
+  RemoteError,
+} from '../src/git/remote.js'
+import { cloneOf, makeBareRemote } from './fixtures/bare-remote.js'
 import { makeTempRepo } from './fixtures/temp-repo.js'
 
 test('listRemotes reports the configured remote and its urls', async () => {
@@ -108,4 +114,92 @@ test('a command that outruns its timeout is killed and reports timedOut', async 
   // underneath it — phase 4 measured a `sleep 5` under a 1s timeout taking
   // 5006ms and surviving. The group kill is what makes this bound real.
   expect(Date.now() - started).toBeLessThan(5_000)
+})
+
+function head(dir: string): string {
+  return execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+}
+
+/** Pushes `repo`'s current branch to `bare`, then commits once in a clone. */
+function seedRemoteAhead(repo: string, bare: string): { clone: string; sha: string } {
+  execFileSync('git', ['-C', repo, 'push', '-q', 'origin', 'master'], { stdio: 'pipe' })
+  const clone = cloneOf(bare)
+  writeFileSync(join(clone, 'from-elsewhere.txt'), 'x\n')
+  execFileSync('git', ['-C', clone, 'add', '-A'], { stdio: 'pipe' })
+  execFileSync('git', ['-C', clone, 'commit', '-qm', 'made elsewhere'], { stdio: 'pipe' })
+  execFileSync('git', ['-C', clone, 'push', '-q'], { stdio: 'pipe' })
+  return { clone, sha: head(clone) }
+}
+
+test('fetch updates the remote-tracking ref without touching HEAD', async () => {
+  const repo = makeTempRepo()
+  const bare = makeBareRemote(repo)
+  const { sha } = seedRemoteAhead(repo, bare)
+  const before = head(repo)
+
+  await fetchRemote(repo, 'origin')
+
+  const tracking = execFileSync('git', ['-C', repo, 'rev-parse', 'refs/remotes/origin/master'], {
+    encoding: 'utf8',
+  }).trim()
+  expect(tracking).toBe(sha)
+  // The whole reason fetch is not gated: it moves nothing local.
+  expect(head(repo)).toBe(before)
+  expect(
+    execFileSync('git', ['-C', repo, 'status', '--porcelain'], { encoding: 'utf8' }).trim(),
+  ).toBe('')
+})
+
+test('pull fast-forwards the branch', async () => {
+  const repo = makeTempRepo()
+  const bare = makeBareRemote(repo)
+  const { sha } = seedRemoteAhead(repo, bare)
+  expect(head(repo)).not.toBe(sha)
+
+  await pullFastForward(repo, 'origin')
+
+  expect(head(repo)).toBe(sha)
+})
+
+test('a pull that would need a merge refuses, and says so', async () => {
+  const repo = makeTempRepo()
+  const bare = makeBareRemote(repo)
+  seedRemoteAhead(repo, bare)
+  // Diverge locally: now neither side is an ancestor of the other.
+  writeFileSync(join(repo, 'local-only.txt'), 'y\n')
+  execFileSync('git', ['-C', repo, 'add', '-A'], { stdio: 'pipe' })
+  execFileSync('git', ['-C', repo, 'commit', '-qm', 'made here'], { stdio: 'pipe' })
+  // This machine's git already refuses an unconfigured divergent pull on its
+  // own ("Need to specify how to reconcile divergent branches"), which would
+  // let this test pass even with --ff-only dropped — a false sense of
+  // coverage confirmed by mutation-checking without this line. `pull.rebase
+  // false` removes that incidental safety net and forces the exact case
+  // --ff-only exists for: without it, this repo config makes git attempt (and
+  // succeed at) a real merge commit instead of refusing.
+  execFileSync('git', ['-C', repo, 'config', 'pull.rebase', 'false'], { stdio: 'pipe' })
+  const before = head(repo)
+
+  await expect(pullFastForward(repo, 'origin')).rejects.toThrow(RemoteError)
+  // Refuses cleanly rather than stopping in a conflicted state — the reason
+  // --ff-only was chosen, since conflict resolution is out of scope.
+  expect(head(repo)).toBe(before)
+  expect(
+    execFileSync('git', ['-C', repo, 'status', '--porcelain'], { encoding: 'utf8' }).trim(),
+  ).toBe('')
+})
+
+test('a fast-forward pull leaves every existing commit reachable', async () => {
+  const repo = makeTempRepo()
+  const bare = makeBareRemote(repo)
+  const original = head(repo)
+  seedRemoteAhead(repo, bare)
+
+  await pullFastForward(repo, 'origin')
+
+  // This is why pull needs no checkpoint repair: a fast-forward only advances
+  // a ref along existing history, so every recorded checkpointRef stays
+  // reachable. `rewritesHistory` is correctly false.
+  execFileSync('git', ['-C', repo, 'merge-base', '--is-ancestor', original, 'HEAD'], {
+    stdio: 'pipe',
+  })
 })
