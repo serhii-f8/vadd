@@ -15,12 +15,17 @@ export class RemoteError extends Error {
    * Carried on the error rather than encoded into its message: the route only
    * ever sees `withGitMutation`'s stringified `error`, and a message that
    * legitimately begins with "502:" would be indistinguishable from a tag.
+   *
+   * 502 by default, which is the whole point of the class — the remote
+   * refused, VADD did not fail. Overridable for the one case that is neither:
+   * a refusal this module makes *before* any command runs, which no remote
+   * ever saw and which the user fixes themselves (see `pullFastForward`'s
+   * detached-HEAD guard). Answering 502 there would name the wrong culprit.
    */
-  readonly status = 502
-
   constructor(
     message: string,
     readonly timedOut: boolean,
+    readonly status: number = 502,
   ) {
     super(message)
     this.name = 'RemoteError'
@@ -135,10 +140,16 @@ export async function gitRemote(
  * mangles it into nonsense. It has no `://`, so it never matches here.
  * A local path (`/tmp/vadd-bare-xxxx`) has no `://` either.
  *
- * `[^/@]` cannot cross a `/`, so a url whose *path* contains an `@`
- * (`https://host/me/x@y.git`) is left alone.
+ * `[^/]+` is greedy and still cannot cross a `/`, so it takes the LAST `@`
+ * before the path: an unencoded `@` inside a password
+ * (`https://a:p@ssword@h/x`) is consumed rather than leaving `ssword@h` on
+ * screen. Defence in depth rather than a live leak — git 2.43 rejects that
+ * url outright ("URL rejected: Bad hostname"), measured, so no working
+ * credential has this shape today. A url whose *path* contains an `@`
+ * (`https://host/me/x@y.git`) still cannot match, because the class stops at
+ * the first `/`.
  */
-const URL_USERINFO = /^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^/@]+@/
+const URL_USERINFO = /^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^/]+@/
 
 function redactUserinfo(url: string): string {
   return url.replace(URL_USERINFO, '$1***@')
@@ -195,6 +206,9 @@ export async function fetchRemote(repoPath: string, remote: string): Promise<voi
  * fast-forward only advances a ref along existing history, so it invalidates
  * no recorded `checkpointRef` and needs no repair step.
  *
+ * A detached HEAD is refused rather than half-supported: see the guard below
+ * for what `--abbrev-ref` actually returns in that case.
+ *
  * The branch is resolved and passed explicitly (via `run.ts`'s local,
  * network-free `git`) rather than left for `git pull` to infer, because a
  * VADD-created branch has no `branch.<name>.merge` upstream config — it was
@@ -204,6 +218,21 @@ export async function fetchRemote(repoPath: string, remote: string): Promise<voi
  */
 export async function pullFastForward(worktreePath: string, remote: string): Promise<void> {
   const branch = (await git(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+  if (branch === 'HEAD') {
+    // `rev-parse --abbrev-ref HEAD` answers the literal string `HEAD` on a
+    // detached HEAD, so without this guard the line below runs
+    // `git pull --ff-only <remote> HEAD`. Measured by removing the guard:
+    // `fatal: couldn't find remote ref HEAD`, which the route then reported
+    // as a 502 — blaming the remote for a purely local condition. Refused
+    // instead of half-supported, the same way squash/reword/drop refuse a
+    // mid-branch sha. 400, not 502: no remote was involved.
+    throw new RemoteError(
+      'This worktree is on a detached HEAD, so there is no branch to fast-forward. ' +
+        'Check out a branch first.',
+      false,
+      400,
+    )
+  }
   await gitRemote(worktreePath, ['pull', '--ff-only', remote, branch])
 }
 

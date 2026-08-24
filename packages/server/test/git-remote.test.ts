@@ -293,3 +293,27 @@ test('a local-path remote comes back byte-identical', async () => {
   expect(remote?.fetchUrl).toBe(bare)
   expect(remote?.pushUrl).toBe(bare)
 })
+
+test('an unencoded @ inside a password does not escape redaction', async () => {
+  const repo = makeTempRepo()
+  // Defence in depth, not a live leak: git 2.43 rejects this url outright
+  // ("URL rejected: Bad hostname"), measured — `git remote add` stores it
+  // happily, but no fetch could ever use it. The greedy class takes the last
+  // `@` before the path, so nothing of the password survives.
+  execFileSync('git', ['-C', repo, 'remote', 'add', 'creds', 'https://a:p@ssword@h/x.git'], {
+    stdio: 'pipe',
+  })
+  const [remote] = await listRemotes(repo)
+  expect(remote?.fetchUrl).toBe('https://***@h/x.git')
+  expect(remote?.fetchUrl).not.toContain('ssword')
+})
+
+test('pullFastForward refuses a detached HEAD instead of pulling into it', async () => {
+  const repo = makeTempRepo()
+  makeBareRemote(repo)
+  execFileSync('git', ['-C', repo, 'checkout', '-q', '--detach'], { stdio: 'pipe' })
+  // `rev-parse --abbrev-ref HEAD` returns the literal string `HEAD` here, so
+  // without the guard VADD would run `git pull --ff-only origin HEAD`.
+  await expect(pullFastForward(repo, 'origin')).rejects.toThrow(RemoteError)
+  await expect(pullFastForward(repo, 'origin')).rejects.toThrow(/detached/i)
+})

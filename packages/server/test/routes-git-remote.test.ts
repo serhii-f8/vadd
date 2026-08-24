@@ -80,28 +80,57 @@ test('a push writes NO undo record', async () => {
   expect(db.select().from(gitUndo).all()).toHaveLength(0)
 })
 
-test('a remote that is not configured is refused with 400', async () => {
+/**
+ * Every route that names a remote, with a body that is otherwise valid.
+ *
+ * Parametrised rather than copied because the guarantee is per-route: the
+ * check lives in three separate handlers, so a test that exercises one of
+ * them is evidence about one of them. Testing `fetch` alone left `pull`'s
+ * guard deletable with the suite still green.
+ */
+const REMOTE_ROUTES = [
+  { name: 'fetch', body: (_repo: string, remote: string) => ({ remote }) },
+  { name: 'pull', body: (repo: string, remote: string) => ({ worktree: repo, remote }) },
+  {
+    name: 'push',
+    body: (repo: string, remote: string) => ({
+      worktree: repo,
+      remote,
+      branch: 'master',
+      setUpstream: false,
+    }),
+  },
+] as const
+
+test('a remote that is not configured is refused with 400, on every route', async () => {
   const { app, repo, projectId } = await withProject()
-  const res = await app.inject({
-    method: 'POST',
-    url: `/api/projects/${projectId}/git/push`,
-    payload: { worktree: repo, remote: 'nope', branch: 'master', setUpstream: false },
-  })
-  expect(res.statusCode).toBe(400)
-  expect(res.json().error).toMatch(/remote/i)
+  for (const route of REMOTE_ROUTES) {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/git/${route.name}`,
+      payload: route.body(repo, 'nope'),
+    })
+    expect(res.statusCode, route.name).toBe(400)
+    expect(res.json().error, route.name).toMatch(/remote/i)
+  }
 })
 
-test('a URL is not accepted as a remote', async () => {
-  const { app, projectId } = await withProject()
+test('a URL is not accepted as a remote, on every route', async () => {
+  const { app, repo, projectId } = await withProject()
   // The mechanism amendment A20 rests on: there is no input through which
-  // VADD can be pointed at a host the user did not configure.
-  const res = await app.inject({
-    method: 'POST',
-    url: `/api/projects/${projectId}/git/fetch`,
-    payload: { remote: 'https://example.com/evil.git' },
-  })
-  expect(res.statusCode).toBe(400)
-  expect(res.json().error).toMatch(/remote/i)
+  // VADD can be pointed at a host the user did not configure. Each of the
+  // three routes reaches `knownRemote` on its own line of code, so each of
+  // them is asserted — a URL that got through any one of them would be
+  // attempted for real.
+  for (const route of REMOTE_ROUTES) {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/git/${route.name}`,
+      payload: route.body(repo, 'https://example.com/evil.git'),
+    })
+    expect(res.statusCode, route.name).toBe(400)
+    expect(res.json().error, route.name).toMatch(/remote/i)
+  }
 })
 
 test('an unknown branch is refused with 400', async () => {
@@ -172,4 +201,18 @@ test('a remote failure inside a gated mutation answers 502 too', async () => {
     payload: { worktree: repo, remote: 'origin', branch: 'master', setUpstream: false },
   })
   expect(res.statusCode).toBe(502)
+})
+
+test('a detached worktree is refused with 400 rather than pulling into HEAD', async () => {
+  const { app, repo, projectId } = await withProject()
+  execFileSync('git', ['-C', repo, 'checkout', '-q', '--detach'], { stdio: 'pipe' })
+  const res = await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/git/pull`,
+    payload: { worktree: repo, remote: 'origin' },
+  })
+  // 400, not 502: nothing was asked of the remote, and the user is the one
+  // who can fix it. This is the one RemoteError that overrides the default.
+  expect(res.statusCode).toBe(400)
+  expect(res.json().error).toMatch(/detached/i)
 })
