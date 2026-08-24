@@ -143,11 +143,14 @@ export async function fetchRemote(repoPath: string, remote: string): Promise<voi
 /**
  * Fast-forwards the worktree's current branch from `remote`.
  *
- * `--ff-only` is load-bearing, not a default. A merge-producing pull can stop
- * in a conflicted state, and conflict resolution is out of scope (Pass B's
- * §11) — there is no UI here that could finish one. It also means no
- * checkpoint repair is needed: a fast-forward advances a ref along existing
- * history and invalidates no recorded `checkpointRef`.
+ * `--ff-only` is load-bearing, not a default. Dropping it does not produce a
+ * loud failure: measured against a divergent branch, git made a clean merge
+ * commit and exited 0, advancing HEAD with nothing to indicate a merge had
+ * happened. A conflict is the case people expect; a silent merge is the one
+ * that costs, and neither has a UI in this pass — conflict resolution is out
+ * of scope (Pass B's §11). It also underwrites a guarantee elsewhere: a
+ * fast-forward only advances a ref along existing history, so it invalidates
+ * no recorded `checkpointRef` and needs no repair step.
  *
  * The branch is resolved and passed explicitly (via `run.ts`'s local,
  * network-free `git`) rather than left for `git pull` to infer, because a
