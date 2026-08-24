@@ -93,19 +93,37 @@ async function userSshCommand(cwd: string): Promise<string> {
  * blaming the remote for VADD's own substitution. Design §4 and amendment A20
  * both promise VADD "inherits whatever the user's own git already uses", so
  * the user's string is kept and `-o BatchMode=yes` appended to it: git
- * shell-interprets the value, so a trailing option binds as one more argument
- * (measured: `-i <key> -o BatchMode=yes ... git@host`). A `plink`-style
- * command that does not understand `-o` would be broken by the append — but
- * it was equally broken by the wholesale replacement it replaces.
+ * shell-interprets the value, so the trailing option arrives as one more
+ * argument (measured: `-i <key> -o BatchMode=yes ... git@host`).
+ *
+ * **The append sets a default, it does not force the value**, and the earlier
+ * wording here ("binds as one more argument") described argv *presence* as if
+ * it were *effect*. `ssh` takes the FIRST value it sees for an option —
+ * measured on OpenSSH 9.6p1: `ssh -o BatchMode=no -o BatchMode=yes -G <host>`
+ * reports `batchmode no`, and the reverse order reports `batchmode yes`. So a
+ * user whose own `GIT_SSH_COMMAND`/`core.sshCommand` already carries
+ * `-o BatchMode=no` keeps interactivity, and for exactly that user the
+ * process-group timeout below is the only thing preventing a hang. That is
+ * the right trade: forcing the value would mean discarding a setting the user
+ * made deliberately, which is the failure this whole composition exists to
+ * stop.
+ *
+ * A `plink`-style command that does not understand `-o` would be broken by
+ * the append — but it was equally broken by the wholesale replacement it
+ * replaces.
  *
  * `StrictHostKeyChecking` is deliberately left alone: auto-accepting an
  * unknown host key is a security decision that is not VADD's to make silently,
  * and in batch mode an unknown host fails with a message the user recognises.
  *
- * Costs one extra local `git config` subprocess per network call. Measured in
- * milliseconds against a network operation bounded at two minutes, and the
- * alternative — caching per cwd — would hold a stale answer across a user
- * editing their own config.
+ * **A real cost regression, recorded rather than optimised away.** This spawns
+ * one extra local `git config` per `gitRemote` call, so `listRemotes` now
+ * costs 2N+1 subprocesses for N remotes and `knownRemote` — which calls
+ * `listRemotes` — pays it on every remote mutation. No correctness impact, and
+ * N is one or two in practice, against a network operation bounded at two
+ * minutes. Not optimised: caching per cwd would hold a stale answer across a
+ * user editing their own git config, which is the exact configuration this
+ * function exists to respect.
  */
 async function noPromptEnv(cwd: string): Promise<Record<string, string>> {
   return {
