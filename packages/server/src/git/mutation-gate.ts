@@ -54,7 +54,14 @@ export function gateForStatus(status: string): GateVerdict {
   return { allowed: false, reason: `Cannot modify git while ${status}: ${writer}` }
 }
 
-/** Exported for the UI, which shows which states block a mutation. */
-export const BUSY_STATES: string[] = MACHINE_STATES.filter((s) => WRITER[s] !== null).concat(
-  'creating',
-)
+/**
+ * Exported for the UI, which shows which states block a mutation.
+ *
+ * The widening to `string[]` before `concat` is load-bearing: `MACHINE_STATES`
+ * is an `as const` tuple, so `filter` narrows the element type to
+ * `MachineStateName`, and `'creating'` — an `objectives.status` the machine
+ * never holds — is not one.
+ */
+export const BUSY_STATES: string[] = (MACHINE_STATES as readonly string[])
+  .filter((s) => WRITER[s as keyof typeof WRITER] !== null)
+  .concat('creating')

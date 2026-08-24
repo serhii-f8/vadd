@@ -1,6 +1,7 @@
 import { protectedPaths } from '@vadd/core'
+import { eq } from 'drizzle-orm'
 import type { Db } from '../db/client.js'
-import { gitUndo } from '../db/schema.js'
+import { gitUndo, planTasks } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
 import { gateForStatus } from './mutation-gate.js'
 import type { Owner } from './provenance.js'
@@ -120,7 +121,29 @@ export async function withGitMutation<T>(
     return { ok: false, status: 500, error: message }
   }
 
-  // 3. Checkpoint repair — Task 5 inserts its stage here, after `run`.
+  // 3. Checkpoint repair. Only for a VADD-owned target — a repo-level
+  //    mutation has no plan_tasks to repair, and must not reach across to an
+  //    objective that merely shares the directory.
+  if (kind.rewritesHistory && target.objective !== null) {
+    const rows = deps.db
+      .select()
+      .from(planTasks)
+      .where(eq(planTasks.objectiveId, target.objective.id))
+      .all()
+
+    for (const row of rows) {
+      if (row.checkpointRef === null) continue
+      // A checkpoint still reachable from HEAD survived the rewrite; one
+      // that is not is either inside a squashed range or gone. Either way it
+      // can no longer mean "the state before this task", so it is cleared
+      // rather than left to reset to an orphan silently.
+      const reachable = await isAncestor(target.worktreePath, row.checkpointRef)
+      if (reachable) continue
+      deps.db.update(planTasks).set({ checkpointRef: null }).where(eq(planTasks.id, row.id)).run()
+      report.clearedCheckpoints.push({ taskId: row.id, ord: row.ord, title: row.title })
+    }
+    report.clearedCheckpoints.sort((a, b) => a.ord - b.ord)
+  }
 
   // 4. Undo record. Skipped when there was no HEAD to return to.
   if (beforeSha !== null) {
@@ -176,4 +199,75 @@ export async function commitStaged(ctx: MutationContext, message: string): Promi
   // a message beginning with `-` cannot be read as an option.
   await gitChecked(ctx.worktreePath, ['commit', '-m', message])
   return (await gitChecked(ctx.worktreePath, ['rev-parse', 'HEAD'])).trim()
+}
+
+/**
+ * Collapses `from..to` (inclusive) into one commit.
+ *
+ * Implemented as `reset --soft` to `from`'s parent then a fresh commit — the
+ * same shape `runIntegration`'s squash already uses, and deliberately not an
+ * interactive rebase: there is no terminal here to resolve one, and a rebase
+ * that stops halfway leaves the worktree in a state this pass has no UI for.
+ */
+export async function squashRange(
+  ctx: MutationContext,
+  from: string,
+  to: string,
+  message: string,
+): Promise<string> {
+  const head = (await gitChecked(ctx.worktreePath, ['rev-parse', 'HEAD'])).trim()
+  const toSha = (await gitChecked(ctx.worktreePath, ['rev-parse', to])).trim()
+  if (toSha !== head) {
+    throw new Error('Only a range ending at HEAD can be squashed in this pass')
+  }
+  await gitChecked(ctx.worktreePath, ['reset', '--soft', `${from}^`])
+  await gitChecked(ctx.worktreePath, ['commit', '-m', message])
+  return (await gitChecked(ctx.worktreePath, ['rev-parse', 'HEAD'])).trim()
+}
+
+export async function amendHead(
+  ctx: MutationContext,
+  message: string | null,
+  includeStaged: boolean,
+): Promise<string> {
+  const args = ['commit', '--amend']
+  if (!includeStaged) args.push('--only')
+  args.push(message === null ? '--no-edit' : '-m', ...(message === null ? [] : [message]))
+  await gitChecked(ctx.worktreePath, args)
+  return (await gitChecked(ctx.worktreePath, ['rev-parse', 'HEAD'])).trim()
+}
+
+export async function rewordCommit(
+  ctx: MutationContext,
+  sha: string,
+  message: string,
+): Promise<string> {
+  const head = (await gitChecked(ctx.worktreePath, ['rev-parse', 'HEAD'])).trim()
+  const target = (await gitChecked(ctx.worktreePath, ['rev-parse', sha])).trim()
+  if (target !== head) {
+    throw new Error('Only the most recent commit can be reworded in this pass')
+  }
+  return amendHead(ctx, message, false)
+}
+
+export async function dropCommit(ctx: MutationContext, sha: string): Promise<string> {
+  const head = (await gitChecked(ctx.worktreePath, ['rev-parse', 'HEAD'])).trim()
+  const target = (await gitChecked(ctx.worktreePath, ['rev-parse', sha])).trim()
+  if (target !== head) {
+    throw new Error('Only the most recent commit can be dropped in this pass')
+  }
+  await gitChecked(ctx.worktreePath, ['reset', '--hard', 'HEAD^'])
+  return (await gitChecked(ctx.worktreePath, ['rev-parse', 'HEAD'])).trim()
+}
+
+/** True when `sha` is still reachable from HEAD. */
+async function isAncestor(worktreePath: string, sha: string): Promise<boolean> {
+  try {
+    await gitChecked(worktreePath, ['merge-base', '--is-ancestor', sha, 'HEAD'])
+    return true
+  } catch {
+    // Exit 1 means "not an ancestor"; anything else (a missing object) also
+    // means the checkpoint is no longer usable, which is the same verdict.
+    return false
+  }
 }
