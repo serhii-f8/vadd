@@ -33,7 +33,9 @@ test('a second record for the same worktree replaces the first', () => {
     at: '2026-08-23T10:00:00.000Z',
   }
 
-  db.insert(gitUndo).values({ ...base, beforeSha: 'a'.repeat(40), describes: 'first' }).run()
+  db.insert(gitUndo)
+    .values({ ...base, beforeSha: 'a'.repeat(40), describes: 'first' })
+    .run()
   db.insert(gitUndo)
     .values({ ...base, beforeSha: 'b'.repeat(40), describes: 'second' })
     .onConflictDoUpdate({
