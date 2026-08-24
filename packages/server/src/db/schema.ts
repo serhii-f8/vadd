@@ -245,3 +245,29 @@ export const evidenceItems = sqliteTable('evidence_items', {
   decidedBy: text('decided_by', { enum: ['user', 'policy'] }),
   createdAt: text('created_at').notNull(),
 })
+
+/**
+ * Amendment A19: the single-step undo record for a git mutation.
+ *
+ * Keyed on the worktree, not the objective: a repo-level target (the main
+ * checkout, a user-made worktree) has no objective to hang it from. One row
+ * per worktree, replaced on each mutation — undo is one step deep by
+ * construction rather than by a cleanup pass someone has to remember.
+ *
+ * `beforeSha` is a pointer into git's own reflog, not a backup. A user who
+ * runs `git gc --prune=now` between the operation and the undo will find it
+ * gone, and the undo fails loudly with git's own message.
+ */
+export const gitUndo = sqliteTable('git_undo', {
+  worktreePath: text('worktree_path').primaryKey(),
+  /**
+   * Null for a repo-level target. Deliberately no foreign key: an objective
+   * may be deleted while its undo record is still meaningful to a user
+   * looking at the worktree it left behind.
+   */
+  objectiveId: text('objective_id'),
+  branch: text('branch'),
+  beforeSha: text('before_sha').notNull(),
+  describes: text('describes').notNull(),
+  at: text('at').notNull(),
+})
