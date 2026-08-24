@@ -1,3 +1,4 @@
+import { protectedPaths } from '@vadd/core'
 import type { Db } from '../db/client.js'
 import { gitUndo } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
@@ -81,7 +82,27 @@ export async function withGitMutation<T>(
   const beforeSha = await headSha(target.worktreePath)
   const ctx: MutationContext = { worktreePath: target.worktreePath, beforeSha, report }
 
-  // 2. `protectedGlobs` — Task 4 inserts its stage here, before `run`.
+  // 2. `policy.protectedGlobs`, for anything that produces a commit.
+  //
+  // Before this, the field had exactly one enforcement point — the squash in
+  // `integrate.ts` — and before phase 6 it had none at all, which is why the
+  // exit run's `backend/.env*` entry failed to stop a tracked `.env.testing`
+  // reaching a branch. Applying it here means a manual commit is exactly as
+  // unable to carry a protected path as the squash is.
+  if (kind.createsCommit && target.protectedGlobs.length > 0) {
+    const staged = (
+      await gitChecked(target.worktreePath, ['diff', '--cached', '--name-only', '-z'])
+    )
+      .split('\0')
+      .filter((p) => p !== '')
+    const excluded = protectedPaths(staged, target.protectedGlobs)
+    if (excluded.length > 0) {
+      // Un-stage only. The working-tree copy is the user's and is never
+      // touched — `git restore --staged` leaves it alone by definition.
+      await gitChecked(target.worktreePath, ['restore', '--staged', '--', ...excluded])
+      report.excludedPaths = excluded
+    }
+  }
 
   let result: T
   try {
@@ -134,4 +155,25 @@ export async function withGitMutation<T>(
   })
 
   return { ok: true, result, report }
+}
+
+export async function stagePaths(ctx: MutationContext, paths: string[]): Promise<void> {
+  await gitChecked(ctx.worktreePath, ['add', '--', ...paths])
+}
+
+export async function unstagePaths(ctx: MutationContext, paths: string[]): Promise<void> {
+  await gitChecked(ctx.worktreePath, ['restore', '--staged', '--', ...paths])
+}
+
+/** Discards working-tree changes to tracked paths. Untracked files are left. */
+export async function discardPaths(ctx: MutationContext, paths: string[]): Promise<void> {
+  await gitChecked(ctx.worktreePath, ['restore', '--', ...paths])
+}
+
+/** Commits the index. Returns the new sha. */
+export async function commitStaged(ctx: MutationContext, message: string): Promise<string> {
+  // `-m` with the message as its own argv element: `execa` runs no shell, so
+  // a message beginning with `-` cannot be read as an option.
+  await gitChecked(ctx.worktreePath, ['commit', '-m', message])
+  return (await gitChecked(ctx.worktreePath, ['rev-parse', 'HEAD'])).trim()
 }
