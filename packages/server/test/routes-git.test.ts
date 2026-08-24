@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { createDb } from '../src/db/client.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { buildApp } from '../src/http/app.js'
+import { makeBareRemote } from './fixtures/bare-remote.js'
 import { makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
 
 async function withProject() {
@@ -224,4 +226,18 @@ test('the log route clamps a zero or negative limit up to 1', async () => {
   ).json()
   expect(negative.commits).toHaveLength(1)
   expect(negative.hasMore).toBe(true)
+})
+
+test('the topology route reports ahead/behind for a tracked branch', async () => {
+  const { app, repo, projectId } = await withProject()
+  makeBareRemote(repo)
+  execFileSync('git', ['-C', repo, 'push', '-qu', 'origin', 'master'], { stdio: 'pipe' })
+  writeFileSync(join(repo, 'mine.txt'), 'y\n')
+  execFileSync('git', ['-C', repo, 'add', '-A'], { stdio: 'pipe' })
+  execFileSync('git', ['-C', repo, 'commit', '-qm', 'mine'], { stdio: 'pipe' })
+
+  const body = (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/git` })).json()
+  const master = body.branches.find((b: { name: string }) => b.name === 'master')
+  expect(master.ahead).toBe(1)
+  expect(master.behind).toBe(0)
 })

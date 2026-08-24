@@ -3,8 +3,15 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import { listBranches, listWorktreesDetailed, readLog, readStatus } from '../src/git/inspect.js'
+import {
+  aheadBehind,
+  listBranches,
+  listWorktreesDetailed,
+  readLog,
+  readStatus,
+} from '../src/git/inspect.js'
 import { GitError } from '../src/git/run.js'
+import { cloneOf, makeBareRemote } from './fixtures/bare-remote.js'
 import { makeTempRepo } from './fixtures/temp-repo.js'
 
 /**
@@ -186,4 +193,33 @@ test('readStatus counts staged, unstaged and untracked separately', async () => 
 test('readStatus is all zeroes on a clean tree', async () => {
   const { repo } = repoWithMerge()
   expect(await readStatus(repo)).toEqual({ staged: 0, unstaged: 0, untracked: 0 })
+})
+
+test('aheadBehind is null when the branch has no upstream', async () => {
+  expect(await aheadBehind(makeTempRepo(), 'master')).toBeNull()
+})
+
+test('aheadBehind counts both directions against the upstream', async () => {
+  const repo = makeTempRepo()
+  const bare = makeBareRemote(repo)
+  execFileSync('git', ['-C', repo, 'push', '-qu', 'origin', 'master'], { stdio: 'pipe' })
+
+  // One commit made elsewhere and pushed: the local branch is 1 behind.
+  const clone = cloneOf(bare)
+  writeFileSync(join(clone, 'theirs.txt'), 'x\n')
+  execFileSync('git', ['-C', clone, 'add', '-A'], { stdio: 'pipe' })
+  execFileSync('git', ['-C', clone, 'commit', '-qm', 'theirs'], { stdio: 'pipe' })
+  execFileSync('git', ['-C', clone, 'push', '-q'], { stdio: 'pipe' })
+
+  // Two commits made here and not pushed: the local branch is 2 ahead.
+  for (const n of [1, 2]) {
+    writeFileSync(join(repo, `mine-${n}.txt`), 'y\n')
+    execFileSync('git', ['-C', repo, 'add', '-A'], { stdio: 'pipe' })
+    execFileSync('git', ['-C', repo, 'commit', '-qm', `mine ${n}`], { stdio: 'pipe' })
+  }
+  execFileSync('git', ['-C', repo, 'fetch', '-q', 'origin'], { stdio: 'pipe' })
+
+  // Asymmetric on purpose: 1 and 2 rather than 1 and 1, so a transposed
+  // ahead/behind cannot pass.
+  expect(await aheadBehind(repo, 'master')).toEqual({ ahead: 2, behind: 1 })
 })

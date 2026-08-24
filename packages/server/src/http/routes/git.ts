@@ -4,7 +4,13 @@ import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { gitUndo, objectives, projects } from '../../db/schema.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
-import { listBranches, listWorktreesDetailed, readLog, readStatus } from '../../git/inspect.js'
+import {
+  aheadBehind,
+  listBranches,
+  listWorktreesDetailed,
+  readLog,
+  readStatus,
+} from '../../git/inspect.js'
 import {
   amendHead,
   checkoutBranch,
@@ -69,10 +75,21 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
       listWorktreesDetailed(p.repoPath),
     ])
 
+    const branchRows = await Promise.all(
+      branches.map(async (b) => ({
+        ...b,
+        owner: ownerOfBranch(b.name, rows),
+        ...(await aheadBehind(p.repoPath, b.name).then((ab) => ({
+          ahead: ab?.ahead ?? null,
+          behind: ab?.behind ?? null,
+        }))),
+      })),
+    )
+
     return {
       mainRepoPath: p.repoPath,
       currentBranch: branches.find((b) => b.isCurrent)?.name ?? null,
-      branches: branches.map((b) => ({ ...b, owner: ownerOfBranch(b.name, rows) })),
+      branches: branchRows,
       worktrees: worktrees.map((w) => ({
         ...w,
         owner: ownerOfWorktree(w.path, rows, worktreeRoot),

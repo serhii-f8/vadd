@@ -202,3 +202,41 @@ export async function readStatus(worktreePath: string): Promise<StatusCounts> {
   }
   return counts
 }
+
+export type AheadBehind = { ahead: number; behind: number }
+
+/**
+ * How far `branch` has diverged from its own upstream, or null when it has none.
+ *
+ * Purely local: both refs are already on disk, so this makes no network call
+ * and belongs here rather than in `remote.ts`. The counts are only as fresh as
+ * the last fetch, which is honest — VADD never contacts a remote on its own.
+ */
+export async function aheadBehind(repoPath: string, branch: string): Promise<AheadBehind | null> {
+  let upstream: string
+  try {
+    upstream = (
+      await gitChecked(repoPath, [
+        'rev-parse',
+        '--abbrev-ref',
+        '--symbolic-full-name',
+        `${branch}@{upstream}`,
+      ])
+    ).trim()
+  } catch {
+    // Exit is non-zero precisely when there is no upstream configured.
+    return null
+  }
+
+  // `--left-right --count A...B` prints "<left>\t<right>": commits reachable
+  // from A but not B, then B but not A. With A the local branch, left is
+  // ahead and right is behind.
+  const out = await gitChecked(repoPath, [
+    'rev-list',
+    '--left-right',
+    '--count',
+    `${branch}...${upstream}`,
+  ])
+  const [ahead = '0', behind = '0'] = out.trim().split(/\s+/)
+  return { ahead: Number(ahead), behind: Number(behind) }
+}
