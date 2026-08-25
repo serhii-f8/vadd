@@ -155,11 +155,42 @@ test('a healthy worktree is not releasable', async () => {
 })
 
 test('a path outside the project worktree root is refused', async () => {
-  const { app, projectId } = await withProject()
-  // Would be destructive if it got through: a real directory with a real file.
+  const { app, db, projectId } = await withProject()
+  // A claimed path outside VADD's own root. `findStrays` marks any claimed
+  // path absent from `onDisk` as `vanished`, and `onDisk` only ever holds
+  // children of `readdir(worktreeRoot)` — a path outside the root can never
+  // be in it, existing or not, so this row reads as `vanished` regardless. A
+  // `stranded` path can never exercise this guard on its own: it is
+  // discovered BY a `readdir` of the root, so it is always inside it. This
+  // is the one shape where guard 1 (strays-list membership) passes and guard
+  // 2 (`isUnder`) is the only thing left refusing the request.
   const outside = makeTempRepo()
+  const now = new Date().toISOString()
+  db.insert(objectives)
+    .values({
+      id: 'bbbbbbbb',
+      projectId,
+      title: 'Somewhere else entirely',
+      goalText: 'g',
+      status: 'paused',
+      worktreePath: outside,
+      branchName: 'vadd/bbbbbbbb',
+      mode: 'standard',
+      verificationSpec: null,
+      lowEnergy: false,
+      setupAt: null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run()
+
   const res = await release(app, projectId, outside)
   expect(res.statusCode).toBe(400)
+  // Refused, not quietly repaired: the row must be untouched.
+  const row = db.select().from(objectives).where(eq(objectives.id, 'bbbbbbbb')).get()
+  expect(row?.worktreePath).toBe(outside)
+  // `vanished` strays are never deleted from disk regardless of this guard —
+  // kept as belt-and-suspenders proof nothing here touches the filesystem.
   expect(existsSync(outside)).toBe(true)
 })
 
@@ -173,6 +204,14 @@ test('a missing path body is refused', async () => {
   expect(res.statusCode).toBe(400)
 })
 
+// What this pins is the outward contract, not a specific internal branch:
+// an undeletable directory 500s with a diagnosable error and is left in
+// place, never reported as released. On THIS fixture that 500 comes from
+// `rm`'s own `catch` — `fs.rm({ force: true })` throws on a real EACCES
+// (`force` only swallows ENOENT), so the `existsSync` post-condition a few
+// lines below it is never reached here. That check still exists for a
+// silent-success mode `fs.rm` has not been observed to produce but
+// `removeWorktree` did — see the comment on it in the route.
 test('a delete that cannot complete fails loudly instead of reporting success', async () => {
   const { app, projectId, root } = await withProject()
   const path = join(root, 'undeletable')

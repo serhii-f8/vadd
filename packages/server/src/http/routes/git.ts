@@ -791,6 +791,14 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
         return reply.code(400).send({ error: 'path is required' })
       }
       const root = rootFor(p)
+      // A `vanished` row's `worktreePath` can be any string at all — nothing
+      // enforces it lives under `root` — so this guard is genuinely reachable
+      // even though a `stranded` path never is (it is discovered BY a
+      // `readdir` of `root`, so it is always inside it). A claim pointing
+      // outside VADD's own worktree root is deliberately not repairable
+      // through this route: it means something already wrote a
+      // `worktreePath` this route has no business trying to normalise,
+      // delete from, or otherwise paper over.
       if (!isUnder(path, root)) {
         return reply.code(400).send({ error: 'Path is not inside this project’s worktree root' })
       }
@@ -827,12 +835,17 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
         } catch (err) {
           return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) })
         }
-        // The post-condition that is not optional. `removeWorktree` asked only
-        // whether git still *registered* the path and so reported success over
-        // ~1.7GB of undeleted files, while its own doc comment promised a loud
-        // failure. Git-level success and filesystem-level success are
-        // different facts, and this is the route built to clean up after that
-        // exact defect.
+        // The post-condition that is not optional, even though the covering
+        // test never actually reaches this line: `fs.rm` throws on a real
+        // permission failure (`force` only swallows ENOENT), so that
+        // fixture's 500 comes from the `catch` above, not from here. This
+        // check exists for the failure mode `fs.rm` has not been observed to
+        // produce but `removeWorktree` did — reporting success while leaving
+        // files behind, because it trusted its own operation's exit rather
+        // than looking at the disk afterward. Git-level success and
+        // filesystem-level success are different facts, and this line is
+        // what stops this route from repeating that exact defect if `fs.rm`'s
+        // own contract ever turns out to have the same gap.
         if (existsSync(stray.path)) {
           return reply.code(500).send({
             error:
