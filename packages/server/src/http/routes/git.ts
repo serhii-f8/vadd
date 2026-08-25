@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
@@ -33,7 +35,12 @@ import {
 import { gateForStatus } from '../../git/mutation-gate.js'
 import { guardOperation, type OperationName } from '../../git/mutation-guards.js'
 import { readProtectedGlobs } from '../../git/protected-globs.js'
-import { type OwnedObjective, ownerOfBranch, ownerOfWorktree } from '../../git/provenance.js'
+import {
+  isUnder,
+  type OwnedObjective,
+  ownerOfBranch,
+  ownerOfWorktree,
+} from '../../git/provenance.js'
 import { fetchRemote, listRemotes, pullFastForward, pushBranch } from '../../git/remote.js'
 import { GitError } from '../../git/run.js'
 import { readStrays } from '../../git/strays.js'
@@ -759,6 +766,104 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
     })
     return { strays }
   })
+
+  /**
+   * Repairs one stray. The only route in VADD that deletes a directory.
+   *
+   * Two independent guards on `path`, either of which would be sufficient on a
+   * good day, because a defect in the first must not become a defect that
+   * deletes arbitrary paths:
+   *
+   *   1. it must appear in the strays list computed *here*, freshly — Pass A's
+   *      argument rule, validated against a real list rather than a character
+   *      filter, the mechanism amendment A20 rests on. A stale console
+   *      therefore cannot delete a directory that has since become healthy;
+   *   2. it must resolve strictly beneath this project's worktree root.
+   */
+  app.post<{ Params: { id: string }; Body: { path?: unknown } }>(
+    '/api/projects/:id/git/release',
+    async (req, reply) => {
+      const p = project(req.params.id)
+      if (!p) return reply.code(404).send({ error: 'Project not found' })
+
+      const path = req.body?.path
+      if (typeof path !== 'string' || path === '') {
+        return reply.code(400).send({ error: 'path is required' })
+      }
+      const root = rootFor(p)
+      if (!isUnder(path, root)) {
+        return reply.code(400).send({ error: 'Path is not inside this project’s worktree root' })
+      }
+
+      const strays = await readStrays({
+        objectives: ownedObjectives(p.id),
+        repoPath: p.repoPath,
+        worktreeRoot: root,
+      })
+      const stray = strays.find((s) => resolve(s.path) === resolve(path))
+      if (!stray) {
+        return reply.code(400).send({ error: 'Not a stray worktree of this project' })
+      }
+
+      // The gate binds on `stranded` and not on `vanished`. A stranded
+      // directory holds real files a live agent may be writing into, which is
+      // exactly what A19's gate exists to protect. A vanished one holds
+      // nothing: gating it would guard a directory that does not exist while
+      // making the objective unrepairable without `abandon` — and the Pause
+      // the 409 tells you to reach for may itself be unreachable if the agent
+      // is already gone. That is a deadlock the gate creates, not prevents.
+      if (stray.kind === 'stranded' && stray.claim !== null) {
+        const verdict = gateForStatus(stray.claim.objectiveStatus)
+        if (!verdict.allowed) {
+          return reply
+            .code(409)
+            .send({ error: verdict.reason, objectiveId: stray.claim.objectiveId })
+        }
+      }
+
+      if (stray.kind === 'stranded') {
+        try {
+          await rm(stray.path, { recursive: true, force: true })
+        } catch (err) {
+          return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) })
+        }
+        // The post-condition that is not optional. `removeWorktree` asked only
+        // whether git still *registered* the path and so reported success over
+        // ~1.7GB of undeleted files, while its own doc comment promised a loud
+        // failure. Git-level success and filesystem-level success are
+        // different facts, and this is the route built to clean up after that
+        // exact defect.
+        if (existsSync(stray.path)) {
+          return reply.code(500).send({
+            error:
+              `${stray.path} is still on disk after the delete. A file inside it is ` +
+              'likely owned by another user — written by a container as root, say — ' +
+              'and removing it needs the same privileges.',
+          })
+        }
+      }
+
+      if (stray.claim !== null) {
+        db.update(objectives)
+          .set({ worktreePath: null, branchName: null, updatedAt: new Date().toISOString() })
+          .where(eq(objectives.id, stray.claim.objectiveId))
+          .run()
+      }
+
+      const describes =
+        stray.kind === 'vanished'
+          ? `Release ${stray.path} (record only)`
+          : `Delete stranded worktree ${stray.path}`
+      // `EventBus.emit` takes `type: string` — the event vocabulary is open,
+      // so a new type needs no registration and no migration.
+      bus.emit({
+        objectiveId: stray.claim?.objectiveId ?? null,
+        type: 'git_stray_released',
+        payload: { kind: stray.kind, path: stray.path },
+      })
+      return reply.code(200).send({ report: { describes } })
+    },
+  )
 
   app.post<{ Params: { id: string }; Body: { remote?: unknown } }>(
     '/api/projects/:id/git/fetch',
