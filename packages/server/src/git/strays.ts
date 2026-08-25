@@ -1,4 +1,6 @@
-import { resolve } from 'node:path'
+import { readdir } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+import { listWorktreesDetailed } from './inspect.js'
 import type { OwnedObjective } from './provenance.js'
 
 /** The objective a stray belongs to, when one claims it. */
@@ -68,4 +70,38 @@ export function findStrays(input: {
   }
 
   return strays
+}
+
+/**
+ * The three reads `findStrays` reconciles.
+ *
+ * `readdir` is the source nothing in VADD has ever consulted, and it is the
+ * only one that can see a `stranded` directory: the topology route builds its
+ * worktree list entirely from `listWorktreesDetailed`, so a directory git does
+ * not register reaches no screen at all.
+ *
+ * ENOENT on the root means this project has never created a worktree, which is
+ * an empty answer rather than a failure. Every other error propagates — an
+ * EACCES here is a real fact about the disk and swallowing it would report
+ * "nothing is wrong" about a directory that could not be read.
+ */
+export async function readStrays(input: {
+  objectives: OwnedObjective[]
+  repoPath: string
+  worktreeRoot: string
+}): Promise<Stray[]> {
+  let onDisk: string[] = []
+  try {
+    const entries = await readdir(input.worktreeRoot, { withFileTypes: true })
+    onDisk = entries.filter((e) => e.isDirectory()).map((e) => join(input.worktreeRoot, e.name))
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+  }
+
+  const registered = (await listWorktreesDetailed(input.repoPath)).map((w) => w.path)
+  return findStrays({
+    objectives: input.objectives,
+    registered,
+    onDisk,
+  })
 }

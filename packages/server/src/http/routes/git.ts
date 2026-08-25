@@ -36,6 +36,7 @@ import { readProtectedGlobs } from '../../git/protected-globs.js'
 import { type OwnedObjective, ownerOfBranch, ownerOfWorktree } from '../../git/provenance.js'
 import { fetchRemote, listRemotes, pullFastForward, pushBranch } from '../../git/remote.js'
 import { GitError } from '../../git/run.js'
+import { readStrays } from '../../git/strays.js'
 import { worktreePathFor } from '../../paths.js'
 import type { AppDeps } from '../app.js'
 
@@ -735,6 +736,28 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
     const p = project(req.params.id)
     if (!p) return reply.code(404).send({ error: 'Project not found' })
     return { remotes: await listRemotes(p.repoPath) }
+  })
+
+  /**
+   * The two states VADD's own bookkeeping goes wrong in.
+   *
+   * Its own route rather than a field on the topology response, deliberately.
+   * The filesystem scan behind it has failure modes genuinely unrelated to
+   * git's — an EACCES on a directory whose permissions changed, or a blocking
+   * stat on a stale network mount, which is also the condition that would fake
+   * a `vanished` reading. Folding it into `GET /api/projects/:id/git` means one
+   * such failure blanks the whole console, including the screen a user would
+   * open to work out why. Same argument the remotes route already makes.
+   */
+  app.get<{ Params: { id: string } }>('/api/projects/:id/git/strays', async (req, reply) => {
+    const p = project(req.params.id)
+    if (!p) return reply.code(404).send({ error: 'Project not found' })
+    const strays = await readStrays({
+      objectives: ownedObjectives(p.id),
+      repoPath: p.repoPath,
+      worktreeRoot: rootFor(p),
+    })
+    return { strays }
   })
 
   app.post<{ Params: { id: string }; Body: { remote?: unknown } }>(
