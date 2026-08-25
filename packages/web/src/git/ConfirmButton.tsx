@@ -37,6 +37,23 @@ export function ConfirmButton({
       variant={armed ? 'destructive' : 'outline'}
       size="sm"
       disabled={disabled}
+      /*
+        The armed label is a whole sentence and can be considerably longer than
+        the resting one — for a path it is unbounded. `Button`'s own styles
+        keep text on one line at a fixed height, which meant an armed label
+        simply ran off the right edge of the window: seen in a real browser on
+        2026-08-25, the stray-worktree delete confirm was cut off mid-path,
+        with neither the directory being deleted nor the words "and everything
+        in it?" readable at the moment of the destructive second click. Worse,
+        the growing button squeezed the row's own path down to nothing, so the
+        identity of the target vanished exactly when it mattered.
+
+        Wrapping instead of overflowing is the fix, and it belongs here rather
+        than at one call site: every confirm control in the git console — Pass
+        B's rewrites, Pass C's push labels — carries the same unbounded
+        sentence and the same latent bug.
+      */
+      className="h-auto max-w-full whitespace-normal py-1 text-left leading-snug"
       // Disarms when the control loses focus. A button left armed fires on a
       // click the user believed was their first.
       onBlur={() => setArmed(false)}

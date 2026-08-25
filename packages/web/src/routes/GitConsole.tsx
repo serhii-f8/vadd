@@ -476,8 +476,16 @@ export function GitConsole() {
                 </Alert>
               ) : (
                 <ul className="flex flex-col gap-1" aria-label="Stray worktrees">
+                  {/*
+                    Rows wrap (`flex-wrap`), so an armed confirm label moves to
+                    its own line rather than crushing the path beside it. Seen
+                    in a browser on 2026-08-25: the growing button collapsed
+                    the row's `min-w-0 flex-1 truncate` path to a few
+                    characters at exactly the moment the user needed to read
+                    which directory they were about to delete.
+                  */}
                   {strays.map((s) => (
-                    <li key={s.path} className="flex items-baseline gap-2 text-sm">
+                    <li key={s.path} className="flex flex-wrap items-baseline gap-2 text-sm">
                       <code className="min-w-0 flex-1 truncate">{s.path}</code>
                       <span className="shrink-0 text-xs text-muted-foreground">
                         {s.kind === 'vanished' ? 'directory is gone' : 'git does not track this'}
