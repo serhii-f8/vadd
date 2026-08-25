@@ -21,6 +21,9 @@ export type MutationKind = {
    * un-pushes nothing and desynchronizes local from the remote just written
    * to, in one click, under a label that says it is restoring something.
    * Offering nothing is strictly better than offering that.
+   *
+   * A false value also *clears* any record an earlier operation left, for the
+   * same reason — see step 4.
    */
   undoable: boolean
 }
@@ -184,7 +187,19 @@ export async function withGitMutation<T>(
 
   // 4. Undo record. Skipped when there was no HEAD to return to, and when the
   //    operation's effect is not local — see `MutationKind.undoable`.
-  if (beforeSha !== null && kind.undoable) {
+  //
+  //    A non-undoable operation does not merely decline to write a record: it
+  //    *clears* whatever the previous one left. Demonstrated against a real
+  //    server, `commit` then `push` left a row still describing the commit,
+  //    so one `POST /git/undo` returned 200 and reset the local branch behind
+  //    a commit the push had already published. The record did not become
+  //    wrong so much as stop being purely local — `reset --hard beforeSha` no
+  //    longer restores a state, it creates a divergence. The console already
+  //    hid the button; the invariant belongs here, where the route cannot go
+  //    around it.
+  if (!kind.undoable) {
+    deps.db.delete(gitUndo).where(eq(gitUndo.worktreePath, target.worktreePath)).run()
+  } else if (beforeSha !== null) {
     const at = new Date().toISOString()
     deps.db
       .insert(gitUndo)

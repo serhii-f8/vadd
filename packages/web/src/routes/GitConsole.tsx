@@ -199,6 +199,11 @@ export function GitConsole() {
         // precedent, because it moves no local ref. An Undo banner for either
         // would offer to reset the local branch and "un-push" nothing: a
         // real, desynchronising action under a label promising to undo one.
+        //
+        // For `push` this is now belt to the server's braces rather than the
+        // only guard: a non-undoable mutation clears whatever record an
+        // earlier one left, so `POST /git/undo` after a push 404s. It used to
+        // return 200, and the invariant lived only in this line.
         setUndoable(op === 'undo' || op === 'fetch' || op === 'push' ? null : report.describes)
       } catch (e) {
         // The server names the objective it refused for; the worktree
@@ -237,6 +242,52 @@ export function GitConsole() {
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [load])
+
+  /**
+   * The dead end Passes B and C between them opened, named before it is hit.
+   *
+   * A rewrite (drop, squash) acts on the main checkout's current branch. If
+   * the range it touches is already on that branch's upstream, the result can
+   * be neither pushed (non-fast-forward, and force push is deliberately out of
+   * scope) nor pulled (`--ff-only` cannot reconcile a divergence). Both
+   * refusals are individually correct; their combination leaves the user stuck
+   * inside VADD with work that is safe but unpublishable. Each pass owned only
+   * one half, so nothing warned.
+   *
+   * `ahead` is how many commits the branch has that the upstream does not, so
+   * a rewrite of the last `n` reaches a published commit exactly when
+   * `ahead < n`. `null` for either field means there is no upstream to diverge
+   * from — nothing to warn about.
+   */
+  const currentBranch = topology?.branches.find((b) => b.isCurrent) ?? null
+  const rewriteReaches = useCallback(
+    (n: number): string | null => {
+      const b = currentBranch
+      if (b?.upstream == null || b.ahead == null) return null
+      return b.ahead < n ? b.upstream : null
+    },
+    [currentBranch],
+  )
+
+  /** Appended to a rewrite's armed label, at the moment of the click. */
+  const publishedSuffix = (n: number): string => {
+    const upstream = rewriteReaches(n)
+    if (upstream === null) return ''
+    return n === 1
+      ? ` It is already on ${upstream}.`
+      : ` The range reaches a commit already on ${upstream}.`
+  }
+
+  // Shown standing, before anything is armed: the widest range on offer is
+  // what decides, because the user reads this while choosing which control to
+  // press, not after.
+  const widestRange = commits[1] !== undefined ? 2 : 1
+  const rewriteWarning =
+    commits[0] === undefined || rewriteReaches(widestRange) === null
+      ? null
+      : `Rewriting ${currentBranch?.name} here diverges from ${rewriteReaches(widestRange)}. ` +
+        'VADD offers no force push and pulls fast-forward only, so the result could then be ' +
+        'published or reconciled only from a terminal.'
 
   return (
     <main className="flex flex-col gap-6">
@@ -483,6 +534,15 @@ export function GitConsole() {
               </Alert>
             ) : (
               <>
+                {rewriteWarning !== null && (
+                  <p
+                    role="status"
+                    aria-label="Rewrite warning"
+                    className="mb-2 text-sm text-destructive"
+                  >
+                    {rewriteWarning}
+                  </p>
+                )}
                 {commits[0] !== undefined && (
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     {/*
@@ -493,7 +553,7 @@ export function GitConsole() {
                     */}
                     <ConfirmButton
                       label="Drop commit"
-                      confirmLabel={`Really drop “${commits[0].subject}”?`}
+                      confirmLabel={`Really drop “${commits[0].subject}”?${publishedSuffix(1)}`}
                       disabled={busy}
                       onConfirm={() =>
                         void runMutation('drop', {
@@ -505,7 +565,7 @@ export function GitConsole() {
                     {commits[1] !== undefined && (
                       <ConfirmButton
                         label="Squash last two"
-                        confirmLabel="Squash the last two commits into one?"
+                        confirmLabel={`Squash the last two commits into one?${publishedSuffix(2)}`}
                         disabled={busy}
                         onConfirm={() =>
                           void runMutation('squash', {

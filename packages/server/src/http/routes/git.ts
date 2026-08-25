@@ -1,5 +1,4 @@
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
-import { VerificationSpec } from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { gitUndo, objectives, projects } from '../../db/schema.js'
@@ -33,6 +32,7 @@ import {
 } from '../../git/mutate.js'
 import { gateForStatus } from '../../git/mutation-gate.js'
 import { guardOperation, type OperationName } from '../../git/mutation-guards.js'
+import { readProtectedGlobs } from '../../git/protected-globs.js'
 import { type OwnedObjective, ownerOfBranch, ownerOfWorktree } from '../../git/provenance.js'
 import { fetchRemote, listRemotes, pullFastForward, pushBranch } from '../../git/remote.js'
 import { GitError } from '../../git/run.js'
@@ -198,10 +198,19 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
         ? db.select().from(objectives).where(eq(objectives.id, owner.objectiveId)).get()
         : undefined
 
-    // Read exactly the way `excludeProtected` reads it, so a manual commit and
-    // the squash cannot disagree about what is protected.
-    const spec = VerificationSpec.safeParse(objectiveRow?.verificationSpec)
-    const protectedGlobs = spec.success ? spec.data.policy.protectedGlobs : []
+    // Read through the one helper the squash also uses, so a manual commit and
+    // `integrate: commit` cannot disagree about what is protected — and so
+    // that "no globs declared" and "the spec is unreadable" stay two different
+    // answers. They used to be the same `[]`, which silently disabled the
+    // policy at exactly the moment it mattered.
+    const globs = readProtectedGlobs(objectiveRow?.verificationSpec)
+    if (!globs.ok) {
+      // Every mutation on this worktree, not only the commit-creating ones:
+      // a spec VADD cannot parse is a fault the user has to see, and the
+      // same column drives verification. Over-refusing costs a trip to a
+      // terminal; under-refusing costs a protected file on a branch.
+      return { ok: false, status: 500, error: globs.reason }
+    }
 
     return {
       ok: true,
@@ -216,7 +225,7 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
                 status: objectiveRow.status,
                 branchName: objectiveRow.branchName,
               },
-        protectedGlobs,
+        protectedGlobs: globs.globs,
       },
     }
   }

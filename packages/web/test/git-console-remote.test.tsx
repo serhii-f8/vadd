@@ -196,3 +196,90 @@ describe('GitConsole remotes', () => {
     expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
   })
 })
+
+describe('GitConsole rewrite-vs-remote warning', () => {
+  const commits = [
+    {
+      sha: 'd'.repeat(40),
+      shortSha: 'ddddddd',
+      subject: 'fix the login redirect',
+      author: 'Serhii',
+      date: '2026-08-23T10:00:00.000Z',
+      parents: ['e'.repeat(40)],
+      refs: [],
+    },
+    {
+      sha: 'e'.repeat(40),
+      shortSha: 'eeeeeee',
+      subject: 'add the failing test',
+      author: 'Serhii',
+      date: '2026-08-23T09:00:00.000Z',
+      parents: ['f'.repeat(40)],
+      refs: [],
+    },
+  ]
+
+  /** The same topology with the current branch's ahead count varied. */
+  function withAhead(ahead: number | null, upstream: string | null = 'origin/master') {
+    return {
+      ...topology,
+      branches: topology.branches.map((b) =>
+        b.isCurrent ? { ...b, upstream, ahead, behind: 0 } : b,
+      ),
+    }
+  }
+
+  function rewriteRoutes(ahead: number | null, upstream: string | null = 'origin/master') {
+    return routes({
+      'GET /api/projects/p1/git': { body: withAhead(ahead, upstream) },
+      'GET /api/projects/p1/git/log': { body: { commits, hasMore: false } },
+    })
+  }
+
+  it('warns before any click when a rewrite would reach a published commit', async () => {
+    rewriteRoutes(0)
+    renderConsole()
+
+    // Read without arming anything: the dead end this names costs work on a
+    // remote, and a warning only visible on the second click is a warning
+    // the user meets after deciding.
+    const warning = await screen.findByRole('status', { name: /rewrite/i })
+    expect(warning.textContent).toMatch(/origin\/master/)
+    expect(warning.textContent).toMatch(/force push|fast-forward/i)
+  })
+
+  it('says on the destructive click itself that the commit is already published', async () => {
+    rewriteRoutes(0)
+    renderConsole()
+    await userEvent.click(await screen.findByRole('button', { name: 'Drop commit' }))
+    expect(screen.getByRole('button', { name: /already on origin\/master/i })).toBeTruthy()
+  })
+
+  it('stays quiet when every commit in the range is still unpublished', async () => {
+    rewriteRoutes(2)
+    renderConsole()
+    await screen.findByRole('button', { name: 'Drop commit' })
+    expect(screen.queryByRole('status', { name: /rewrite/i })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Squash last two' }))
+    expect(screen.getByRole('button', { name: /^squash the last two/i })).toBeTruthy()
+  })
+
+  it('warns per range: with one unpushed commit the squash reaches a published one, the drop does not', async () => {
+    rewriteRoutes(1)
+    renderConsole()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Drop commit' }))
+    expect(screen.getByRole('button', { name: /^really drop/i }).textContent).not.toMatch(
+      /already on/i,
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Squash last two' }))
+    expect(screen.getByRole('button', { name: /already on origin\/master/i })).toBeTruthy()
+  })
+
+  it('stays quiet on a branch with no upstream at all', async () => {
+    rewriteRoutes(null, null)
+    renderConsole()
+    await screen.findByRole('button', { name: 'Drop commit' })
+    expect(screen.queryByRole('status', { name: /rewrite/i })).toBeNull()
+  })
+})

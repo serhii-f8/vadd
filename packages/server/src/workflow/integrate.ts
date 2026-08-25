@@ -1,10 +1,11 @@
-import { protectedPaths, VerificationSpec } from '@vadd/core'
+import { protectedPaths } from '@vadd/core'
 import { eq } from 'drizzle-orm'
 import { execa } from 'execa'
 import type { Db } from '../db/client.js'
 import { objectives, type projects } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
 import { removeWorktree } from '../git/git-manager.js'
+import { readProtectedGlobs } from '../git/protected-globs.js'
 
 export type IntegrateAction = 'commit' | 'keep' | 'discard'
 
@@ -45,9 +46,8 @@ async function excludeProtected(
   objective: ObjectiveRow,
   worktreePath: string,
   baseSha: string,
+  globs: string[],
 ): Promise<void> {
-  const spec = VerificationSpec.safeParse(objective.verificationSpec)
-  const globs = spec.success ? spec.data.policy.protectedGlobs : []
   if (globs.length === 0) return
 
   // `-z` because a path may contain anything a filesystem allows, and git
@@ -126,6 +126,23 @@ export async function runIntegration(
     return { ok: false, message }
   }
 
+  // Read before any git work, not inside the try below: "no globs declared"
+  // and "the spec is unreadable" used to be the same `[]`, which is a
+  // fail-open on the one policy this project's own trap list records the cost
+  // of — a protected file reaching the branch under an `excludedPaths: []`
+  // that reads exactly like an exclusion that ran and found nothing. Refusing
+  // here leaves the worktree untouched; refusing after the `reset --soft`
+  // would move the branch on a path that reports failure.
+  const globs = readProtectedGlobs(objective.verificationSpec)
+  if (!globs.ok) {
+    deps.bus.emit({
+      objectiveId: objective.id,
+      type: 'integrate_failed',
+      payload: { message: globs.reason },
+    })
+    return { ok: false, message: globs.reason }
+  }
+
   let committed = false
   try {
     // Stage the working tree first, then move HEAD back. `reset --soft` leaves
@@ -134,7 +151,7 @@ export async function runIntegration(
     // `vadd-checkpoint:` commits collapse into it.
     await git(worktreePath, ['add', '-A'])
     await git(worktreePath, ['reset', '--soft', baseSha])
-    await excludeProtected(deps, objective, worktreePath, baseSha)
+    await excludeProtected(deps, objective, worktreePath, baseSha, globs.globs)
 
     const empty = await execa('git', ['-C', worktreePath, 'diff', '--cached', '--quiet'], {
       reject: false,

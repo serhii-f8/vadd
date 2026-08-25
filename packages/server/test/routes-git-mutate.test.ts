@@ -169,3 +169,39 @@ test('switching an objective branch is refused with 403', async () => {
   expect(res.statusCode).toBe(403)
   expect(res.json().error).toMatch(/branch/i)
 })
+
+test('an unreadable verification spec refuses the mutation rather than emptying the globs', async () => {
+  const { app, db, projectId } = await withProject()
+  const objective = await makeObjective(app, projectId)
+  // Present, but not a `VerificationSpec`: `setup`/`commands`/`checks` at the
+  // top level instead of nested under `verify`. Written by hand while
+  // hand-verifying the git surface, and the reason this test exists — the
+  // parse failed, the globs silently became `[]`, and a protected file was
+  // committed reporting `excludedPaths: []`.
+  db.update(objectives)
+    .set({ verificationSpec: { setup: [], commands: [], checks: [] } })
+    .where(eq(objectives.id, objective.id))
+    .run()
+
+  writeFileSync(join(objective.worktreePath as string, 'new.txt'), 'x\n')
+  await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/git/stage`,
+    payload: { worktree: objective.worktreePath, paths: ['new.txt'] },
+  })
+  const res = await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/git/commit`,
+    payload: { worktree: objective.worktreePath, message: 'x' },
+  })
+  expect(res.statusCode).toBe(500)
+  expect(res.json().error).toMatch(/verification spec/i)
+
+  // Refused, not merely reported: the commit must not exist.
+  const subject = execFileSync(
+    'git',
+    ['-C', objective.worktreePath as string, 'log', '-1', '--format=%s'],
+    { encoding: 'utf8' },
+  ).trim()
+  expect(subject).not.toBe('x')
+})

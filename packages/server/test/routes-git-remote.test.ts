@@ -258,3 +258,36 @@ test('a detached worktree is refused with 409 rather than pulling into HEAD', as
   expect(res.statusCode).toBe(409)
   expect(res.json().error).toMatch(/detached/i)
 })
+
+test('after a push there is no undo left to offer', async () => {
+  const { app, repo, bare, projectId } = await withProject()
+  writeFileSync(join(repo, 'work.txt'), 'x\n')
+  execFileSync('git', ['-C', repo, 'add', '-A'], { stdio: 'pipe' })
+  const commit = await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/git/commit`,
+    payload: { worktree: repo, message: 'Commit staged changes' },
+  })
+  expect(commit.statusCode).toBe(200)
+
+  const push = await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/git/push`,
+    payload: { worktree: repo, remote: 'origin', branch: 'master', setUpstream: true },
+  })
+  expect(push.statusCode).toBe(200)
+  expect(head(bare, 'master')).toBe(head(repo))
+
+  // The defect this closes, reproduced end to end against a real server:
+  // the undo record still described the commit, so this returned 200 and
+  // left local one commit behind the remote it had just written to. The
+  // invariant lived only in the console, which hides the button — and the
+  // route is public.
+  const undo = await app.inject({
+    method: 'POST',
+    url: `/api/projects/${projectId}/git/undo`,
+    payload: { worktree: repo },
+  })
+  expect(undo.statusCode).toBe(404)
+  expect(head(repo)).toBe(head(bare, 'master'))
+})

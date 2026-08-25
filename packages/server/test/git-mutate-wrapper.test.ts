@@ -131,9 +131,14 @@ test('an operation declared not undoable writes no undo record', async () => {
   expect(db.select().from(gitUndo).all()).toHaveLength(0)
 })
 
-test('an undoable operation still records, and a later un-undoable one does not erase it', async () => {
+test('a non-undoable operation clears the record an earlier one left', async () => {
   const { deps, db, repo } = setup()
-  await withGitMutation(deps, target(repo), NO_FLAGS, 'Commit staged changes', async () => null)
+  await withGitMutation(deps, target(repo), NO_FLAGS, 'Commit staged changes', async () => {
+    execFileSync('git', ['-C', repo, 'commit', '-q', '--allow-empty', '-m', 'x'], { stdio: 'pipe' })
+    return null
+  })
+  expect(db.select().from(gitUndo).all()).toHaveLength(1)
+
   await withGitMutation(
     deps,
     target(repo),
@@ -141,9 +146,19 @@ test('an undoable operation still records, and a later un-undoable one does not 
     'Push master to origin',
     async () => null,
   )
-  const rows = db.select().from(gitUndo).all()
-  // The commit is still the thing an undo would restore. A push must not
-  // silently consume the undo step the previous local operation earned.
-  expect(rows).toHaveLength(1)
-  expect(rows[0]?.describes).toBe('Commit staged changes')
+
+  // This test replaces one asserting the opposite — that a push "must not
+  // silently consume the undo step the previous local operation earned".
+  // That reasoning was overturned by running it: demonstrated against a real
+  // server, the surviving record still described the *commit*, so one
+  // `POST /git/undo` returned 200 and reset the local branch behind a commit
+  // the push had just published — VADD's own ahead/behind then read
+  // "behind 1".
+  //
+  // The record did not become wrong at the moment of the push so much as
+  // stop being purely local: `reset --hard beforeSha` no longer restores a
+  // state, it creates a divergence. Offering nothing is the only honest
+  // option left, and the cost of over-clearing is a lost convenience while
+  // the cost of under-clearing is a desynchronized repository.
+  expect(db.select().from(gitUndo).all()).toHaveLength(0)
 })

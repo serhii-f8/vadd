@@ -268,6 +268,28 @@ describe('runIntegration: commit and policy.protectedGlobs', () => {
     ])
   })
 
+  it('refuses the commit when the stored spec cannot be read', async () => {
+    // Not `{ policy: { protectedGlobs: [] } }` — a spec that is *present and
+    // unreadable*. `safeParse` fails identically for both, and the old read
+    // turned both into "no protected paths": the squash then carried a
+    // protected file onto the branch and reported `excludedPaths: []`, which
+    // looks exactly like an exclusion that ran and found nothing.
+    const { project, objective } = await seedProtected({
+      setup: [],
+      commands: [],
+      checks: [],
+    })
+    const before = git(repo, 'rev-parse', 'vadd/prot1234')
+    const out = await runIntegration({ db, bus }, objective, project, 'commit')
+    expect(out.ok).toBe(false)
+    if (out.ok) throw new Error('unreachable')
+    expect(out.message).toMatch(/verification spec/i)
+
+    // Refused, not merely reported: the branch has not moved, so the
+    // protected file cannot have reached it.
+    expect(git(repo, 'rev-parse', 'vadd/prot1234')).toBe(before)
+  })
+
   it('emits integrate_empty when every changed path is protected', async () => {
     const { project, objective, wt } = await seedProtected()
     // Undo the one unprotected change, so nothing but protected paths is left.
