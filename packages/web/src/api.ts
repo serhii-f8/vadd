@@ -156,6 +156,12 @@ export type GitBranch = {
 
 export type GitRemote = { name: string; fetchUrl: string; pushUrl: string }
 
+export type StrayClaim = { objectiveId: string; objectiveTitle: string; objectiveStatus: string }
+
+export type GitStray =
+  | { kind: 'vanished'; path: string; claim: StrayClaim; branchName: string | null }
+  | { kind: 'stranded'; path: string; claim: StrayClaim | null }
+
 export type GitWorktree = {
   path: string
   branch: string | null
@@ -309,6 +315,9 @@ export const api = {
 
   getGitRemotes: (projectId: string) =>
     fetch(`/api/projects/${projectId}/git/remotes`).then(json<{ remotes: GitRemote[] }>),
+
+  getGitStrays: (projectId: string) =>
+    fetch(`/api/projects/${projectId}/git/strays`).then(json<{ strays: GitStray[] }>),
 
   /**
    * Amendment A19's mutations. One method, because every route has the same

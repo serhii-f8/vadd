@@ -9,6 +9,7 @@ import {
   type GitCommit,
   type GitMutationReport,
   type GitRemote,
+  type GitStray,
   type GitTopology,
 } from '../api.js'
 import { useProjects } from '../app/ProjectsContext.js'
@@ -34,6 +35,14 @@ export function GitConsole() {
    * for the log fetch.
    */
   const [remotesError, setRemotesError] = useState<string | null>(null)
+  const [strays, setStrays] = useState<GitStray[]>([])
+  /**
+   * Strays-section-only, the same "degrade in place" shape as `remotesError`
+   * above, and for a reason unique to this one: the scan behind it touches
+   * the filesystem, so an EACCES or a stale mount is a failure mode git has
+   * nothing to do with.
+   */
+  const [straysError, setStraysError] = useState<string | null>(null)
   /** Page-level: the topology fetch failed, so there is nothing to render. */
   const [error, setError] = useState<string | null>(null)
   /**
@@ -106,6 +115,7 @@ export function GitConsole() {
     setError(null)
     setLogError(null)
     setRemotesError(null)
+    setStraysError(null)
     let t: GitTopology
     try {
       t = await api.getGitTopology(selectedId)
@@ -115,6 +125,7 @@ export function GitConsole() {
       setCommits([])
       setHasMore(false)
       setRemotes([])
+      setStrays([])
       setError((e as Error).message)
       return
     }
@@ -142,6 +153,18 @@ export function GitConsole() {
       if (gen !== generationRef.current) return
       setRemotes([])
       setRemotesError((e as Error).message)
+    }
+    // Independent of both the log and the remotes fetch, and for a reason
+    // unique to this one: the scan behind it touches the filesystem, so an
+    // EACCES or a stale mount is a failure mode git has nothing to do with.
+    try {
+      const s = await api.getGitStrays(selectedId)
+      if (gen !== generationRef.current) return
+      setStrays(s.strays)
+    } catch (e) {
+      if (gen !== generationRef.current) return
+      setStrays([])
+      setStraysError((e as Error).message)
     }
   }, [selectedId, ref])
 
@@ -199,12 +222,23 @@ export function GitConsole() {
         // precedent, because it moves no local ref. An Undo banner for either
         // would offer to reset the local branch and "un-push" nothing: a
         // real, desynchronising action under a label promising to undo one.
+        // `release` is the same shape as `fetch`: it writes no `git_undo`
+        // row (it clears a database record or deletes a directory outside
+        // the working tree the wrapper's undo mechanism governs), so an
+        // Undo banner here would offer to undo the *previous* mutation
+        // under a label reading "Release" — the same defect class fixed
+        // server-side for `fetch`/`push` in commit `f186053`, reintroduced
+        // client-side had this exclusion been left off.
         //
         // For `push` this is now belt to the server's braces rather than the
         // only guard: a non-undoable mutation clears whatever record an
         // earlier one left, so `POST /git/undo` after a push 404s. It used to
         // return 200, and the invariant lived only in this line.
-        setUndoable(op === 'undo' || op === 'fetch' || op === 'push' ? null : report.describes)
+        setUndoable(
+          op === 'undo' || op === 'fetch' || op === 'push' || op === 'release'
+            ? null
+            : report.describes,
+        )
       } catch (e) {
         // The server names the objective it refused for; the worktree
         // lookup is only a fallback for an error that carries no body, and
@@ -432,6 +466,50 @@ export function GitConsole() {
               </ul>
             )}
           </section>
+
+          {(strays.length > 0 || straysError !== null) && (
+            <section>
+              <h2 className="mb-2 text-lg font-medium">Stray worktrees</h2>
+              {straysError !== null ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{straysError}</AlertDescription>
+                </Alert>
+              ) : (
+                <ul className="flex flex-col gap-1" aria-label="Stray worktrees">
+                  {strays.map((s) => (
+                    <li key={s.path} className="flex items-baseline gap-2 text-sm">
+                      <code className="min-w-0 flex-1 truncate">{s.path}</code>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {s.kind === 'vanished' ? 'directory is gone' : 'git does not track this'}
+                      </span>
+                      {s.claim !== null && (
+                        <span className="shrink-0 truncate text-xs">{s.claim.objectiveTitle}</span>
+                      )}
+                      {/*
+                        Two labels, because the two kinds cost different
+                        things. Releasing a vanished row clears a record and
+                        touches no file; releasing a stranded one deletes a
+                        directory whose size is not knowable from here, which
+                        is why that label names the path rather than an
+                        objective — an unclaimed stray has no objective, and a
+                        label implying otherwise would be worse than none.
+                      */}
+                      <ConfirmButton
+                        label="Release"
+                        confirmLabel={
+                          s.kind === 'vanished'
+                            ? `Clear this record? Nothing on disk is touched.`
+                            : `Delete ${s.path} and everything in it?`
+                        }
+                        disabled={busy}
+                        onConfirm={() => void runMutation('release', { path: s.path })}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
 
           <section>
             <h2 className="mb-2 text-lg font-medium">Branches</h2>
