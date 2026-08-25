@@ -20,7 +20,6 @@ test('a claimed worktree that is registered and on disk is not a stray', () => {
     objectives: [obj()],
     registered: [`${ROOT}/o1`],
     onDisk: [`${ROOT}/o1`],
-    worktreeRoot: ROOT,
   })
   expect(strays).toEqual([])
 })
@@ -30,7 +29,6 @@ test('a claimed worktree missing from disk is vanished', () => {
     objectives: [obj()],
     registered: [],
     onDisk: [],
-    worktreeRoot: ROOT,
   })
   expect(strays).toEqual([
     {
@@ -54,7 +52,6 @@ test('a claimed worktree still on disk but deregistered is stranded, not vanishe
     objectives: [obj()],
     registered: [],
     onDisk: [`${ROOT}/o1`],
-    worktreeRoot: ROOT,
   })
   expect(strays).toEqual([
     {
@@ -77,7 +74,6 @@ test('an unclaimed directory git does not register is stranded with no claim', (
     objectives: [],
     registered: [],
     onDisk: [`${ROOT}/gone`],
-    worktreeRoot: ROOT,
   })
   expect(strays).toEqual([{ kind: 'stranded', path: `${ROOT}/gone`, claim: null }])
 })
@@ -89,7 +85,6 @@ test('an unclaimed directory git DOES register is not a stray — that is proven
     objectives: [],
     registered: [`${ROOT}/gone`],
     onDisk: [`${ROOT}/gone`],
-    worktreeRoot: ROOT,
   })
   expect(strays).toEqual([])
 })
@@ -99,7 +94,6 @@ test('an objective with no worktreePath is never a stray', () => {
     objectives: [obj({ worktreePath: null, branchName: null })],
     registered: [],
     onDisk: [],
-    worktreeRoot: ROOT,
   })
   expect(strays).toEqual([])
 })
@@ -109,7 +103,6 @@ test('paths compare resolved, so a trailing slash is not a second worktree', () 
     objectives: [obj({ worktreePath: `${ROOT}/o1/` })],
     registered: [`${ROOT}/o1`],
     onDisk: [`${ROOT}/o1`],
-    worktreeRoot: ROOT,
   })
   expect(strays).toEqual([])
 })
@@ -119,8 +112,19 @@ test('a vanished row and an unclaimed stranded directory are both reported', () 
     objectives: [obj()],
     registered: [],
     onDisk: [`${ROOT}/leftover`],
-    worktreeRoot: ROOT,
   })
   expect(strays).toHaveLength(2)
   expect(strays.map((s) => s.kind).sort()).toEqual(['stranded', 'vanished'])
+})
+
+test('a non-normalised path in registered still matches its on-disk directory', () => {
+  // `registered` is git's own output, not user input, but the constraint is
+  // uniform: every comparison goes through `resolve()`, not just the two
+  // sites the earlier tests happened to cover.
+  const strays = findStrays({
+    objectives: [],
+    registered: [`${ROOT}/gone/`],
+    onDisk: [`${ROOT}/gone`],
+  })
+  expect(strays).toEqual([])
 })

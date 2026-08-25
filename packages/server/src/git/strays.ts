@@ -40,9 +40,8 @@ export function findStrays(input: {
   objectives: OwnedObjective[]
   /** Paths git reports for this repository. */
   registered: string[]
-  /** Directories actually present under `worktreeRoot`, as absolute paths. */
+  /** Directories actually present on disk, as absolute paths. */
   onDisk: string[]
-  worktreeRoot: string
 }): Stray[] {
   // Every comparison is between resolved paths. A trailing slash or a `..`
   // segment must not make one worktree read as two — the same reasoning that
