@@ -443,6 +443,16 @@ export function GitConsole() {
               </Alert>
             ) : (
               <ul className="flex flex-col gap-1" aria-label="Remotes">
+                {/*
+                  An empty list under a heading reads as a broken section
+                  rather than as an answer — seen in a browser on 2026-08-25.
+                  Say the true thing instead.
+                */}
+                {remotes.length === 0 && (
+                  <li className="text-sm text-muted-foreground">
+                    No remotes configured. Fetch, pull and push need one.
+                  </li>
+                )}
                 {remotes.map((r) => (
                   <li key={r.name} className="flex items-baseline gap-2 text-sm">
                     <span className="shrink-0 font-medium">{r.name}</span>
@@ -521,6 +531,8 @@ export function GitConsole() {
                         }
                         disabled={busy}
                         onConfirm={() => void runMutation('release', { path: s.path })}
+                        // Only one of these two actually destroys anything.
+                        tone={s.kind === 'stranded' ? 'destructive' : 'caution'}
                       />
                     </li>
                   ))}

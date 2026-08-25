@@ -154,3 +154,35 @@ describe('GitConsole strays', () => {
     expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
   })
 })
+
+it('says so when a repository has no remotes, instead of an empty heading', async () => {
+  routes({ 'GET /api/projects/p1/git/remotes': { body: { remotes: [] } } })
+  renderConsole()
+  // A bare "Remotes" heading with nothing under it reads as broken rather
+  // than as "none configured" — seen in a browser on 2026-08-25.
+  expect(await screen.findByText(/no remotes/i)).toBeTruthy()
+})
+
+it('arms the two kinds with different weight, not just different words', async () => {
+  routes()
+  renderConsole()
+  const list = await screen.findByLabelText('Stray worktrees')
+  const rows = within(list).getAllByRole('listitem')
+
+  await userEvent.click(within(rows[0] as HTMLElement).getByRole('button'))
+  const vanishedArmed = within(rows[0] as HTMLElement).getByRole('button').className
+  await userEvent.click(within(rows[1] as HTMLElement).getByRole('button'))
+  const strandedArmed = within(rows[1] as HTMLElement).getByRole('button').className
+
+  // Releasing a vanished row clears a database record and touches no file;
+  // releasing a stranded one deletes a directory recursively. Both armed in
+  // the same destructive red until this test — the words differed, the
+  // signal did not, and the whole design rests on them costing different
+  // things.
+  // Asserted on the background token, not on the substring "destructive":
+  // shadcn's base Button classes mention it in `aria-invalid:` variants
+  // regardless of the chosen variant, so a substring check passes for both.
+  expect(strandedArmed).toContain('bg-destructive')
+  expect(vanishedArmed).not.toContain('bg-destructive')
+  expect(vanishedArmed).toContain('bg-secondary')
+})

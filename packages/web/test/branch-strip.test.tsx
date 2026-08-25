@@ -79,7 +79,11 @@ describe('BranchStrip', () => {
       </MemoryRouter>,
     )
     const note = screen.getByRole('status')
-    expect(note.textContent).toMatch(/no longer/i)
+    expect(note.textContent).toMatch(/no longer exists/i)
+    // Deliberately does NOT claim the objective is over: the machine decides
+    // that, and the first browser render found this line sitting above a
+    // clarification prompt still inviting an answer.
+    expect(note.textContent).not.toMatch(/cannot continue/i)
     // The repair lives in the console, so the line has to get the user there.
     const link = screen.getByRole('link', { name: /git/i })
     expect(link.getAttribute('href')).toContain('project=p1')

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import { ProjectsProvider } from '../src/app/ProjectsContext.js'
@@ -83,4 +83,20 @@ describe('QuestMap', () => {
     await screen.findByRole('alert')
     expect(screen.getByRole('alert').textContent).toContain('boom')
   })
+})
+
+it('names its five columns, so the layout means something', async () => {
+  // Seen in a browser on 2026-08-25, the first render of /map ever: five
+  // status columns with nothing naming any of them. With one column populated
+  // — the common case — you cannot tell what the layout is sorted by at all.
+  mockFetch({
+    'GET /api/projects': { body: [] },
+    'GET /api/objectives': { body: [objective()] },
+  })
+  renderMap()
+  const header = await screen.findByRole('list', { name: /columns/i })
+  const labels = within(header)
+    .getAllByRole('listitem')
+    .map((li) => li.textContent)
+  expect(labels).toEqual(['Idle', 'Working', 'Needs you', 'Done', 'Failed'])
 })

@@ -23,18 +23,33 @@ export function ConfirmButton({
   confirmLabel,
   onConfirm,
   disabled,
+  tone = 'destructive',
 }: {
   label: string
   confirmLabel: string
   onConfirm: () => void
   disabled?: boolean
+  /**
+   * How much the armed state should shout.
+   *
+   * Defaults to `destructive`, which is right for almost every control here —
+   * they rewrite history, delete branches, or remove directories. But not all
+   * of them: releasing a `vanished` stray clears a database record and touches
+   * no file at all, and until this existed it armed in exactly the same red as
+   * the control that deletes a directory recursively. Seen side by side in a
+   * browser on 2026-08-25: the words differed, the signal did not, and the
+   * whole point of separating the two kinds is that they cost different
+   * things. A warning that fires identically for a harmless action is how a
+   * user learns to click through the dangerous one.
+   */
+  tone?: 'destructive' | 'caution'
 }) {
   const [armed, setArmed] = useState(false)
 
   return (
     <Button
       type="button"
-      variant={armed ? 'destructive' : 'outline'}
+      variant={armed ? (tone === 'destructive' ? 'destructive' : 'secondary') : 'outline'}
       size="sm"
       disabled={disabled}
       /*
