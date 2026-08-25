@@ -47,8 +47,13 @@ export function ownerOfBranch(name: string, objectives: OwnedObjective[]): Owner
 /**
  * True when `path` lives strictly beneath `root`. `path === root` does not
  * count — the main checkout must not be classed as an orphan of itself.
+ *
+ * Exported because `release` needs the same question answered about a path it
+ * is about to delete, and a second, hand-written copy of this comparison is
+ * exactly the "rule applied in one place and not another" shape this
+ * codebase's defect history is made of.
  */
-function isUnder(path: string, root: string): boolean {
+export function isUnder(path: string, root: string): boolean {
   const rel = relative(resolve(root), resolve(path))
   // A sibling like `<root>-backup` yields a relative path starting with '..',
   // which `startsWith(root)` on the raw strings would miss.
