@@ -90,6 +90,22 @@ describe('GitConsole strays', () => {
     expect(within(rows[1] as HTMLElement).getByRole('button').textContent).toMatch(/delete/i)
   })
 
+  // With several vanished rows, an armed confirm button reading only "Clear
+  // this record?" would be identical on every one — the same shape of finding
+  // already recorded once for Pass C's two-remote push buttons. The label
+  // must name which record.
+  it('names the claiming objective on a vanished stray’s armed confirm label', async () => {
+    routes()
+    renderConsole()
+    const list = await screen.findByLabelText('Stray worktrees')
+    const rows = within(list).getAllByRole('listitem')
+
+    await userEvent.click(within(rows[0] as HTMLElement).getByRole('button'))
+    expect(within(rows[0] as HTMLElement).getByRole('button').textContent).toContain(
+      VANISHED.claim.objectiveTitle,
+    )
+  })
+
   it('sends the path and reloads after a release', async () => {
     const mock = routes({
       'POST /api/projects/p1/git/release': { body: { report: { describes: 'Released' } } },

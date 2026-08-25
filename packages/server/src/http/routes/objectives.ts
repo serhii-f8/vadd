@@ -447,6 +447,18 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
        * route that sits on the Focus View's read path, where this is one
        * syscall and that is a subprocess. The field is named for exactly what
        * it tests, and `stranded` is the `/git` console's to report.
+       *
+       * Two different definitions of "gone" coexist in the codebase, and they
+       * can disagree: this one is `existsSync`, which *follows* a symlink and
+       * asks whether its target exists; `strays.ts`'s `vanished` is absence
+       * from a `readdir` listing, which now also flags a symlink entry itself
+       * (see its comment) regardless of what it points at. A worktree
+       * relocated behind a live symlink reads healthy here — the target
+       * exists — while `readdir` still lists the link. The `git/release`
+       * route's own `existsSync` guard on the `vanished` branch is what stops
+       * that kind of disagreement from being destructive: it re-checks the
+       * disk immediately before nulling anything, rather than trusting either
+       * read on its own.
        */
       worktreeMissing: row.worktreePath !== null && !existsSync(row.worktreePath),
     }

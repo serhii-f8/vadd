@@ -493,12 +493,22 @@ export function GitConsole() {
                         is why that label names the path rather than an
                         objective — an unclaimed stray has no objective, and a
                         label implying otherwise would be worse than none.
+
+                        The `vanished` label used to read "Clear this record?
+                        Nothing on disk is touched." with nothing identifying
+                        WHICH record — several vanished rows in the list would
+                        arm identical-looking confirm buttons, the same shape
+                        of finding already recorded once for Pass C's two
+                        push-confirm buttons. `vanished`'s `claim` is never
+                        null by construction (only a claimed path can be
+                        classified vanished — see `strays.ts`), so the
+                        objective's own title is always available to name.
                       */}
                       <ConfirmButton
                         label="Release"
                         confirmLabel={
                           s.kind === 'vanished'
-                            ? `Clear this record? Nothing on disk is touched.`
+                            ? `Clear the record for “${s.claim.objectiveTitle}”? Nothing on disk is touched.`
                             : `Delete ${s.path} and everything in it?`
                         }
                         disabled={busy}

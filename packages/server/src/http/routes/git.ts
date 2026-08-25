@@ -768,7 +768,15 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
   })
 
   /**
-   * Repairs one stray. The only route in VADD that deletes a directory.
+   * Repairs one stray.
+   *
+   * Not the first or only route that deletes a directory — `POST
+   * /git/worktree/remove` (Pass B) and `integrate: discard` both do too. What
+   * is actually distinctive here: this is the first one that deletes with a
+   * raw recursive `fs.rm`, rather than through `git worktree remove` — so
+   * there is no git-level bookkeeping and no git-level safety net behind it
+   * at all. That is the argument *for* two independent guards below, not a
+   * claim this route is alone in being destructive.
    *
    * Two independent guards on `path`, either of which would be sufficient on a
    * good day, because a defect in the first must not become a defect that
@@ -779,6 +787,9 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
    *      filter, the mechanism amendment A20 rests on. A stale console
    *      therefore cannot delete a directory that has since become healthy;
    *   2. it must resolve strictly beneath this project's worktree root.
+   *
+   * A `vanished` release touches no filesystem at all, but earns a guard of
+   * its own below anyway — see the `existsSync` check before the DB update.
    */
   app.post<{ Params: { id: string }; Body: { path?: unknown } }>(
     '/api/projects/:id/git/release',
@@ -813,6 +824,11 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
         return reply.code(400).send({ error: 'Not a stray worktree of this project' })
       }
 
+      const describes =
+        stray.kind === 'vanished'
+          ? `Release ${stray.path} (record only)`
+          : `Delete stranded worktree ${stray.path}`
+
       // The gate binds on `stranded` and not on `vanished`. A stranded
       // directory holds real files a live agent may be writing into, which is
       // exactly what A19's gate exists to protect. A vanished one holds
@@ -829,11 +845,45 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
         }
       }
 
+      // The whole justification for leaving `vanished` ungated above is "there
+      // is no directory to protect" — and this is the assertion of that fact,
+      // not an assumption of it. `findStrays` classifies a claimed path
+      // `vanished` whenever it is absent from `readdir`'s listing, and that
+      // listing can be wrong in ways that have nothing to do with the
+      // directory actually being gone: a worktree relocated behind a symlink
+      // failed `isDirectory()` until `strays.ts` was widened to also check
+      // `isSymbolicLink()` (see the comment there), and a transiently
+      // unmounted worktree root would produce the exact same false reading.
+      // Without this check, either one nulls a live objective's
+      // `worktreePath`/`branchName` in one ungated click. Symmetric with the
+      // `stranded` branch's own `existsSync` post-condition a few lines below:
+      // both refuse to trust a derived listing about the actual state of the
+      // disk, rather than trusting the read that produced `stray` in the
+      // first place.
+      if (stray.kind === 'vanished' && existsSync(stray.path)) {
+        return reply.code(409).send({
+          error: `${stray.path} is on disk after all, so this row is not stale. Reload the console.`,
+        })
+      }
+
       if (stray.kind === 'stranded') {
         try {
           await rm(stray.path, { recursive: true, force: true })
         } catch (err) {
-          return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) })
+          const message = err instanceof Error ? err.message : String(err)
+          // The one route in the codebase that can leave the disk mutated —
+          // `fs.rm` can fail partway through a recursive delete — with zero
+          // trace in the events table, unless this fires. Every mutation
+          // wrapped by `withGitMutation` emits `git_mutation_failed` on its
+          // own failure path (`mutate.ts`); this route isn't wrapped by it
+          // (`findStrays`'s gate and guards don't fit that machinery), so it
+          // has to emit the same shape by hand.
+          bus.emit({
+            objectiveId: stray.claim?.objectiveId ?? null,
+            type: 'git_mutation_failed',
+            payload: { describes, message },
+          })
+          return reply.code(500).send({ error: message })
         }
         // The post-condition that is not optional, even though the covering
         // test never actually reaches this line: `fs.rm` throws on a real
@@ -847,12 +897,16 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
         // what stops this route from repeating that exact defect if `fs.rm`'s
         // own contract ever turns out to have the same gap.
         if (existsSync(stray.path)) {
-          return reply.code(500).send({
-            error:
-              `${stray.path} is still on disk after the delete. A file inside it is ` +
-              'likely owned by another user — written by a container as root, say — ' +
-              'and removing it needs the same privileges.',
+          const message =
+            `${stray.path} is still on disk after the delete. A file inside it is ` +
+            'likely owned by another user — written by a container as root, say — ' +
+            'and removing it needs the same privileges.'
+          bus.emit({
+            objectiveId: stray.claim?.objectiveId ?? null,
+            type: 'git_mutation_failed',
+            payload: { describes, message },
           })
+          return reply.code(500).send({ error: message })
         }
       }
 
@@ -863,10 +917,6 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
           .run()
       }
 
-      const describes =
-        stray.kind === 'vanished'
-          ? `Release ${stray.path} (record only)`
-          : `Delete stranded worktree ${stray.path}`
       // `EventBus.emit` takes `type: string` — the event vocabulary is open,
       // so a new type needs no registration and no migration.
       bus.emit({

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { expect, test } from 'vitest'
 import { createDb } from '../src/db/client.js'
-import { objectives } from '../src/db/schema.js'
+import { events, objectives } from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { buildApp } from '../src/http/app.js'
 import { worktreePathFor } from '../src/paths.js'
@@ -213,7 +213,7 @@ test('a missing path body is refused', async () => {
 // silent-success mode `fs.rm` has not been observed to produce but
 // `removeWorktree` did — see the comment on it in the route.
 test('a delete that cannot complete fails loudly instead of reporting success', async () => {
-  const { app, projectId, root } = await withProject()
+  const { app, db, projectId, root } = await withProject()
   const path = join(root, 'undeletable')
   mkdirSync(join(path, 'inner'), { recursive: true })
   writeFileSync(join(path, 'inner', 'file.txt'), 'x')
@@ -226,7 +226,64 @@ test('a delete that cannot complete fails loudly instead of reporting success', 
     expect(res.statusCode).toBe(500)
     expect(res.json().error).toMatch(/still on disk|permission/i)
     expect(existsSync(path)).toBe(true)
+    // The one route that can leave the disk mutated with zero trace in the
+    // events table, unless this fires: every `withGitMutation`-wrapped
+    // mutation emits `git_mutation_failed` on its own failure path
+    // (`mutate.ts`); this route isn't wrapped by it, so it has to emit the
+    // same shape by hand. This fixture's 500 comes from the `catch` branch
+    // (see the comment above it) — the `existsSync` post-condition's own
+    // `git_mutation_failed` emission has no fixture that reaches it, for the
+    // same reason its 500 has none.
+    const failures = db.select().from(events).where(eq(events.type, 'git_mutation_failed')).all()
+    expect(failures).toHaveLength(1)
+    expect((failures[0]?.payload as { message?: string } | undefined)?.message).toMatch(
+      /permission|EACCES/i,
+    )
   } finally {
     chmodSync(join(path, 'inner'), 0o755)
   }
+})
+
+test('a vanished row whose path is actually present on disk is refused, not repaired', async () => {
+  const { app, db, projectId, root } = await withProject()
+  const path = join(root, 'aaaaaaaa')
+  mkdirSync(root, { recursive: true })
+  // `readdir`'s filter in `strays.ts` accepts a directory or a symlink (see
+  // its comment) — deliberately widened by this same review, since a
+  // symlink-relocated worktree used to be invisible to it and read
+  // `vanished`. That fix closes the symlink shape of this bug at the source,
+  // so a plain symlink no longer reaches this branch at all: it is now
+  // correctly seen and classified healthy or `stranded` instead. A regular
+  // file — neither a directory nor a symlink — is the fixture that still
+  // demonstrates the residual case this guard exists for: `readdir` cannot
+  // see it as a worktree, `findStrays` classifies the claim `vanished`, and
+  // yet the path genuinely exists on disk.
+  writeFileSync(path, 'not actually gone')
+  const now = new Date().toISOString()
+  db.insert(objectives)
+    .values({
+      id: 'aaaaaaaa',
+      projectId,
+      title: 'Fix the login redirect',
+      goalText: 'g',
+      status: 'paused',
+      worktreePath: path,
+      branchName: 'vadd/aaaaaaaa',
+      mode: 'standard',
+      verificationSpec: null,
+      lowEnergy: false,
+      setupAt: null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run()
+
+  const res = await release(app, projectId, path)
+  expect(res.statusCode).toBe(409)
+  expect(res.json().error).toContain('on disk after all')
+
+  const row = db.select().from(objectives).where(eq(objectives.id, 'aaaaaaaa')).get()
+  expect(row?.worktreePath).toBe(path)
+  expect(row?.branchName).toBe('vadd/aaaaaaaa')
+  expect(existsSync(path)).toBe(true)
 })

@@ -93,7 +93,20 @@ export async function readStrays(input: {
   let onDisk: string[] = []
   try {
     const entries = await readdir(input.worktreeRoot, { withFileTypes: true })
-    onDisk = entries.filter((e) => e.isDirectory()).map((e) => join(input.worktreeRoot, e.name))
+    // `dirent.isDirectory()` is `false` for a symlink pointing at a directory
+    // — verified against a real symlink — so a worktree relocated behind one
+    // (plausible for a several-hundred-MB directory) would otherwise be
+    // absent from `onDisk` entirely, and its claiming row would misclassify
+    // as `vanished`: a state the release route deliberately leaves ungated,
+    // on the assumption that a `vanished` path has no directory to protect.
+    // Widening the filter to also accept `isSymbolicLink()` classifies it
+    // correctly instead of making it invisible. This is safe on the delete
+    // side too: `fs.rm` on a symlink removes the link itself, never the
+    // target it points at, so a `stranded` symlink still cannot reach through
+    // to delete something outside the worktree root.
+    onDisk = entries
+      .filter((e) => e.isDirectory() || e.isSymbolicLink())
+      .map((e) => join(input.worktreeRoot, e.name))
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
   }
