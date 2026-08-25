@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { expect, test } from 'vitest'
 import { createDb } from '../src/db/client.js'
@@ -116,4 +116,50 @@ test('an unknown project is 404', async () => {
   const { app } = await withProject()
   const res = await app.inject({ method: 'GET', url: '/api/projects/nope/git/strays' })
   expect(res.statusCode).toBe(404)
+})
+
+test('a worktree relocated behind a symlink is not read as vanished', async () => {
+  const { app, db, repo, projectId, root } = await withProject()
+  // The shape the final review found and this pins: a worktree moved out of
+  // the root and left behind a symlink — plausible for a several-hundred-MB
+  // directory. `dirent.isDirectory()` is false for a symlink-to-directory, so
+  // before `readStrays` widened its filter the link was absent from `onDisk`
+  // entirely, the claiming row read `vanished`, and `vanished` is the one kind
+  // the release route deliberately leaves ungated — one click nulled a live,
+  // git-registered worktree an agent might still be writing into.
+  const real = join(root, 'relocated')
+  mkdirSync(dirname(real), { recursive: true })
+  execFileSync('git', ['-C', repo, 'worktree', 'add', '-q', '-b', 'vadd/aaaaaaaa', real], {
+    stdio: 'pipe',
+  })
+  const claimed = worktreePathFor(projectId, 'aaaaaaaa')
+  symlinkSync(real, claimed)
+  const now = new Date().toISOString()
+  db.insert(objectives)
+    .values({
+      id: 'aaaaaaaa',
+      projectId,
+      title: 'Fix the login redirect',
+      goalText: 'g',
+      status: 'executing',
+      worktreePath: claimed,
+      branchName: 'vadd/aaaaaaaa',
+      mode: 'standard',
+      verificationSpec: null,
+      lowEnergy: false,
+      setupAt: null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run()
+
+  const out = await strays(app, projectId)
+  const claim = out.find((s) => s.path === claimed)
+  // `stranded`, not `vanished`, and that distinction is the whole point:
+  // `stranded` passes through the A19 in-flight gate, so an `executing`
+  // objective like this one is refused rather than silently repaired.
+  // Measured on git 2.43.0: `git worktree list --porcelain` reports a
+  // worktree's RESOLVED path, so the link never matches `registered` and
+  // cannot read healthy — see the comment in `readStrays`.
+  expect(claim?.kind).toBe('stranded')
 })

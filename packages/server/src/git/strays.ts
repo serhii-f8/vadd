@@ -42,7 +42,7 @@ export function findStrays(input: {
   objectives: OwnedObjective[]
   /** Paths git reports for this repository. */
   registered: string[]
-  /** Directories actually present on disk, as absolute paths. */
+  /** Directory and symlink entries present on disk, as absolute paths. */
   onDisk: string[]
 }): Stray[] {
   // Every comparison is between resolved paths. A trailing slash or a `..`
@@ -99,11 +99,18 @@ export async function readStrays(input: {
     // absent from `onDisk` entirely, and its claiming row would misclassify
     // as `vanished`: a state the release route deliberately leaves ungated,
     // on the assumption that a `vanished` path has no directory to protect.
-    // Widening the filter to also accept `isSymbolicLink()` classifies it
-    // correctly instead of making it invisible. This is safe on the delete
-    // side too: `fs.rm` on a symlink removes the link itself, never the
-    // target it points at, so a `stranded` symlink still cannot reach through
-    // to delete something outside the worktree root.
+    // Widening the filter to also accept `isSymbolicLink()` stops it being
+    // invisible. It does NOT make it read healthy, and the earlier wording
+    // here ("classifies it correctly") overstated that: measured on git
+    // 2.43.0, `git worktree list --porcelain` reports a worktree's RESOLVED
+    // real path, so the link path is in `onDisk` but never in `registered`
+    // and the row reads `stranded`. That is still the fix that matters — a
+    // `stranded` release goes through the A19 in-flight gate, where a
+    // `vanished` one does not — but it converts a destructive misreading into
+    // a harmless, still-inaccurate one rather than into a correct one.
+    // Safe on the delete side too: `fs.rm` on a symlink removes the link
+    // itself, never the target it points at, so a `stranded` symlink cannot
+    // reach through to delete something outside the worktree root.
     onDisk = entries
       .filter((e) => e.isDirectory() || e.isSymbolicLink())
       .map((e) => join(input.worktreeRoot, e.name))

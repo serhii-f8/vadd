@@ -852,10 +852,17 @@ export function registerGitRoutes(app: FastifyInstance, { db, bus }: AppDeps): v
       // listing can be wrong in ways that have nothing to do with the
       // directory actually being gone: a worktree relocated behind a symlink
       // failed `isDirectory()` until `strays.ts` was widened to also check
-      // `isSymbolicLink()` (see the comment there), and a transiently
-      // unmounted worktree root would produce the exact same false reading.
-      // Without this check, either one nulls a live objective's
-      // `worktreePath`/`branchName` in one ungated click. Symmetric with the
+      // `isSymbolicLink()` (see the comment there).
+      //
+      // Be precise about what this does NOT cover, because an earlier version
+      // of this comment claimed it and was wrong. A transiently unmounted
+      // worktree root is not caught here: with the root unmounted `existsSync`
+      // on a path beneath it is false too, so this check passes straight
+      // through and the row is nulled anyway. That hazard is bounded by this
+      // guard, not closed by it, and closing it would need a signal that
+      // distinguishes "the root is missing" from "this worktree is gone" —
+      // which detection cannot supply, since the rows this route exists to
+      // repair sit under roots that no longer exist. Symmetric with the
       // `stranded` branch's own `existsSync` post-condition a few lines below:
       // both refuse to trust a derived listing about the actual state of the
       // disk, rather than trusting the read that produced `stray` in the
