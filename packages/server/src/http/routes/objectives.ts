@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import type { WorkflowEvent } from '@vadd/core'
 import {
   assertSpecAllowed,
@@ -433,6 +434,21 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
             at: lastAutoApprovalEvent.createdAt,
           }
         : null,
+      /**
+       * Whether the recorded worktree directory is gone.
+       *
+       * The aggregate is the channel because the frontend never reads SSE
+       * payloads (spec §7) — the same reason amendment A12's
+       * `lastAutoApproval` lives here.
+       *
+       * Deliberately `existsSync` and not a git call. This covers `vanished`
+       * and not a claimed `stranded` worktree, which is equally broken for its
+       * objective; covering that means asking git for its worktree list on a
+       * route that sits on the Focus View's read path, where this is one
+       * syscall and that is a subprocess. The field is named for exactly what
+       * it tests, and `stranded` is the `/git` console's to report.
+       */
+      worktreeMissing: row.worktreePath !== null && !existsSync(row.worktreePath),
     }
   })
 

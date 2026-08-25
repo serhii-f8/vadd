@@ -176,6 +176,7 @@ export function FocusView() {
             projectId={aggregate.objective.projectId}
             branchName={aggregate.objective.branchName}
             worktreePath={aggregate.objective.worktreePath}
+            worktreeMissing={aggregate.worktreeMissing}
           />
         </div>
         <div className="flex items-center gap-2">

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { eq } from 'drizzle-orm'
 import { describe, expect, test } from 'vitest'
 import { createDb } from '../src/db/client.js'
@@ -361,4 +361,44 @@ describe('DELETE /api/objectives/:id', () => {
       db.select().from(machineSnapshots).where(eq(machineSnapshots.objectiveId, id)).all(),
     ).toHaveLength(0)
   })
+})
+
+test('the aggregate reports whether the objective worktree is still there', async () => {
+  const { app, projectId } = await withProject()
+  const o = (
+    await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/objectives`,
+      payload: { title: 'Fix login', goalText: 'g' },
+    })
+  ).json() as { id: string; worktreePath: string }
+
+  const before = await app.inject({ method: 'GET', url: `/api/objectives/${o.id}` })
+  expect(before.json().worktreeMissing).toBe(false)
+
+  // Deleted behind git's back, which is exactly how the live database got
+  // four rows in this state.
+  rmSync(o.worktreePath, { recursive: true, force: true })
+  const after = await app.inject({ method: 'GET', url: `/api/objectives/${o.id}` })
+  expect(after.json().worktreeMissing).toBe(true)
+})
+
+test('an objective with no worktree at all is not reported as missing', async () => {
+  const { app, db, projectId } = await withProject()
+  const o = (
+    await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/objectives`,
+      payload: { title: 'Fix login', goalText: 'g' },
+    })
+  ).json() as { id: string }
+  // `integrate: commit` and `discard` both null these columns. A done
+  // objective is not broken, and must not be flagged as though it were.
+  db.update(objectives)
+    .set({ status: 'done', worktreePath: null, branchName: null })
+    .where(eq(objectives.id, o.id))
+    .run()
+
+  const res = await app.inject({ method: 'GET', url: `/api/objectives/${o.id}` })
+  expect(res.json().worktreeMissing).toBe(false)
 })

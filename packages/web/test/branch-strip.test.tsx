@@ -11,6 +11,7 @@ describe('BranchStrip', () => {
           projectId="p1"
           branchName="vadd/fdca5ca3"
           worktreePath="/home/u/.vadd/worktrees/p1/fdca"
+          worktreeMissing={false}
         />
       </MemoryRouter>,
     )
@@ -21,7 +22,12 @@ describe('BranchStrip', () => {
   it("links through to the console for that branch, scoped to the objective's project", () => {
     render(
       <MemoryRouter>
-        <BranchStrip projectId="p1" branchName="vadd/fdca5ca3" worktreePath="/tmp/wt" />
+        <BranchStrip
+          projectId="p1"
+          branchName="vadd/fdca5ca3"
+          worktreePath="/tmp/wt"
+          worktreeMissing={false}
+        />
       </MemoryRouter>,
     )
     expect(screen.getByRole('link', { name: /vadd\/fdca5ca3/ }).getAttribute('href')).toBe(
@@ -40,10 +46,42 @@ describe('BranchStrip', () => {
     // element" — only the real `return null` guard produces the former.
     const { container } = render(
       <MemoryRouter>
-        <BranchStrip projectId="p1" branchName={null} worktreePath={null} />
+        <BranchStrip projectId="p1" branchName={null} worktreePath={null} worktreeMissing={false} />
       </MemoryRouter>,
     )
     expect(container.textContent).toBe('')
     expect(container.firstChild).toBeNull()
+  })
+
+  it('a healthy worktree gets no warning', () => {
+    render(
+      <MemoryRouter>
+        <BranchStrip
+          projectId="p1"
+          branchName="vadd/abc12345"
+          worktreePath="/home/u/.vadd/worktrees/p1/o1"
+          worktreeMissing={false}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('a missing worktree says so and points at the git console', () => {
+    render(
+      <MemoryRouter>
+        <BranchStrip
+          projectId="p1"
+          branchName="vadd/abc12345"
+          worktreePath="/home/u/.vadd/worktrees/p1/o1"
+          worktreeMissing={true}
+        />
+      </MemoryRouter>,
+    )
+    const note = screen.getByRole('status')
+    expect(note.textContent).toMatch(/no longer/i)
+    // The repair lives in the console, so the line has to get the user there.
+    const link = screen.getByRole('link', { name: /git/i })
+    expect(link.getAttribute('href')).toContain('project=p1')
   })
 })

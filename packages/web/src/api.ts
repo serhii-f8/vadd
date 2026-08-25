@@ -107,6 +107,12 @@ export type Aggregate = {
   lastStatus: { headline: string; phase: string | null; at: string } | null
   lastAgentUpdateAt: string | null
   lastProblem: { type: string; message: string | null; at: string } | null
+  /**
+   * Whether the recorded worktree directory is gone. Covers `vanished` only —
+   * see the server-side comment on why a claimed `stranded` worktree is the
+   * `/git` console's to report rather than this field's.
+   */
+  worktreeMissing: boolean
 }
 
 export type DiffFile = {
