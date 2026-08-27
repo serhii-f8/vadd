@@ -180,6 +180,9 @@ export type GitMutationReport = {
   clearedCheckpoints?: { taskId: string; ord: number; title: string }[]
 }
 
+export type FsEntry = { name: string; path: string; isGitRepo: boolean }
+export type FsBrowseResult = { path: string; parent: string | null; entries: FsEntry[] }
+
 export type GitTopology = {
   mainRepoPath: string
   currentBranch: string | null
@@ -225,6 +228,11 @@ async function json<T>(res: Response): Promise<T> {
 
 export const api = {
   listProjects: () => fetch('/api/projects').then(json<Project[]>),
+
+  browseFs: (path?: string) =>
+    fetch(path ? `/api/fs/browse?path=${encodeURIComponent(path)}` : '/api/fs/browse').then(
+      json<FsBrowseResult>,
+    ),
 
   registerProject: (repoPath: string, agentKind: 'claude-code' | 'codex', name?: string) =>
     fetch('/api/projects', {

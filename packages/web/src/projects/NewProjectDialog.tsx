@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { api } from '../api.js'
 import { useProjects } from '../app/ProjectsContext.js'
+import { FolderBrowser } from './FolderBrowser.js'
 
 const AGENTS = [
   { value: 'claude-code', label: 'Claude Code', detail: 'Drives Claude Code over ACP.' },
@@ -33,6 +34,7 @@ export function NewProjectDialog({
   const [agentKind, setAgentKind] = useState<'claude-code' | 'codex'>('claude-code')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [browsing, setBrowsing] = useState(false)
 
   // Every open starts clean: the dialog instance is mounted unconditionally in
   // AppShell (Radix needs it mounted to animate the close transition), so its
@@ -44,6 +46,7 @@ export function NewProjectDialog({
     setRepoPath('')
     setName('')
     setAgentKind('claude-code')
+    setBrowsing(false)
   }, [open])
 
   const submit = async () => {
@@ -83,12 +86,26 @@ export function NewProjectDialog({
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="new-project-path">Repository path</Label>
-            <Input
-              id="new-project-path"
-              value={repoPath}
-              placeholder="/var/www/html/my-project"
-              onChange={(e) => setRepoPath(e.target.value)}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="new-project-path"
+                value={repoPath}
+                placeholder="/var/www/html/my-project"
+                onChange={(e) => setRepoPath(e.target.value)}
+              />
+              <Button type="button" variant="outline" onClick={() => setBrowsing(true)}>
+                Browse…
+              </Button>
+            </div>
+            {browsing && (
+              <FolderBrowser
+                onSelect={(path) => {
+                  setRepoPath(path)
+                  setBrowsing(false)
+                }}
+                onClose={() => setBrowsing(false)}
+              />
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">

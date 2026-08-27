@@ -95,6 +95,29 @@ describe('NewProjectDialog', () => {
     expect(postBody(calls)).toBeUndefined()
   })
 
+  it('fills the path field from the folder browser', async () => {
+    mockFetch({
+      ...routes({ status: 201, body: created }),
+      'GET /api/fs/browse': {
+        body: {
+          path: '/home/serhii',
+          parent: '/home',
+          entries: [{ name: 'flexpick.net', path: '/home/serhii/flexpick.net', isGitRepo: true }],
+        },
+      },
+      'GET /api/fs/browse?path=%2Fhome%2Fserhii%2Fflexpick.net': {
+        body: { path: '/home/serhii/flexpick.net', parent: '/home/serhii', entries: [] },
+      },
+    })
+    await renderDialog()
+    await userEvent.click(screen.getByRole('button', { name: 'Browse…' }))
+    await userEvent.click(await screen.findByText('flexpick.net'))
+    await userEvent.click(screen.getByRole('button', { name: 'Select this folder' }))
+    expect((screen.getByLabelText('Repository path') as HTMLInputElement).value).toBe(
+      '/home/serhii/flexpick.net',
+    )
+  })
+
   it('resets on reopen: no stale error, no stale path', async () => {
     mockFetch(routes({ status: 400, body: { error: 'Not a git repository: /tmp/nope' } }))
     const { rerender } = render(
