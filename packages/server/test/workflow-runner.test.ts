@@ -1,9 +1,17 @@
+import { eq } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PortFactory } from '../src/agent/registry.js'
 import { AgentRegistry } from '../src/agent/registry.js'
 import type { ContractEmission } from '../src/contract/pipeline.js'
 import { createDb, type Db } from '../src/db/client.js'
-import { events, objectives, projects, settings } from '../src/db/schema.js'
+import {
+  events,
+  machineSnapshots,
+  objectives,
+  projectMemory,
+  projects,
+  settings,
+} from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { WorkflowRunner } from '../src/workflow/runner.js'
 import { loadSnapshot } from '../src/workflow/store.js'
@@ -275,5 +283,48 @@ describe('WorkflowRunner', () => {
     runner.send('o', { type: 'CANCEL' })
     expect(db.select().from(objectives).all()[0]?.status).toBe('cancelled')
     expect(runner.get('o')).toBeUndefined()
+  })
+
+  it('a memory_note persists a project_memory row and does not touch machine_snapshots', () => {
+    runner.start('o')
+    runner.send('o', { type: 'START' })
+    const before = db
+      .select()
+      .from(machineSnapshots)
+      .where(eq(machineSnapshots.objectiveId, 'o'))
+      .get()
+
+    emitFromPipeline('o', {
+      kind: 'event',
+      turnId: 't',
+      extracted: false,
+      sourceEventIds: [1],
+      event: {
+        type: 'memory_note',
+        kind: 'architecture',
+        headline: 'Auth lives in src/auth/',
+        content: 'JWT validation happens in middleware.ts.',
+      },
+    })
+
+    const after = db
+      .select()
+      .from(machineSnapshots)
+      .where(eq(machineSnapshots.objectiveId, 'o'))
+      .get()
+    // A real machine transition rewrites this row on every commit (CLAUDE.md:
+    // "Snapshots persist on every transition in the same SQLite transaction
+    // as the event append"). Byte-identical before/after is the proof
+    // nothing reached the actor.
+    expect(after).toEqual(before)
+    expect(runner.get('o')?.getSnapshot().value).toBe('exploring')
+
+    const row = db
+      .select()
+      .from(projectMemory)
+      .where(eq(projectMemory.sourceObjectiveId, 'o'))
+      .get()
+    expect(row?.headline).toBe('Auth lives in src/auth/')
+    expect(row?.kind).toBe('architecture')
   })
 })

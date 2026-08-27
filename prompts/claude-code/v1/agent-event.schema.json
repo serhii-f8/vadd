@@ -246,6 +246,29 @@
           },
           "required": ["type", "headline", "probableCause", "suggestedActions"],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "memory_note"
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["architecture", "known_issue"]
+            },
+            "headline": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "content": {
+              "type": "string",
+              "maxLength": 400
+            }
+          },
+          "required": ["type", "kind", "headline", "content"],
+          "additionalProperties": false
         }
       ]
     }

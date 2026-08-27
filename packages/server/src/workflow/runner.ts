@@ -1,4 +1,5 @@
-import type { MachineStateName, VerificationSpec, WorkflowEvent } from '@vadd/core'
+import { randomUUID } from 'node:crypto'
+import type { AgentEvent, MachineStateName, VerificationSpec, WorkflowEvent } from '@vadd/core'
 import {
   initialContext,
   MACHINE_STATES,
@@ -12,7 +13,7 @@ import { createActor } from 'xstate'
 import type { AgentRegistry } from '../agent/registry.js'
 import type { ContractEmission } from '../contract/pipeline.js'
 import type { Db } from '../db/client.js'
-import { objectives } from '../db/schema.js'
+import { objectives, projectMemory } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
 import { bindEffects, recordDecisionChoice } from './effects.js'
 import { commitTransition } from './store.js'
@@ -183,7 +184,42 @@ export class WorkflowRunner {
    */
   ingest(objectiveId: string, emission: ContractEmission): void {
     if (emission.kind !== 'event') return
+    // A memory_note is project-scoped metadata, not a phase-transition signal
+    // — the machine has no concept of it and none of the 7 existing
+    // AgentEvent→WorkflowEvent mappings cover it. toMachineEvent's lookup
+    // would silently return `{ type: undefined, event }` for an unmapped
+    // type (no exhaustiveness check exists on that lookup object), so this
+    // interception has to happen before toMachineEvent is ever called, not
+    // rely on the machine ignoring an unrecognized event type gracefully.
+    if (emission.event.type === 'memory_note') {
+      this.#recordMemoryNote(objectiveId, emission.event)
+      return
+    }
     this.send(objectiveId, toMachineEvent(emission.event))
+  }
+
+  #recordMemoryNote(
+    objectiveId: string,
+    event: Extract<AgentEvent, { type: 'memory_note' }>,
+  ): void {
+    const objective = this.#db
+      .select({ projectId: objectives.projectId })
+      .from(objectives)
+      .where(eq(objectives.id, objectiveId))
+      .get()
+    if (!objective) return
+    this.#db
+      .insert(projectMemory)
+      .values({
+        id: randomUUID(),
+        projectId: objective.projectId,
+        kind: event.kind,
+        headline: event.headline,
+        content: event.content,
+        sourceObjectiveId: objectiveId,
+        createdAt: new Date().toISOString(),
+      })
+      .run()
   }
 
   #objective(objectiveId: string): ObjectiveRow {

@@ -117,6 +117,12 @@ export const AgentEvent = z.discriminatedUnion('type', [
     probableCause: z.string().max(200),
     suggestedActions: z.array(z.string().max(100)).max(3),
   }),
+  z.object({
+    type: z.literal('memory_note'),
+    kind: z.enum(['architecture', 'known_issue']),
+    headline: z.string().max(120),
+    content: z.string().max(400),
+  }),
 ])
 export type AgentEvent = z.infer<typeof AgentEvent>
 
@@ -128,5 +134,6 @@ export const AGENT_EVENT_TYPES = [
   'task_result',
   'evidence',
   'failure',
+  'memory_note',
 ] as const
 export type AgentEventType = (typeof AGENT_EVENT_TYPES)[number]

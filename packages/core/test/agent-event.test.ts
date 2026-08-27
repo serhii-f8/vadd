@@ -94,6 +94,12 @@ test('every declared type parses at least one fixture', () => {
       probableCause: 'Missing .env',
       suggestedActions: ['Copy .env.example'],
     },
+    memory_note: {
+      type: 'memory_note',
+      kind: 'architecture',
+      headline: 'Auth lives in src/auth/',
+      content: 'JWT validation happens in middleware.ts.',
+    },
   }
   for (const type of AGENT_EVENT_TYPES) {
     expect(AgentEvent.safeParse(fixtures[type]).success, type).toBe(true)
@@ -184,4 +190,44 @@ test('A11: expectFailing is capped at 5 ids of 40 chars each, and existing plans
       tasks: [{ title: 'x', description: 'y', expectFailing: ['a'.repeat(41)] }],
     }).success,
   ).toBe(false)
+})
+
+test('memory_note accepts a valid instance', () => {
+  const result = AgentEvent.safeParse({
+    type: 'memory_note',
+    kind: 'architecture',
+    headline: 'Auth lives in src/auth/',
+    content: 'JWT validation happens in middleware.ts, not in individual routes.',
+  })
+  expect(result.success).toBe(true)
+})
+
+test('memory_note rejects an over-length headline', () => {
+  const result = AgentEvent.safeParse({
+    type: 'memory_note',
+    kind: 'architecture',
+    headline: 'x'.repeat(121),
+    content: 'y',
+  })
+  expect(result.success).toBe(false)
+})
+
+test('memory_note rejects an over-length content', () => {
+  const result = AgentEvent.safeParse({
+    type: 'memory_note',
+    kind: 'known_issue',
+    headline: 'x',
+    content: 'y'.repeat(401),
+  })
+  expect(result.success).toBe(false)
+})
+
+test('memory_note rejects an unrecognized kind', () => {
+  const result = AgentEvent.safeParse({
+    type: 'memory_note',
+    kind: 'nonsense',
+    headline: 'x',
+    content: 'y',
+  })
+  expect(result.success).toBe(false)
 })
