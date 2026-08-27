@@ -80,9 +80,15 @@ export function NewObjectiveDialog({
     setGoalText('')
     setMode('standard')
     setProjectId(null)
-    if (!seed) return
+    // Captures only the primitive, not the `seed` object itself: a caller
+    // (Task 8's FocusView) constructing `seed` as an inline literal makes a
+    // new reference on every render, and depending on the object would
+    // re-fire this effect — re-fetching the seed and clobbering in-progress
+    // edits — on every re-render while the dialog stays open.
+    const continuedFromId = seed?.continuedFromId
+    if (continuedFromId === undefined) return
     api
-      .getContinuationSeed(seed.continuedFromId)
+      .getContinuationSeed(continuedFromId)
       .then((s) => {
         setProjectId(s.projectId)
         setTitle(s.title)
@@ -93,7 +99,7 @@ export function NewObjectiveDialog({
         )
       })
       .catch((e: Error) => setError(e.message))
-  }, [open, seed])
+  }, [open, seed?.continuedFromId])
 
   const target = projectId ?? selectedId
 
