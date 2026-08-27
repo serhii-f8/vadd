@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
+import { ProjectsProvider } from '../src/app/ProjectsContext.js'
 import { FocusView } from '../src/routes/FocusView.js'
 import { FakeEventSource, mockFetch } from './setup.js'
 
@@ -42,9 +43,16 @@ function aggregate(over: Record<string, unknown> = {}) {
 function renderFocus() {
   return render(
     <MemoryRouter initialEntries={['/o/o1']}>
-      <Routes>
-        <Route path="/o/:id" element={<FocusView />} />
-      </Routes>
+      {/* Task 8: the outcome branch always mounts a `NewObjectiveDialog`
+          (closed, ready to seed a Continue), and that component reads
+          `useProjects()` unconditionally — matching production, where
+          `FocusView` is always rendered inside `App.tsx`'s own
+          `ProjectsProvider`. */}
+      <ProjectsProvider>
+        <Routes>
+          <Route path="/o/:id" element={<FocusView />} />
+        </Routes>
+      </ProjectsProvider>
     </MemoryRouter>,
   )
 }
@@ -609,5 +617,38 @@ describe('Low Energy Mode (amendment A12)', () => {
     renderFocus()
     await screen.findByRole('status')
     expect(screen.getByRole('status').textContent).toMatch(/Good stopping point/i)
+  })
+})
+
+describe('Continue button on a terminal objective', () => {
+  it('shows a Continue button and opens a seeded NewObjectiveDialog', async () => {
+    mockFetch({
+      'GET /api/objectives/o1': { body: aggregate({ state: 'done' }) },
+      'GET /api/objectives/o1/continuation-seed': {
+        body: {
+          projectId: 'p1',
+          title: 't',
+          goalText: 'g',
+          status: 'done',
+          lastClaim: null,
+          verifiedCount: 0,
+          totalCount: 0,
+        },
+      },
+    })
+    renderFocus()
+    const button = await screen.findByRole('button', { name: 'Continue' })
+    await userEvent.click(button)
+    await screen.findByText('New objective')
+  })
+
+  it('does not show a Continue button on a non-terminal objective', async () => {
+    mockFetch({ 'GET /api/objectives/o1': { body: aggregate({ state: 'paused' }) } })
+    renderFocus()
+    // The brief's own `findByText(/./)` matches several text nodes at once
+    // and throws regardless of the button under test; wait on one known
+    // unique node instead ("paused" is a leaf text run in the state badge).
+    await screen.findByText('paused')
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
   })
 })

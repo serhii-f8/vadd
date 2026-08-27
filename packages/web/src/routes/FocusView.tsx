@@ -18,6 +18,7 @@ import { PlanApproval } from '../focus/PlanApproval.js'
 import { ProblemAlert } from '../focus/ProblemAlert.js'
 import { primaryElementFor, type ViewStateName } from '../focus/primary.js'
 import { TaskList } from '../focus/TaskList.js'
+import { NewObjectiveDialog } from '../objectives/NewObjectiveDialog.js'
 import { statusFor } from './stateColor.js'
 
 /**
@@ -51,6 +52,8 @@ export function FocusView() {
    * something the Focus View should claim it can undo.
    */
   const [gitUndoable, setGitUndoable] = useState<string | null>(null)
+  /** Whether the terminal state's "Continue" dialog, seeded from this objective, is open. */
+  const [continuing, setContinuing] = useState(false)
   const error = commandError ?? loadError
   /** Guards against a refetch storm when events arrive faster than the fetch. */
   const inFlight = useRef(false)
@@ -321,6 +324,16 @@ export function FocusView() {
               ` · ${aggregate.objective.integrateAction}`}
           </h2>
           <EvidencePanel aggregate={aggregate} onCommand={() => undefined} readOnly />
+          <div className="mt-4">
+            <Button variant="outline" onClick={() => setContinuing(true)}>
+              Continue
+            </Button>
+          </div>
+          <NewObjectiveDialog
+            open={continuing}
+            onOpenChange={setContinuing}
+            seed={{ continuedFromId: aggregate.objective.id }}
+          />
         </section>
       )}
       {primary === 'resume' && (
