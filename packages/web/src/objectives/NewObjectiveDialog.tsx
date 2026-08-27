@@ -98,7 +98,7 @@ export function NewObjectiveDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New objective</DialogTitle>
           <DialogDescription>
