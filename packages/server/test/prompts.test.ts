@@ -160,6 +160,10 @@ test('the objective-derived vars alone leave five templates unsatisfied', () => 
   // `execute-task-investigation` joins this list: `{{taskTitle}}` and
   // `{{taskDescription}}` come from CALLER_TEMPLATE_VARS supplied per-task,
   // not from the objective row alone.
+  //
+  // `explore` joins this list under amendment A22: `{{projectMemory}}` comes
+  // from `buildProjectMemoryPromptBlock`, which `sendPromptEffect` supplies
+  // for the `explore` phase — never from the objective row alone.
   const auto = Object.fromEntries(AUTO_TEMPLATE_VARS.map((v) => [v, 'x']))
   const unsatisfied = PROMPT_PHASES.filter(
     (p) => placeholdersIn(renderTemplate(loadTemplate(p), auto)).length > 0,
@@ -167,6 +171,7 @@ test('the objective-derived vars alone leave five templates unsatisfied', () => 
   expect(unsatisfied.sort()).toEqual([
     'execute-task',
     'execute-task-investigation',
+    'explore',
     'plan',
     'repair',
     'verify',

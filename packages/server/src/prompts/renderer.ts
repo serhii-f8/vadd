@@ -143,6 +143,12 @@ export const AUTO_TEMPLATE_VARS = ['title', 'goalText'] as const
  * always supplies it for the `plan` phase — an empty string when no
  * verification spec is resolved yet — so it is never left as a literal
  * placeholder the way `verificationCommands` once was.
+ *
+ * `projectMemory` is `explore.md`'s (amendment A22): the capped, formatted
+ * `project_memory` block `buildProjectMemoryPromptBlock` builds.
+ * `sendPromptEffect` always supplies it for the `explore` phase — the literal
+ * "No project memory recorded yet." sentence when the project has none — so
+ * it is never left as a literal placeholder either.
  */
 export const CALLER_TEMPLATE_VARS = [
   'verificationChecks',
@@ -151,6 +157,7 @@ export const CALLER_TEMPLATE_VARS = [
   'taskDescription',
   'missing',
   'verifyCommandIds',
+  'projectMemory',
 ] as const
 
 /** Distinct `{{name}}` placeholders in a template body or a rendered prompt. */

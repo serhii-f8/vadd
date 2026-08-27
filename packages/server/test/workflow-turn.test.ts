@@ -133,7 +133,10 @@ describe('runTurn', () => {
     const { db, bus, agents, objective } = setup('immediate')
     await agents.ensure(objective)
 
-    const out = await runTurn({ db, bus, agents }, objective, { phase: 'explore' })
+    const out = await runTurn({ db, bus, agents }, objective, {
+      phase: 'explore',
+      vars: { projectMemory: 'No project memory recorded yet.' },
+    })
 
     expect(out.ok).toBe(true)
   })
@@ -142,7 +145,11 @@ describe('runTurn', () => {
     const { db, bus, agents, objective, cancelCalls } = setup('hang')
     await agents.ensure(objective)
 
-    const out = await runTurn({ db, bus, agents }, objective, { phase: 'explore', timeoutMs: 50 })
+    const out = await runTurn({ db, bus, agents }, objective, {
+      phase: 'explore',
+      vars: { projectMemory: 'No project memory recorded yet.' },
+      timeoutMs: 50,
+    })
 
     expect(out).toMatchObject({ ok: false, reason: 'timeout' })
     // The turn must be closed, or every later prompt on this objective 409s
@@ -155,7 +162,11 @@ describe('runTurn', () => {
     const { db, bus, agents, objective } = setup('hang')
     await agents.ensure(objective)
 
-    const out = await runTurn({ db, bus, agents }, objective, { phase: 'explore', timeoutMs: 50 })
+    const out = await runTurn({ db, bus, agents }, objective, {
+      phase: 'explore',
+      vars: { projectMemory: 'No project memory recorded yet.' },
+      timeoutMs: 50,
+    })
 
     expect(out.ok).toBe(false)
     const types = db
@@ -174,7 +185,10 @@ describe('renderTurnPrompt', () => {
     // No AgentRegistry, no db, no bus: proves the validation genuinely needs
     // nothing but the objective row and the request, so the route can run it
     // before agents.ensure() without spawning anything first.
-    const { text, expect: groups } = renderTurnPrompt(objective, { phase: 'explore' })
+    const { text, expect: groups } = renderTurnPrompt(objective, {
+      phase: 'explore',
+      vars: { projectMemory: 'No project memory recorded yet.' },
+    })
     expect(text).toContain('g')
     expect(groups).toEqual([['status', 'clarification']])
   })

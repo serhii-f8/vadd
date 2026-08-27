@@ -14,6 +14,7 @@ import {
   evidenceItems,
   objectives,
   planTasks,
+  projectMemory,
   projects,
 } from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
@@ -349,6 +350,24 @@ describe('bindEffects', () => {
     runner.start('o')
     runner.send('o', { type: 'START' })
     await vi.waitFor(() => expect(promptedPhases()).toEqual(['explore']))
+  })
+
+  it("the explore prompt is rendered with the project's recorded memory", async () => {
+    db.insert(projectMemory)
+      .values({
+        id: 'mem-1',
+        projectId: 'proj-1',
+        kind: 'known_issue',
+        headline: 'CI is flaky on parallel runs',
+        content: 'CI is flaky on parallel runs',
+        createdAt: new Date().toISOString(),
+      })
+      .run()
+
+    runner.start('o')
+    runner.send('o', { type: 'START' })
+    await vi.waitFor(() => expect(promptedPhases()).toEqual(['explore']))
+    expect(lastPromptText()).toContain('CI is flaky on parallel runs')
   })
 
   it('execute-task is rendered with the current task, not tasks[0]', async () => {

@@ -10,6 +10,7 @@ import type { EventBus } from '../events/event-bus.js'
 import { checkpointCommit, resetHard } from '../git/git-manager.js'
 import { collectEvidence } from '../verification/collector.js'
 import { computeTaskRisk } from '../verification/risk.js'
+import { buildProjectMemoryPromptBlock } from './project-memory.js'
 import { runTurn, type TurnOutcome } from './turn.js'
 
 type Deps = { db: Db; bus: EventBus; agents: AgentRegistry }
@@ -198,6 +199,13 @@ async function sendPromptEffect(
     title: row.title,
     goalText: row.goalText,
     worktreePath: row.worktreePath,
+  }
+
+  if (phase === 'explore') {
+    vars = {
+      ...vars,
+      projectMemory: buildProjectMemoryPromptBlock(deps.db, objectiveRef.projectId),
+    }
   }
 
   // `runTurn` requires a session that already exists — it calls `agents.get()`

@@ -8,6 +8,12 @@ file yet.
 
 Goal: {{goalText}}
 
+{{projectMemory}}
+
+If you learn something about this project worth remembering for a future,
+unrelated objective — a structural fact, or a real gotcha — emit a
+`memory_note` event for it. This is optional and not required every turn.
+
 Emit only: `status` or `clarification`.
 
 Findings go in the headline, not in an `evidence` event. Evidence reports a
