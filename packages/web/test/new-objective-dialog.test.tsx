@@ -232,4 +232,40 @@ describe('NewObjectiveDialog with a seed', () => {
       }),
     )
   })
+
+  it('does not double a sentence-ending period when the prior claim already carries one', async () => {
+    // A real `task_result.claim` is agent-authored free text and, unlike the
+    // no-period example in `execute-task.md`, often ends in its own full
+    // stop — found live in this task's own browser pass, where a seeded
+    // claim ending in "." rendered as "..." before "Final claim:"'s own
+    // trailing period.
+    mockFetch({
+      'GET /api/objectives/prior-1/continuation-seed': {
+        body: {
+          projectId: 'p1',
+          title: 'Fix rounding',
+          goalText: 'Totals are a cent off',
+          status: 'done',
+          lastClaim: 'Fixed the rounding bug.',
+          verifiedCount: 1,
+          totalCount: 1,
+        },
+      },
+    })
+    render(
+      <MemoryRouter>
+        <ProjectsProvider>
+          <NewObjectiveDialog
+            open
+            onOpenChange={() => undefined}
+            seed={{ continuedFromId: 'prior-1' }}
+          />
+        </ProjectsProvider>
+      </MemoryRouter>,
+    )
+
+    const goal = (await screen.findByLabelText('Goal')) as HTMLTextAreaElement
+    await waitFor(() => expect(goal.value).toContain('Fixed the rounding bug.'))
+    expect(goal.value).not.toContain('Fixed the rounding bug..')
+  })
 })

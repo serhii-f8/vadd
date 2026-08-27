@@ -92,9 +92,19 @@ export function NewObjectiveDialog({
       .then((s) => {
         setProjectId(s.projectId)
         setTitle(s.title)
+        // `s.lastClaim` is agent-authored free text, not a fixed phrase — the
+        // execute-task prompt's own example carries no trailing punctuation,
+        // but a real claim often does, and appending an unconditional period
+        // then reads as "..". Found on screen in this task's own browser
+        // verification pass (see CLAUDE.md), where a seeded claim ending in
+        // "." rendered as "..." here.
+        const claimSuffix =
+          s.lastClaim !== null && s.lastClaim !== ''
+            ? ` Final claim: ${s.lastClaim}${/[.!?]$/.test(s.lastClaim) ? '' : '.'}`
+            : ''
         setGoalText(
           `${s.goalText}\n\n— Continuing "${s.title}" (${s.status}).` +
-            (s.lastClaim ? ` Final claim: ${s.lastClaim}.` : '') +
+            claimSuffix +
             (s.totalCount > 0 ? ` ${s.verifiedCount}/${s.totalCount} evidence checks passed.` : ''),
         )
       })
