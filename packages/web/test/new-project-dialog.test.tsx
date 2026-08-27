@@ -153,3 +153,74 @@ describe('NewProjectDialog', () => {
     expect((screen.getByLabelText('Repository path') as HTMLInputElement).value).toBe('')
   })
 })
+
+describe('NewProjectDialog — Clone repository tab', () => {
+  const routes = (post: { status: number; body: unknown }) => ({
+    'GET /api/projects': { body: [] },
+    'POST /api/projects': post,
+  })
+
+  it('derives a directory name from the URL and lets the user override it', async () => {
+    mockFetch(routes({ status: 201, body: created }))
+    await renderDialog()
+    await userEvent.click(screen.getByRole('tab', { name: 'Clone repository' }))
+    await userEvent.type(
+      screen.getByLabelText('Repository URL'),
+      'https://github.com/user/my-repo.git',
+    )
+    expect((screen.getByLabelText('Directory name') as HTMLInputElement).value).toBe('my-repo')
+
+    await userEvent.clear(screen.getByLabelText('Directory name'))
+    await userEvent.type(screen.getByLabelText('Directory name'), 'custom-name')
+    await userEvent.type(screen.getByLabelText('Repository URL'), '2')
+    // Once hand-edited, the name field must stop tracking the URL — the same
+    // "don't clobber an edit" discipline this project's continuation feature
+    // already had to add (see NewObjectiveDialog's seed-fetch effect).
+    expect((screen.getByLabelText('Directory name') as HTMLInputElement).value).toBe('custom-name')
+  })
+
+  it('sends url, the joined destPath, and agentKind to POST /api/projects/clone', async () => {
+    const { calls } = mockFetch({
+      'GET /api/projects': { body: [] },
+      'POST /api/projects/clone': { status: 201, body: created },
+      'GET /api/fs/browse': {
+        body: { path: '/home/serhii', parent: '/home', entries: [] },
+      },
+    })
+    await renderDialog()
+    await userEvent.click(screen.getByRole('tab', { name: 'Clone repository' }))
+    await userEvent.type(screen.getByLabelText('Repository URL'), 'https://example.com/r.git')
+    await userEvent.click(screen.getByRole('button', { name: 'Browse…' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Select this folder' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Clone' }))
+    await waitFor(() => expect(postBody(calls)).toBeDefined())
+    expect(postBody(calls)).toEqual({
+      url: 'https://example.com/r.git',
+      destPath: '/home/serhii/r',
+      agentKind: 'claude-code',
+    })
+  })
+
+  it('surfaces a clone failure the same way an open-existing failure is surfaced', async () => {
+    mockFetch({
+      'GET /api/projects': { body: [] },
+      'POST /api/projects/clone': { status: 400, body: { error: 'Invalid clone URL: bad scheme' } },
+      'GET /api/fs/browse': { body: { path: '/home/serhii', parent: '/home', entries: [] } },
+    })
+    await renderDialog()
+    await userEvent.click(screen.getByRole('tab', { name: 'Clone repository' }))
+    await userEvent.type(screen.getByLabelText('Repository URL'), 'ext::sh -c evil')
+    await userEvent.click(screen.getByRole('button', { name: 'Clone' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('Invalid clone URL')
+  })
+
+  it('the Open existing tab is unaffected: submitting still posts to POST /api/projects', async () => {
+    const { calls } = mockFetch(routes({ status: 201, body: created }))
+    await renderDialog()
+    await userEvent.type(screen.getByLabelText('Repository path'), '/var/www/flexpick')
+    await userEvent.click(screen.getByRole('button', { name: 'Add project' }))
+    await waitFor(() => expect(postBody(calls)).toBeDefined())
+    expect(postBody(calls)).toEqual({ repoPath: '/var/www/flexpick', agentKind: 'claude-code' })
+  })
+})
