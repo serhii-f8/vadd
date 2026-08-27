@@ -1,4 +1,4 @@
-import { GitError, gitChecked } from './run.js'
+import { GitError, git, gitChecked } from './run.js'
 
 export type BranchRow = { name: string; sha: string; isCurrent: boolean; upstream: string | null }
 
@@ -24,6 +24,20 @@ export type CommitRow = {
 }
 
 export type StatusCounts = { staged: number; unstaged: number; untracked: number }
+
+/**
+ * True if `branch` exists as a local branch in `repoPath`. Used to decide
+ * whether a "Continue" follow-up objective can start from a prior
+ * objective's own branch, or must fall back to the repo's current HEAD.
+ */
+export async function branchExists(repoPath: string, branch: string): Promise<boolean> {
+  try {
+    await git(repoPath, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])
+    return true
+  } catch {
+    return false
+  }
+}
 
 /** Unit separator: between fields of one record. */
 const US = '\x1f'
