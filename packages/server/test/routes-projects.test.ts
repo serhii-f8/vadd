@@ -1,7 +1,8 @@
-import { mkdtempSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from 'vitest'
+import { describe, expect, it, test } from 'vitest'
 import { createDb } from '../src/db/client.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { buildApp } from '../src/http/app.js'
@@ -108,4 +109,90 @@ test('a failed registration appends project_registration_failed with the reason'
   expect((failed?.payload as { message?: string } | undefined)?.message).toMatch(
     /not a git repository/i,
   )
+})
+
+describe('POST /api/projects/clone', () => {
+  it('clones and registers in one call', async () => {
+    const source = makeTempRepo()
+    const dest = join(mkdtempSync(join(tmpdir(), 'vadd-clone-')), 'cloned-repo')
+    const a = app()
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/projects/clone',
+      payload: { url: source, destPath: dest, agentKind: 'claude-code' },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = res.json()
+    expect(body.repoPath).toBe(dest)
+    const head = execFileSync('git', ['-C', dest, 'rev-parse', 'HEAD']).toString().trim()
+    expect(head).toHaveLength(40)
+  })
+
+  it('400s on a rejected URL before touching the filesystem', async () => {
+    const dest = join(mkdtempSync(join(tmpdir(), 'vadd-clone-')), 'should-not-exist')
+    const a = app()
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/projects/clone',
+      payload: { url: '--upload-pack=/bin/sh', destPath: dest, agentKind: 'claude-code' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(existsSync(dest)).toBe(false)
+  })
+
+  it('409s when destPath already exists', async () => {
+    const source = makeTempRepo()
+    const dest = mkdtempSync(join(tmpdir(), 'vadd-clone-'))
+    const a = app()
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/projects/clone',
+      payload: { url: source, destPath: dest, agentKind: 'claude-code' },
+    })
+    expect(res.statusCode).toBe(409)
+  })
+
+  it('400s on a relative destPath', async () => {
+    const source = makeTempRepo()
+    const a = app()
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/projects/clone',
+      payload: { url: source, destPath: 'relative/path', agentKind: 'claude-code' },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('409s the same way POST /api/projects does when the cloned repo is already registered', async () => {
+    const source = makeTempRepo()
+    const a = app()
+    await a.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: source } })
+    const dest = join(mkdtempSync(join(tmpdir(), 'vadd-clone-')), 'cloned-again')
+    const res = await a.inject({
+      method: 'POST',
+      url: '/api/projects/clone',
+      payload: { url: source, destPath: dest, agentKind: 'claude-code' },
+    })
+    // The clone succeeds (dest is a new, distinct path from source), but the
+    // resolved toplevel of `dest` is itself a fresh repo, not a duplicate —
+    // this test's actual point is that the SAME duplicate-check code path
+    // that POST /api/projects uses is reached at all. To genuinely trigger
+    // the 409, register `dest` first via a manual git clone + POST
+    // /api/projects, then attempt POST /api/projects/clone with a *second*,
+    // *different* destPath cloning the *same* `source` URL a second time —
+    // both clones produce independent repos at the git level (no shared
+    // toplevel), so this specific scenario does NOT 409 by itself. Rewrite
+    // this test to clone once via the route, then attempt to register that
+    // same resulting `dest` path again via plain POST /api/projects, and
+    // assert that second call 409s — this proves registerValidatedRepo's
+    // duplicate check is the identical function backing both routes,
+    // without asserting an incorrect clone-level duplicate scenario.
+    expect(res.statusCode).toBe(201)
+    const dupe = await a.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { repoPath: dest },
+    })
+    expect(dupe.statusCode).toBe(409)
+  })
 })

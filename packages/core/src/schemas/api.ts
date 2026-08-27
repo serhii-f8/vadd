@@ -11,6 +11,14 @@ export const RegisterProjectBody = z.object({
 })
 export type RegisterProjectBody = z.infer<typeof RegisterProjectBody>
 
+export const CloneProjectBody = z.object({
+  url: z.string().min(1),
+  destPath: z.string().min(1),
+  name: z.string().min(1).max(80).optional(),
+  agentKind: z.enum(AGENT_KINDS).default('claude-code'),
+})
+export type CloneProjectBody = z.infer<typeof CloneProjectBody>
+
 export const CreateObjectiveBody = z.object({
   title: z.string().min(1).max(120),
   goalText: z.string().min(1).max(4000),

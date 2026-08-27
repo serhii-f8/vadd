@@ -51,6 +51,7 @@ export {
 } from './schemas/agent-event.js'
 export {
   type AgentKind,
+  CloneProjectBody,
   CreateObjectiveBody,
   ObjectiveCommand,
   RegisterProjectBody,

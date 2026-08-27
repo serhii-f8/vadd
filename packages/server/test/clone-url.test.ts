@@ -25,6 +25,17 @@ describe('validateCloneUrl', () => {
     expect(result.ok).toBe(false)
   })
 
+  it('accepts a plain absolute local filesystem path', () => {
+    expect(validateCloneUrl('/tmp/vadd-repo-abc123')).toEqual({
+      ok: true,
+      url: '/tmp/vadd-repo-abc123',
+    })
+  })
+
+  it('rejects a relative path', () => {
+    expect(validateCloneUrl('relative/path').ok).toBe(false)
+  })
+
   it('rejects ext:: transport strings', () => {
     expect(validateCloneUrl('ext::sh -c "touch /tmp/pwned"').ok).toBe(false)
   })

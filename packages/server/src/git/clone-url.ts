@@ -1,13 +1,21 @@
+import { isAbsolute } from 'node:path'
+
 const ALLOWED_SCHEMES = ['https:', 'http:', 'ssh:', 'git:']
 
 /**
- * Accepts a normal URL with an allowed scheme, or git's scp-like short form
- * (`user@host:path`, no scheme). Rejects `file://` (arbitrary local-path
- * access disguised as a clone), any scheme not listed above (`ext::` among
- * them — a documented git remote-helper RCE vector), and anything starting
- * with `-` (option injection, the same defense `knownRemote` already uses
- * for remote names in `packages/server/src/http/routes/git.ts`). Also rejects
- * usernames and hostnames starting with `-` in both URL and scp-like forms
+ * Accepts a normal URL with an allowed scheme, git's scp-like short form
+ * (`user@host:path`, no scheme), or a plain absolute local filesystem path.
+ * Rejects `file://` (a URL-shaped disguise for the same local access a plain
+ * path already gets — kept rejected for the transport-level ambiguity that
+ * scheme carries, not because local access itself is the threat: this is a
+ * no-auth localhost API, and `POST /api/projects` already registers any
+ * local `repoPath` directly with no scheme restriction at all), any scheme
+ * not listed above (`ext::` among them — a documented git remote-helper RCE
+ * vector), and anything starting with `-` (option injection, the same
+ * defense `knownRemote` already uses for remote names in
+ * `packages/server/src/http/routes/git.ts` — this also covers a bare path,
+ * since a real absolute path never starts with `-`). Also rejects usernames
+ * and hostnames starting with `-` in both URL and scp-like forms
  * (CVE-2017-1000117: ssh option injection via user@host token).
  */
 export function validateCloneUrl(
@@ -36,6 +44,9 @@ export function validateCloneUrl(
       return { ok: false, reason: 'hostname may not start with -' }
     }
     if (scpMatch) {
+      return { ok: true, url: input }
+    }
+    if (isAbsolute(input)) {
       return { ok: true, url: input }
     }
     return { ok: false, reason: 'not a recognized git URL' }
