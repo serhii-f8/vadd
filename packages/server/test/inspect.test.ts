@@ -4,21 +4,21 @@ import { branchExists } from '../src/git/inspect.js'
 import { makeTempRepo } from './fixtures/temp-repo.js'
 
 describe('branchExists', () => {
-  it('is true for a branch that exists', () => {
+  it('is true for a branch that exists', async () => {
     const repo = makeTempRepo()
     execFileSync('git', ['-C', repo, 'branch', 'vadd/exists'])
-    expect(branchExists(repo, 'vadd/exists')).resolves.toBe(true)
+    await expect(branchExists(repo, 'vadd/exists')).resolves.toBe(true)
   })
 
-  it('is false for a branch that was never created', () => {
+  it('is false for a branch that was never created', async () => {
     const repo = makeTempRepo()
-    expect(branchExists(repo, 'vadd/never-existed')).resolves.toBe(false)
+    await expect(branchExists(repo, 'vadd/never-existed')).resolves.toBe(false)
   })
 
-  it('is false for a branch that existed and was deleted', () => {
+  it('is false for a branch that existed and was deleted', async () => {
     const repo = makeTempRepo()
     execFileSync('git', ['-C', repo, 'branch', 'vadd/deleted'])
     execFileSync('git', ['-C', repo, 'branch', '-D', 'vadd/deleted'])
-    expect(branchExists(repo, 'vadd/deleted')).resolves.toBe(false)
+    await expect(branchExists(repo, 'vadd/deleted')).resolves.toBe(false)
   })
 })
