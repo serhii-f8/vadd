@@ -227,4 +227,67 @@ describe('ObjectiveList', () => {
     )
     expect(await screen.findByLabelText('Needs you')).toBeTruthy()
   })
+
+  describe('project memory section', () => {
+    it('renders architecture and known-issue notes under labeled headings', async () => {
+      mockFetch({
+        'GET /api/projects': { body: [{ id: 'p1', name: 'Flexpick', repoPath: '/r' }] },
+        'GET /api/objectives?projectId=p1': { body: [] },
+        'GET /api/projects/p1/memory': {
+          body: {
+            notes: [
+              {
+                id: 'm1',
+                kind: 'architecture',
+                headline: 'Auth lives in src/auth/',
+                content: 'JWT validation in middleware.ts.',
+                sourceObjectiveId: 'o1',
+                createdAt: '2026-08-27T00:00:00.000Z',
+              },
+              {
+                id: 'm2',
+                kind: 'known_issue',
+                headline: 'CI is flaky',
+                content: 'Parallel runs occasionally time out.',
+                sourceObjectiveId: null,
+                createdAt: '2026-08-27T00:00:01.000Z',
+              },
+            ],
+          },
+        },
+      })
+      render(
+        <MemoryRouter>
+          <ProjectsProvider>
+            <ObjectiveList />
+          </ProjectsProvider>
+        </MemoryRouter>,
+      )
+      expect(await screen.findByText('Known project structure')).toBeTruthy()
+      expect(screen.getByText('Auth lives in src/auth/')).toBeTruthy()
+      expect(screen.getByText('Known issues')).toBeTruthy()
+      expect(screen.getByText('CI is flaky').textContent).toBe('CI is flaky')
+
+      const link = screen.getByRole('link', { name: 'Auth lives in src/auth/' })
+      expect(link.getAttribute('href')).toBe('/o/o1')
+    })
+
+    it('renders nothing extra when there is no memory yet', async () => {
+      mockFetch({
+        'GET /api/projects': { body: [{ id: 'p1', name: 'Flexpick', repoPath: '/r' }] },
+        'GET /api/objectives?projectId=p1': { body: [] },
+        'GET /api/projects/p1/memory': { body: { notes: [] } },
+      })
+      render(
+        <MemoryRouter>
+          <ProjectsProvider>
+            <ObjectiveList />
+          </ProjectsProvider>
+        </MemoryRouter>,
+      )
+      await screen.findByText(/No objectives yet/)
+      expect(screen.queryByText('Known project structure')).toBeNull()
+      expect(screen.queryByText('Known issues')).toBeNull()
+    })
+  })
 })

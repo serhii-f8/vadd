@@ -4,15 +4,38 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { api, type ObjectiveListRow } from '../api.js'
+import { api, type ObjectiveListRow, type ProjectMemoryNote } from '../api.js'
 import { useProjects } from '../app/ProjectsContext.js'
 import type { ViewStateName } from '../focus/primary.js'
 import { statusFor } from './stateColor.js'
+
+function MemorySection({ label, notes }: { label: string; notes: ProjectMemoryNote[] }) {
+  if (notes.length === 0) return null
+  return (
+    <section className="mb-6">
+      <h2 className="mb-2 text-sm font-semibold text-muted-foreground">{label}</h2>
+      <ul className="flex flex-col gap-1">
+        {notes.map((n) => (
+          <li key={n.id} className="text-sm">
+            {n.sourceObjectiveId !== null ? (
+              <Link to={`/o/${n.sourceObjectiveId}`} className="hover:underline">
+                {n.headline}
+              </Link>
+            ) : (
+              n.headline
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
 
 export function ObjectiveList() {
   const { selectedId } = useProjects()
   const [objectives, setObjectives] = useState<ObjectiveListRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [memoryNotes, setMemoryNotes] = useState<ProjectMemoryNote[] | null>(null)
 
   useEffect(() => {
     setObjectives(null)
@@ -23,11 +46,26 @@ export function ObjectiveList() {
       .catch((e: Error) => setError(e.message))
   }, [selectedId])
 
+  useEffect(() => {
+    setMemoryNotes(null)
+    if (selectedId === null) return
+    api
+      .getProjectMemory(selectedId)
+      .then((r) => setMemoryNotes(r.notes))
+      .catch(() => setMemoryNotes([]))
+  }, [selectedId])
+
+  const architectureNotes = (memoryNotes ?? []).filter((n) => n.kind === 'architecture')
+  const knownIssueNotes = (memoryNotes ?? []).filter((n) => n.kind === 'known_issue')
+
   return (
     <>
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Objectives</h1>
       </header>
+
+      <MemorySection label="Known project structure" notes={architectureNotes} />
+      <MemorySection label="Known issues" notes={knownIssueNotes} />
 
       {error !== null && (
         <Alert variant="destructive" className="mb-4">
