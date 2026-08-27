@@ -114,6 +114,15 @@ export function NewObjectiveDialog({
   const target = projectId ?? selectedId
 
   const submit = async () => {
+    // A seeded dialog must never fall back to whatever project happens to be
+    // selected in the sidebar: the Focus View is reachable by direct URL,
+    // independent of sidebar selection, so `selectedId` need not name the
+    // project the continued-from objective actually lives in. If the seed
+    // fetch hasn't resolved yet — still in flight, or failed (`error` is
+    // already showing why) — `projectId` stays null and there is nothing
+    // safe to submit into, regardless of whether title/goalText were typed
+    // by hand in the meantime.
+    if (seed !== undefined && projectId === null) return
     if (target === null || title.trim() === '' || goalText.trim() === '') return
     setBusy(true)
     setError(null)

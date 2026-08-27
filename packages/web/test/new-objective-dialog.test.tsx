@@ -268,4 +268,41 @@ describe('NewObjectiveDialog with a seed', () => {
     await waitFor(() => expect(goal.value).toContain('Fixed the rounding bug.'))
     expect(goal.value).not.toContain('Fixed the rounding bug..')
   })
+
+  /**
+   * `target = projectId ?? selectedId` silently falls back to whatever
+   * project happens to be selected in the sidebar when the seed fetch
+   * hasn't resolved `projectId`. Without the guard in `submit()`, a user who
+   * doesn't notice the error alert — and, as here, types a title/goal by
+   * hand anyway — could create the continuation in the wrong project.
+   */
+  it('refuses to submit when the continuation-seed fetch fails, even with a project selected in the sidebar', async () => {
+    const { calls } = mockFetch({
+      'GET /api/projects': { body: projects },
+      'GET /api/objectives/prior-1/continuation-seed': {
+        status: 404,
+        body: { error: 'Objective not found' },
+      },
+    })
+    render(
+      <MemoryRouter>
+        <ProjectsProvider>
+          <NewObjectiveDialog
+            open
+            onOpenChange={() => undefined}
+            seed={{ continuedFromId: 'prior-1' }}
+          />
+        </ProjectsProvider>
+      </MemoryRouter>,
+    )
+
+    await screen.findByRole('alert')
+    await userEvent.type(screen.getByLabelText('Title'), 'Follow-up')
+    await userEvent.type(
+      screen.getByLabelText('Goal'),
+      'Whatever the sidebar project happens to be.',
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Create objective' }))
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+  })
 })
