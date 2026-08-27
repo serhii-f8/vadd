@@ -13,6 +13,7 @@ function row(over: Partial<ObjectiveListRow> = {}): ObjectiveListRow {
     branchName: null,
     baseSha: null,
     integrateAction: null,
+    continuedFromId: null,
     lowEnergy: false,
     mode: 'standard',
     updatedAt: '2026-08-22T10:00:00.000Z',

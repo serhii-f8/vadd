@@ -65,3 +65,44 @@ test('json payloads round-trip', () => {
   const row = db.select().from(events).all()[0]
   expect(row?.payload).toEqual({ nested: { n: 1 } })
 })
+
+test('objectives.continuedFromId round-trips and defaults to null', () => {
+  withTempHome()
+  const db = createDb(`${process.env.VADD_HOME}/vadd.db`)
+  const now = new Date().toISOString()
+  const projectId = 'p1'
+  db.insert(projects)
+    .values({ id: projectId, name: 'p', repoPath: '/tmp/x', config: {}, createdAt: now })
+    .run()
+  db.insert(objectives)
+    .values({
+      id: 'o1',
+      projectId,
+      title: 't',
+      goalText: 'g',
+      status: 'creating',
+      mode: 'standard',
+      lowEnergy: false,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run()
+  db.insert(objectives)
+    .values({
+      id: 'o2',
+      projectId,
+      title: 't2',
+      goalText: 'g2',
+      status: 'creating',
+      mode: 'standard',
+      lowEnergy: false,
+      continuedFromId: 'o1',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run()
+
+  const rows = db.select().from(objectives).all()
+  expect(rows.find((r) => r.id === 'o1')?.continuedFromId).toBeNull()
+  expect(rows.find((r) => r.id === 'o2')?.continuedFromId).toBe('o1')
+})

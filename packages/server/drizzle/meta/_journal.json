@@ -57,6 +57,13 @@
       "when": 1787558699883,
       "tag": "0007_spicy_microchip",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787825978827,
+      "tag": "0008_boring_jean_grey",
+      "breakpoints": true
     }
   ]
 }

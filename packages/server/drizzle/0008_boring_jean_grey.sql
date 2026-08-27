@@ -1,0 +1,1 @@
+ALTER TABLE `objectives` ADD `continued_from_id` text;

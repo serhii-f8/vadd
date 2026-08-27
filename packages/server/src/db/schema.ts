@@ -91,6 +91,14 @@ export const objectives = sqliteTable(
      * without replaying the event log per row.
      */
     integrateAction: text('integrate_action', { enum: INTEGRATE_ACTIONS }),
+    /**
+     * A "Continue" follow-up's link back to the objective it continued from.
+     * Deliberately no FK: the existing `DELETE /api/objectives/:id` transaction
+     * already touches six tables, and a dangling value after the parent is
+     * deleted should degrade gracefully (like `worktreeMissing` does), not
+     * force a seventh consideration onto that delete.
+     */
+    continuedFromId: text('continued_from_id'),
     status: text('status').notNull(),
     /** D1/A15: standard, Fast Fix (skips proposing/awaitingDecision), and investigation (read-only, no diff). */
     mode: text('mode', { enum: ['standard', 'fastfix', 'investigation'] })

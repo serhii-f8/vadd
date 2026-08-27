@@ -32,6 +32,7 @@ function agg(evidenceRows: unknown[], over: Record<string, unknown> = {}): Aggre
       branchName: 'vadd/abc12345',
       baseSha: 'deadbeef',
       integrateAction: null,
+      continuedFromId: null,
       lowEnergy: false,
       mode: 'standard',
       updatedAt: '2026-08-16T10:00:00.000Z',

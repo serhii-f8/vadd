@@ -18,6 +18,8 @@ export type Objective = {
   branchName: string | null
   baseSha: string | null
   integrateAction: 'commit' | 'keep' | 'discard' | null
+  /** A "Continue" follow-up's link back to the objective it continued from, if any. */
+  continuedFromId: string | null
   /** Amendment A12: D8's toggle. */
   lowEnergy: boolean
   /** D1's two paths, plus amendment A15's read-only investigation. */
