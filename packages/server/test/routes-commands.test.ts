@@ -10,6 +10,7 @@ import { AgentRegistry } from '../src/agent/registry.js'
 import { createDb, type Db } from '../src/db/client.js'
 import {
   decisions,
+  events,
   evidenceItems,
   machineSnapshots,
   objectives,
@@ -934,6 +935,99 @@ describe('GET /api/objectives/:id', () => {
   it('still 404s for an unknown objective', async () => {
     const ctx = await withObjective()
     const res = await ctx.app.inject({ method: 'GET', url: '/api/objectives/nope' })
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+describe('GET /api/objectives/:id/continuation-seed', () => {
+  it('returns the last task_result claim among later events', async () => {
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const bus = new EventBus(db)
+    const app = buildApp({ db, bus })
+    const projectId = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/projects',
+        payload: { repoPath: makeTempRepo() },
+      })
+    ).json().id as string
+    const objectiveId = (
+      await app.inject({
+        method: 'POST',
+        url: `/api/projects/${projectId}/objectives`,
+        payload: { title: 'Fix rounding', goalText: 'Totals are a cent off' },
+      })
+    ).json().id as string
+
+    const now = new Date().toISOString()
+    db.insert(events)
+      .values([
+        {
+          objectiveId,
+          type: 'agent_event',
+          payload: {
+            event: { type: 'task_result', taskId: 't1', claim: 'Fixed the rounding bug' },
+          },
+          createdAt: now,
+        },
+        {
+          objectiveId,
+          type: 'agent_event',
+          payload: { event: { type: 'status', headline: 'wrapping up' } },
+          createdAt: now,
+        },
+      ])
+      .run()
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/objectives/${objectiveId}/continuation-seed`,
+    })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.title).toBe('Fix rounding')
+    expect(body.goalText).toBe('Totals are a cent off')
+    expect(body.lastClaim).toBe('Fixed the rounding bug')
+    expect(body.projectId).toBe(projectId)
+  })
+
+  it('returns lastClaim: null when no task_result event exists', async () => {
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const bus = new EventBus(db)
+    const app = buildApp({ db, bus })
+    const projectId = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/projects',
+        payload: { repoPath: makeTempRepo() },
+      })
+    ).json().id as string
+    const objectiveId = (
+      await app.inject({
+        method: 'POST',
+        url: `/api/projects/${projectId}/objectives`,
+        payload: { title: 't', goalText: 'g' },
+      })
+    ).json().id as string
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/objectives/${objectiveId}/continuation-seed`,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().lastClaim).toBeNull()
+    expect(res.json().verifiedCount).toBe(0)
+    expect(res.json().totalCount).toBe(0)
+  })
+
+  it('404s on an objective that does not exist', async () => {
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const bus = new EventBus(db)
+    const app = buildApp({ db, bus })
+    const res = await app.inject({ method: 'GET', url: '/api/objectives/nope/continuation-seed' })
     expect(res.statusCode).toBe(404)
   })
 })

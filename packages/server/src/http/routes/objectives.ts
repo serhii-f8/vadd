@@ -481,6 +481,39 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     }
   })
 
+  app.get<{ Params: { id: string } }>(
+    '/api/objectives/:id/continuation-seed',
+    async (req, reply) => {
+      const objective = db.select().from(objectives).where(eq(objectives.id, req.params.id)).get()
+      if (!objective) return reply.code(404).send({ error: 'Objective not found' })
+
+      const rows = db
+        .select({ payload: events.payload })
+        .from(events)
+        .where(and(eq(events.objectiveId, objective.id), eq(events.type, 'agent_event')))
+        .orderBy(desc(events.id))
+        .all()
+      const claim =
+        rows
+          .map((r) => r.payload as { event?: { type?: string; claim?: string } })
+          .find((p) => p.event?.type === 'task_result' && typeof p.event.claim === 'string')?.event
+          ?.claim ?? null
+
+      const tasks = db.select().from(planTasks).where(eq(planTasks.objectiveId, objective.id)).all()
+      const verifiedCount = tasks.filter((t) => t.status === 'verified').length
+
+      return {
+        projectId: objective.projectId,
+        title: objective.title,
+        goalText: objective.goalText,
+        status: objective.status,
+        lastClaim: claim,
+        verifiedCount,
+        totalCount: tasks.length,
+      }
+    },
+  )
+
   // Spec §7: "stats + file list; ?file= returns unified diff".
   app.get<{ Params: { id: string }; Querystring: { file?: string } }>(
     '/api/objectives/:id/diff',
