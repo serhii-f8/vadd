@@ -136,6 +136,16 @@ export type TodaySummary = {
   checksPassed: number
 }
 
+export type ContinuationSeed = {
+  projectId: string
+  title: string
+  goalText: string
+  status: string
+  lastClaim: string | null
+  verifiedCount: number
+  totalCount: number
+}
+
 export type GitOwner =
   | { kind: 'vadd'; objectiveId: string; objectiveTitle: string; objectiveStatus: string }
   | { kind: 'orphan' }
@@ -252,12 +262,20 @@ export const api = {
     title: string,
     goalText: string,
     mode: 'standard' | 'fastfix' | 'investigation' = 'standard',
+    continuedFromId?: string,
   ) =>
     fetch(`/api/projects/${projectId}/objectives`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, goalText, mode }),
+      body: JSON.stringify(
+        continuedFromId === undefined
+          ? { title, goalText, mode }
+          : { title, goalText, mode, continuedFromId },
+      ),
     }).then(json<Objective>),
+
+  getContinuationSeed: (objectiveId: string) =>
+    fetch(`/api/objectives/${objectiveId}/continuation-seed`).then(json<ContinuationSeed>),
 
   sendPrompt: (
     objectiveId: string,
