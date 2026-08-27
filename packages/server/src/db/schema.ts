@@ -279,3 +279,22 @@ export const gitUndo = sqliteTable('git_undo', {
   describes: text('describes').notNull(),
   at: text('at').notNull(),
 })
+
+export const projectMemory = sqliteTable('project_memory', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id')
+    .notNull()
+    .references(() => projects.id),
+  kind: text('kind', { enum: ['architecture', 'known_issue'] }).notNull(),
+  headline: text('headline').notNull(),
+  content: text('content').notNull(),
+  /**
+   * No FK: a memory note is a fact about the project, not about the
+   * objective that produced it. Deleting the source objective (the
+   * existing six-table DELETE /api/objectives/:id transaction) must not
+   * cascade into losing project-level knowledge — same reasoning as
+   * `objectives.continuedFromId`.
+   */
+  sourceObjectiveId: text('source_objective_id'),
+  createdAt: text('created_at').notNull(),
+})

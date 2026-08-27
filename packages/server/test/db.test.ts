@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
+import { eq } from 'drizzle-orm'
 import { expect, test } from 'vitest'
 import { createDb } from '../src/db/client.js'
-import { events, objectives, projects } from '../src/db/schema.js'
+import { events, objectives, projectMemory, projects } from '../src/db/schema.js'
 import { withTempHome } from './fixtures/temp-repo.js'
 
 test('migrations apply to a fresh database file', () => {
@@ -105,4 +106,45 @@ test('objectives.continuedFromId round-trips and defaults to null', () => {
   const rows = db.select().from(objectives).all()
   expect(rows.find((r) => r.id === 'o1')?.continuedFromId).toBeNull()
   expect(rows.find((r) => r.id === 'o2')?.continuedFromId).toBe('o1')
+})
+
+test('project_memory round-trips and survives its source objective being deleted', () => {
+  withTempHome()
+  const db = createDb(`${process.env.VADD_HOME}/vadd.db`)
+  const now = new Date().toISOString()
+  const projectId = 'p1'
+  db.insert(projects)
+    .values({ id: projectId, name: 'p', repoPath: '/tmp/x', config: {}, createdAt: now })
+    .run()
+  db.insert(objectives)
+    .values({
+      id: 'o1',
+      projectId,
+      title: 't',
+      goalText: 'g',
+      status: 'exploring',
+      mode: 'standard',
+      lowEnergy: false,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run()
+  db.insert(projectMemory)
+    .values({
+      id: 'm1',
+      projectId,
+      kind: 'known_issue',
+      headline: 'Flaky test in CI',
+      content: 'workflow-effects.test.ts occasionally times out under parallel execution.',
+      sourceObjectiveId: 'o1',
+      createdAt: now,
+    })
+    .run()
+
+  db.delete(objectives).where(eq(objectives.id, 'o1')).run()
+
+  const row = db.select().from(projectMemory).where(eq(projectMemory.id, 'm1')).get()
+  expect(row?.sourceObjectiveId).toBe('o1')
+  expect(row?.kind).toBe('known_issue')
+  expect(row?.content).toContain('workflow-effects.test.ts')
 })
