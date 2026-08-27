@@ -1,7 +1,9 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, rmSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, it, test } from 'vitest'
 import { createDb } from '../src/db/client.js'
 import {
   decisions,
@@ -401,4 +403,108 @@ test('an objective with no worktree at all is not reported as missing', async ()
 
   const res = await app.inject({ method: 'GET', url: `/api/objectives/${o.id}` })
   expect(res.json().worktreeMissing).toBe(false)
+})
+
+describe('POST /api/projects/:id/objectives — continuedFromId', () => {
+  it("bases the new worktree on the prior objective's branch when it still exists", async () => {
+    const repo = makeTempRepo()
+    execFileSync('git', ['-C', repo, 'branch', 'vadd/prior12345'])
+    execFileSync('git', ['-C', repo, 'checkout', 'vadd/prior12345'])
+    await writeFile(join(repo, 'b.txt'), 'work done on the prior objective')
+    execFileSync('git', ['-C', repo, 'add', '-A'])
+    execFileSync('git', ['-C', repo, 'commit', '-qm', 'prior work'])
+    const priorTip = execFileSync('git', ['-C', repo, 'rev-parse', 'vadd/prior12345'])
+      .toString()
+      .trim()
+    execFileSync('git', ['-C', repo, 'checkout', 'master'])
+
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const bus = new EventBus(db)
+    const app = buildApp({ db, bus })
+    const projectId = (
+      await app.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: repo } })
+    ).json().id as string
+
+    db.insert(objectives)
+      .values({
+        id: 'prior-obj',
+        projectId,
+        title: 'Prior',
+        goalText: 'g',
+        branchName: 'vadd/prior12345',
+        status: 'done',
+        mode: 'standard',
+        lowEnergy: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      .run()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/objectives`,
+      payload: { title: 'Follow-up', goalText: 'g2', continuedFromId: 'prior-obj' },
+    })
+    expect(res.statusCode).toBe(201)
+    const created = res.json()
+    expect(created.continuedFromId).toBe('prior-obj')
+    expect(created.baseSha).toBe(priorTip)
+  })
+
+  it('falls back to the default branch when the prior branch is gone', async () => {
+    const repo = makeTempRepo()
+    const head = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD']).toString().trim()
+
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const bus = new EventBus(db)
+    const app = buildApp({ db, bus })
+    const projectId = (
+      await app.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: repo } })
+    ).json().id as string
+
+    db.insert(objectives)
+      .values({
+        id: 'discarded-obj',
+        projectId,
+        title: 'Discarded',
+        goalText: 'g',
+        branchName: null,
+        integrateAction: 'discard',
+        status: 'done',
+        mode: 'standard',
+        lowEnergy: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      .run()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/objectives`,
+      payload: { title: 'Follow-up', goalText: 'g2', continuedFromId: 'discarded-obj' },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(res.json().baseSha).toBe(head)
+  })
+
+  it('does not error when continuedFromId names a nonexistent objective', async () => {
+    const repo = makeTempRepo()
+    const home = withTempHome()
+    const db = createDb(`${home}/vadd.db`)
+    const bus = new EventBus(db)
+    const app = buildApp({ db, bus })
+    const projectId = (
+      await app.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: repo } })
+    ).json().id as string
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/objectives`,
+      payload: { title: 'Follow-up', goalText: 'g2', continuedFromId: 'nope' },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(res.json().continuedFromId).toBe('nope')
+  })
 })

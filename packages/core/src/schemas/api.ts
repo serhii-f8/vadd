@@ -27,6 +27,14 @@ export const CreateObjectiveBody = z.object({
    * parses, because every leaf is optional rather than absent.
    */
   verificationOverrides: VerificationOverride.optional(),
+  /**
+   * A "Continue" follow-up's link to the objective it continued from. The
+   * route resolves this to a worktree start point when the prior objective's
+   * branch still exists, and records the link regardless — it is best-effort
+   * context, not a hard dependency (a nonexistent id is stored as given, not
+   * rejected).
+   */
+  continuedFromId: z.string().min(1).optional(),
 })
 export type CreateObjectiveBody = z.infer<typeof CreateObjectiveBody>
 

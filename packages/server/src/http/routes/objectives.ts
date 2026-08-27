@@ -26,6 +26,7 @@ import {
 } from '../../db/schema.js'
 import { objectiveDiff, objectiveFileDiff } from '../../git/diff.js'
 import { createWorktree, removeWorktree } from '../../git/git-manager.js'
+import { branchExists } from '../../git/inspect.js'
 import { branchNameFor, worktreePathFor } from '../../paths.js'
 import {
   INVESTIGATION_VERIFICATION_SPEC,
@@ -277,6 +278,21 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       }
     }
 
+    // "Continue" follow-ups (best-effort): the prior objective's own branch,
+    // when it still exists, so the new worktree literally continues from
+    // where the old one left off rather than the project's default branch.
+    let startPoint: string | undefined
+    if (parsed.data.continuedFromId) {
+      const prior = db
+        .select()
+        .from(objectives)
+        .where(eq(objectives.id, parsed.data.continuedFromId))
+        .get()
+      if (prior?.branchName && (await branchExists(project.repoPath, prior.branchName))) {
+        startPoint = prior.branchName
+      }
+    }
+
     // DB-first: a crash after this insert leaves a visible 'creating' row that
     // boot reconciliation (Task 12) can clean up, not an orphan directory.
     db.insert(objectives)
@@ -294,6 +310,7 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
         verificationSpec: resolution.kind === 'resolved' ? resolution.spec : null,
         lowEnergy: false,
         setupAt: null,
+        continuedFromId: parsed.data.continuedFromId ?? null,
         createdAt: now,
         updatedAt: now,
       })
@@ -309,7 +326,7 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
 
     let baseSha: string
     try {
-      baseSha = await createWorktree(project.repoPath, path, branch)
+      baseSha = await createWorktree(project.repoPath, path, branch, startPoint)
     } catch (err) {
       const message = errorMessage(err)
       db.delete(objectives).where(eq(objectives.id, id)).run()
