@@ -29,15 +29,23 @@ export async function validateRepo(repoPath: string): Promise<string> {
  * derived afterwards: `/diff` and `integrate: commit`'s squash both mean
  * "since this objective started", and a `merge-base` computed later changes
  * its answer every time the base branch advances.
+ *
+ * `startPoint`, when given, is any git-recognized ref (a branch name here) —
+ * `-b branch` always creates a *new* branch name regardless, so there is no
+ * "already checked out elsewhere" conflict even if `startPoint` itself is
+ * checked out in another worktree.
  */
 export async function createWorktree(
   repoPath: string,
   worktreePath: string,
   branch: string,
+  startPoint?: string,
 ): Promise<string> {
-  const baseSha = (await git(repoPath, ['rev-parse', 'HEAD'])).trim()
+  const baseSha = (await git(repoPath, ['rev-parse', startPoint ?? 'HEAD'])).trim()
   await mkdir(dirname(worktreePath), { recursive: true })
-  await git(repoPath, ['worktree', 'add', '-b', branch, worktreePath])
+  const args = ['worktree', 'add', '-b', branch, worktreePath]
+  if (startPoint) args.push(startPoint)
+  await git(repoPath, args)
   return baseSha
 }
 

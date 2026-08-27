@@ -174,4 +174,32 @@ describe('A8: base sha and optional branch deletion', () => {
       .trim()
     expect(branches).toBe('')
   })
+
+  it('createWorktree branches from an explicit startPoint, not HEAD', async () => {
+    const repo = makeTempRepo()
+    // Move HEAD forward so HEAD and the startPoint branch clearly diverge.
+    await writeFile(join(repo, 'a.txt'), 'from-head')
+    execFileSync('git', ['-C', repo, 'add', '-A'])
+    execFileSync('git', ['-C', repo, 'commit', '-qm', 'advance head'])
+    const headSha = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD']).toString().trim()
+
+    execFileSync('git', ['-C', repo, 'branch', 'vadd/old-work', 'HEAD~1'])
+    const oldSha = execFileSync('git', ['-C', repo, 'rev-parse', 'vadd/old-work']).toString().trim()
+
+    const wt = join(mkdtempSync(join(tmpdir(), 'vadd-wt-')), 'w')
+    const base = await createWorktree(repo, wt, 'vadd/continued', 'vadd/old-work')
+
+    expect(base).toBe(oldSha)
+    expect(base).not.toBe(headSha)
+    const wtHead = execFileSync('git', ['-C', wt, 'rev-parse', 'HEAD']).toString().trim()
+    expect(wtHead).toBe(oldSha)
+  })
+
+  it('createWorktree without startPoint still branches from HEAD (regression)', async () => {
+    const repo = makeTempRepo()
+    const head = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD']).toString().trim()
+    const wt = join(mkdtempSync(join(tmpdir(), 'vadd-wt-')), 'w')
+    const base = await createWorktree(repo, wt, 'vadd/no-start-point')
+    expect(base).toBe(head)
+  })
 })
