@@ -293,6 +293,13 @@ describe('WorkflowRunner', () => {
       .from(machineSnapshots)
       .where(eq(machineSnapshots.objectiveId, 'o'))
       .get()
+    // Direct, deterministic proof of the ordering property: `send` is
+    // public and this is the exact call `toMachineEvent`'s output would
+    // reach if the interception were missing or placed after it. Spying on
+    // it (rather than relying solely on the machine_snapshots check below)
+    // does not depend on xstate's own internal handling of a malformed
+    // `{ type: undefined }` event, which a version upgrade could change.
+    const sendSpy = vi.spyOn(runner, 'send')
 
     emitFromPipeline('o', {
       kind: 'event',
@@ -307,6 +314,8 @@ describe('WorkflowRunner', () => {
       },
     })
 
+    expect(sendSpy).not.toHaveBeenCalled()
+
     const after = db
       .select()
       .from(machineSnapshots)
@@ -314,8 +323,8 @@ describe('WorkflowRunner', () => {
       .get()
     // A real machine transition rewrites this row on every commit (CLAUDE.md:
     // "Snapshots persist on every transition in the same SQLite transaction
-    // as the event append"). Byte-identical before/after is the proof
-    // nothing reached the actor.
+    // as the event append"). Byte-identical before/after is a second signal
+    // nothing reached the actor, alongside the sendSpy assertion above.
     expect(after).toEqual(before)
     expect(runner.get('o')?.getSnapshot().value).toBe('exploring')
 
