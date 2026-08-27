@@ -44,4 +44,8 @@ describe('validateCloneUrl', () => {
   it('rejects scp-like form with a dash-prefixed hostname (CVE-2017-1000117 shape)', () => {
     expect(validateCloneUrl('user@-evilhost:repo.git').ok).toBe(false)
   })
+
+  it('rejects ssh URLs with a dash-prefixed username (CVE-2017-1000117 shape)', () => {
+    expect(validateCloneUrl('ssh://-oProxyCommand=id@host/repo.git').ok).toBe(false)
+  })
 })

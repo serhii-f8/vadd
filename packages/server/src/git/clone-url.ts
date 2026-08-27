@@ -7,8 +7,8 @@ const ALLOWED_SCHEMES = ['https:', 'http:', 'ssh:', 'git:']
  * them — a documented git remote-helper RCE vector), and anything starting
  * with `-` (option injection, the same defense `knownRemote` already uses
  * for remote names in `packages/server/src/http/routes/git.ts`). Also rejects
- * hostnames starting with `-` in both URL and scp-like forms (CVE-2017-1000117:
- * ssh option injection via hostname).
+ * usernames and hostnames starting with `-` in both URL and scp-like forms
+ * (CVE-2017-1000117: ssh option injection via user@host token).
  */
 export function validateCloneUrl(
   input: string,
@@ -21,7 +21,10 @@ export function validateCloneUrl(
     if (!ALLOWED_SCHEMES.includes(parsed.protocol)) {
       return { ok: false, reason: `scheme ${parsed.protocol} is not allowed` }
     }
-    // Reject if hostname starts with - (CVE-2017-1000117: ssh option injection)
+    // Reject if username or hostname starts with - (CVE-2017-1000117: ssh option injection)
+    if (parsed.username?.startsWith('-')) {
+      return { ok: false, reason: 'username may not start with -' }
+    }
     if (parsed.hostname?.startsWith('-')) {
       return { ok: false, reason: 'hostname may not start with -' }
     }
