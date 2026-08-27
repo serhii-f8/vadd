@@ -54,7 +54,12 @@ function Sidebar() {
         {NAV.map(({ to, label }) => (
           <NavLink
             key={to}
-            to={to}
+            // Every destination is scoped to one project, and `selectedId` is
+            // read back from this same `?project=` param (ProjectsContext),
+            // not carried across navigations on its own — a plain `to`
+            // silently dropped the current selection back to the first
+            // project the moment the user clicked Today/Map/Git.
+            to={selectedId ? `${to}?project=${encodeURIComponent(selectedId)}` : to}
             end={to === '/'}
             className={({ isActive }) =>
               `rounded-md px-2 py-1.5 text-sm ${

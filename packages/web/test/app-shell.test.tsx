@@ -39,7 +39,7 @@ function renderShell(initial = '/') {
         <Routes>
           <Route element={<AppShell />}>
             <Route path="/" element={<Probe />} />
-            <Route path="/today" element={<p>today page</p>} />
+            <Route path="/today" element={<Probe />} />
           </Route>
         </Routes>
       </MemoryRouter>
@@ -81,6 +81,23 @@ describe('AppShell', () => {
   it('honours ?project= over the default', async () => {
     mockFetch({ 'GET /api/projects': { body: projects } })
     renderShell('/?project=p2')
+    expect((await screen.findByTestId('selected')).textContent).toBe('vadd')
+  })
+
+  // Found by driving the app live in a real browser (2026-08-27): the sidebar's
+  // own NAV links are static hrefs with no `?project=`, so a non-default
+  // selection survives only until the next click on Today/Map/Git — which
+  // silently drops the user back onto the first-registered project with no
+  // indication anything changed. This is the same class of bug the Focus
+  // View's branch link was fixed for, just never closed at the source.
+  it('keeps a non-default project selected across a sidebar nav click', async () => {
+    mockFetch({ 'GET /api/projects': { body: projects } })
+    renderShell('/?project=p2')
+    expect((await screen.findByTestId('selected')).textContent).toBe('vadd')
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('link', { name: 'Today' }))
+
     expect((await screen.findByTestId('selected')).textContent).toBe('vadd')
   })
 
