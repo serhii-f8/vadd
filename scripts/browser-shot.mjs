@@ -56,17 +56,47 @@ for (const step of steps) {
   } else if (op === 'click') {
     // Click the first element whose text matches, scoped by an optional
     // CSS prefix: "click|button|Release" clicks the first <button> saying Release.
+    // Dispatches a full pointerdown/mousedown/mouseup/click sequence, not just
+    // .click() — Radix primitives (Tabs among them) activate on mousedown, and
+    // a bare synthetic .click() call never fires that handler.
+    // Prefers an exact (trimmed) text match over a substring one — two
+    // buttons whose text is a prefix/suffix of each other (e.g. "Clone" the
+    // submit button vs. "Clone repository" the tab, in DOM order before it)
+    // otherwise silently click the wrong one with no error.
     const [sel, text] = arg.split('~')
     const ok = await evaluate(`(() => {
       const els = [...document.querySelectorAll(${JSON.stringify(sel)})];
-      const el = els.find((e) => e.textContent.includes(${JSON.stringify(text)}));
+      const el =
+        els.find((e) => e.textContent.trim() === ${JSON.stringify(text)}) ??
+        els.find((e) => e.textContent.includes(${JSON.stringify(text)}));
       if (!el) return 'NOT FOUND: ' + ${JSON.stringify(text)};
-      el.click(); return 'clicked';
+      const opts = { bubbles: true, cancelable: true, view: window, button: 0 };
+      el.dispatchEvent(new PointerEvent('pointerdown', opts));
+      el.dispatchEvent(new MouseEvent('mousedown', opts));
+      el.dispatchEvent(new PointerEvent('pointerup', opts));
+      el.dispatchEvent(new MouseEvent('mouseup', opts));
+      el.click();
+      return 'clicked';
     })()`)
     console.log('click', text, '->', ok)
     await wait(600)
   } else if (op === 'eval') {
     console.log('eval ->', JSON.stringify(await evaluate(arg)))
+  } else if (op === 'type') {
+    // Set a controlled React input's value via the native setter so React's
+    // own onChange fires, then dispatch input/change: "type|input[name=url]|https://..."
+    const [sel, text] = arg.split('~')
+    const ok = await evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(sel)});
+      if (!el) return 'NOT FOUND: ' + ${JSON.stringify(sel)};
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(el, ${JSON.stringify(text)});
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return 'typed: ' + el.value;
+    })()`)
+    console.log('type', sel, '->', ok)
+    await wait(300)
   }
 }
 ws.close()
