@@ -240,7 +240,7 @@ export const evidenceItems = sqliteTable('evidence_items', {
    */
   commandId: text('command_id'),
   kind: text('kind', {
-    enum: ['test', 'diff', 'lint', 'build', 'check', 'artifact', 'warning'],
+    enum: ['test', 'diff', 'lint', 'build', 'check', 'artifact', 'warning', 'security'],
   }).notNull(),
   status: text('status', { enum: ['pass', 'fail', 'warn', 'info'] }).notNull(),
   headline: text('headline').notNull(),

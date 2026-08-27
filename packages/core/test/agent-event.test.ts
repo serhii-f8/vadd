@@ -152,6 +152,18 @@ test('A6: an over-long checkId is refused', () => {
   expect(parsed.success).toBe(false)
 })
 
+test('evidence accepts kind: security', () => {
+  const parsed = AgentEvent.safeParse({
+    type: 'evidence',
+    kind: 'security',
+    checkId: 'security-audit',
+    status: 'pass',
+    headline: 'pnpm audit found no high-severity advisories',
+    summary: [],
+  })
+  expect(parsed.success).toBe(true)
+})
+
 test('A11: a plan task accepts an optional expectFailing naming verification command ids', () => {
   const result = AgentEvent.safeParse({
     type: 'plan',

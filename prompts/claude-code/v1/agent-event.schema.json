@@ -191,7 +191,7 @@
             },
             "kind": {
               "type": "string",
-              "enum": ["test", "diff", "lint", "build", "check", "artifact", "warning"]
+              "enum": ["test", "diff", "lint", "build", "check", "artifact", "warning", "security"]
             },
             "status": {
               "type": "string",

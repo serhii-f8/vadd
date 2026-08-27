@@ -26,6 +26,7 @@ export const EvidenceKind = z.enum([
   'check',
   'artifact',
   'warning',
+  'security',
 ])
 export type EvidenceKind = z.infer<typeof EvidenceKind>
 

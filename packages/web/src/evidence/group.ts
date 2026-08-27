@@ -9,7 +9,7 @@ export type EvidenceRow = {
   commandId: string | null
   /** Amendment A11: which plan task this evidence was produced for, if any. */
   taskId: string | null
-  kind: 'test' | 'diff' | 'lint' | 'build' | 'check' | 'artifact' | 'warning'
+  kind: 'test' | 'diff' | 'lint' | 'build' | 'check' | 'artifact' | 'warning' | 'security'
   status: 'pass' | 'fail' | 'warn' | 'info'
   headline: string
   summary: string[]

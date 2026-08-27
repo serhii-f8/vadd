@@ -34,6 +34,31 @@ lives entirely on your machine, under `~/.vadd/` (SQLite database, git worktrees
 5. **Done means proven** — an objective only reaches `done` after a full green evidence set
    (tests, checks, builds) — never on the agent's claim alone.
 
+## Security review
+
+VADD doesn't ship a security scanner or an OWASP checklist by default — but its verification
+step (`.vadd/config.json`, per project) already supports both, with no VADD update required.
+Add a real dependency-vulnerability scan as a command, and an OWASP-style checklist as a
+check the agent must explicitly address before an objective can reach `done`:
+
+```json
+{
+  "verify": {
+    "commands": [
+      { "id": "audit", "run": "pnpm audit --audit-level=high", "required": true }
+    ],
+    "checks": [
+      "OWASP checklist reviewed: injection, broken auth, sensitive data exposure, access control — no obvious issues found in this change"
+    ]
+  }
+}
+```
+
+The audit command runs for real and its evidence is classified as `kind: "security"` in
+the Evidence Panel; the checklist item is satisfied by the agent's own attestation, the
+same way any other check is — a claim, not proof, since no tool can catch every class of
+issue a checklist names.
+
 ## Privacy
 
 Zero telemetry, zero outbound network calls, by design — the only network access is your own

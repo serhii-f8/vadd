@@ -62,7 +62,7 @@ export function planTaskId(objectiveId: string, ord: number): string {
  */
 export type EvidenceItemLike = {
   commandId: string | null
-  kind: 'test' | 'diff' | 'lint' | 'build' | 'check' | 'artifact' | 'warning'
+  kind: 'test' | 'diff' | 'lint' | 'build' | 'check' | 'artifact' | 'warning' | 'security'
   status: 'pass' | 'fail' | 'warn' | 'info'
   taskId: string | null
 }

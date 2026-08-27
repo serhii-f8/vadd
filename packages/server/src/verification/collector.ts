@@ -17,9 +17,10 @@ type EvidenceRow = typeof evidenceItems.$inferSelect
 export type CollectorResult = { runId: string; items: EvidenceRow[] }
 
 /** `evidence_items.kind`, inferred from the command id. Display only. */
-function kindFor(commandId: string): 'test' | 'lint' | 'build' | 'artifact' {
+function kindFor(commandId: string): 'test' | 'lint' | 'build' | 'security' | 'artifact' {
   const name = commandId.includes(':') ? (commandId.split(':')[1] ?? commandId) : commandId
   if (name === 'test' || name === 'lint' || name === 'build') return name
+  if (name === 'security' || name === 'audit') return 'security'
   return 'artifact'
 }
 

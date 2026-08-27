@@ -96,6 +96,19 @@ describe('collectEvidence', () => {
     expect(result.items[0]?.status).toBe('fail')
   })
 
+  it('classifies a security/audit command id as kind: security', async () => {
+    const result = await collectEvidence(
+      { db, bus },
+      objective,
+      specOf([
+        { id: 'audit', run: 'echo ok' },
+        { id: 'security', run: 'echo ok' },
+      ]),
+      { taskId: null },
+    )
+    expect(result.items.map((i) => i.kind)).toEqual(['security', 'security'])
+  })
+
   it('writes a log per command under the run id', async () => {
     const result = await collectEvidence(
       { db, bus },
