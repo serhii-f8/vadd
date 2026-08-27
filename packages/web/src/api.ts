@@ -257,6 +257,20 @@ export const api = {
       ),
     }).then(json<Project>),
 
+  cloneProject: (
+    url: string,
+    destPath: string,
+    agentKind: 'claude-code' | 'codex',
+    name?: string,
+  ) =>
+    fetch('/api/projects/clone', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        name === undefined ? { url, destPath, agentKind } : { url, destPath, agentKind, name },
+      ),
+    }).then(json<Project>),
+
   createObjective: (
     projectId: string,
     title: string,
