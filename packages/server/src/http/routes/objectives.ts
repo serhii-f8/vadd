@@ -22,6 +22,7 @@ import {
   machineSnapshots,
   objectives,
   planTasks,
+  projectMemory,
   projects,
 } from '../../db/schema.js'
 import { objectiveDiff, objectiveFileDiff } from '../../git/diff.js'
@@ -232,6 +233,23 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
       .all().length
 
     return { date, verifiedTasks, decisionsMade, checksPassed }
+  })
+
+  // Deliberately not the capped/formatted prompt-injection helper
+  // (`buildProjectMemoryPromptBlock`) — this is the full, uncapped list for a
+  // human reading the project, not a bounded block for an agent's context.
+  app.get<{ Params: { id: string } }>('/api/projects/:id/memory', async (req, reply) => {
+    const project = db.select().from(projects).where(eq(projects.id, req.params.id)).get()
+    if (!project) return reply.code(404).send({ error: 'Project not found' })
+
+    const notes = db
+      .select()
+      .from(projectMemory)
+      .where(eq(projectMemory.projectId, project.id))
+      .orderBy(desc(projectMemory.createdAt))
+      .all()
+
+    return { notes }
   })
 
   app.post<{ Params: { id: string } }>('/api/projects/:id/objectives', async (req, reply) => {

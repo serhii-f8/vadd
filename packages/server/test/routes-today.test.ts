@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { createDb, type Db } from '../src/db/client.js'
-import { decisions, evidenceItems, planTasks } from '../src/db/schema.js'
+import { decisions, evidenceItems, planTasks, projectMemory } from '../src/db/schema.js'
 import { EventBus } from '../src/events/event-bus.js'
 import { buildApp } from '../src/http/app.js'
 import { makeTempRepo, withTempHome } from './fixtures/temp-repo.js'
@@ -264,5 +264,37 @@ describe('GET /api/projects/:id/today', () => {
     const d = String(today.getDate()).padStart(2, '0')
     const expectedDate = `${y}-${m}-${d}`
     expect(res.json().date).toBe(expectedDate)
+  })
+})
+
+describe('GET /api/projects/:id/memory', () => {
+  it('returns every note for the project, newest first, uncapped', async () => {
+    const { db, app } = setup()
+    const projectId = await withProject(db, app)
+
+    for (let i = 0; i < 7; i++) {
+      db.insert(projectMemory)
+        .values({
+          id: `m${i}`,
+          projectId,
+          kind: 'known_issue',
+          headline: `issue-${i}`,
+          content: `issue-${i}`,
+          createdAt: `2026-08-27T00:00:${String(i).padStart(2, '0')}.000Z`,
+        })
+        .run()
+    }
+
+    const res = await app.inject({ method: 'GET', url: `/api/projects/${projectId}/memory` })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.notes).toHaveLength(7) // uncapped, unlike the prompt-injection path
+    expect(body.notes[0].headline).toBe('issue-6') // newest first
+  })
+
+  it('404s on a project that does not exist', async () => {
+    const { app } = setup()
+    const res = await app.inject({ method: 'GET', url: '/api/projects/nope/memory' })
+    expect(res.statusCode).toBe(404)
   })
 })

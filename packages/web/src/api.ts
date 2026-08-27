@@ -146,6 +146,15 @@ export type ContinuationSeed = {
   totalCount: number
 }
 
+export type ProjectMemoryNote = {
+  id: string
+  kind: 'architecture' | 'known_issue'
+  headline: string
+  content: string
+  sourceObjectiveId: string | null
+  createdAt: string
+}
+
 export type GitOwner =
   | { kind: 'vadd'; objectiveId: string; objectiveTitle: string; objectiveStatus: string }
   | { kind: 'orphan' }
@@ -321,6 +330,9 @@ export const api = {
 
   getToday: (projectId: string) =>
     fetch(`/api/projects/${projectId}/today`).then(json<TodaySummary>),
+
+  getProjectMemory: (projectId: string) =>
+    fetch(`/api/projects/${projectId}/memory`).then(json<{ notes: ProjectMemoryNote[] }>),
 
   /**
    * Every user command. Returns the server's own refusal message on a 409 by
