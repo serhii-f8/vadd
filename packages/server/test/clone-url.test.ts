@@ -59,4 +59,13 @@ describe('validateCloneUrl', () => {
   it('rejects ssh URLs with a dash-prefixed username (CVE-2017-1000117 shape)', () => {
     expect(validateCloneUrl('ssh://-oProxyCommand=id@host/repo.git').ok).toBe(false)
   })
+
+  it('rejects a value that is both dash-prefixed and absolute-path-shaped', () => {
+    // Structurally guaranteed today: the leading-`-` check runs unconditionally
+    // before the `try`/`catch` containing the `isAbsolute` branch. Pinned as
+    // insurance against a future refactor silently reordering the checks —
+    // this exact guard has already missed two real bypasses across its
+    // history (the two CVE-2017-1000117-shaped fix rounds above).
+    expect(validateCloneUrl('-/tmp/x').ok).toBe(false)
+  })
 })

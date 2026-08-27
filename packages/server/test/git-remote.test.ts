@@ -426,6 +426,24 @@ describe('cloneRepo', () => {
     )
   })
 
+  it('redacts embedded userinfo out of a failed clone message', async () => {
+    // `127.0.0.1:9` (the "discard" port) genuinely refuses the connection —
+    // no live external host involved, and no risk of ever succeeding and
+    // leaking the credential a different way. The point is that
+    // `RemoteError.message`, which flows straight to the browser via the
+    // route's JSON error response, must never carry the literal token.
+    const dest = join(mkdtempSync(join(tmpdir(), 'vadd-clone-dest-')), 'cloned')
+    try {
+      await cloneRepo('https://user:sometoken@127.0.0.1:9/x.git', dest)
+      expect.unreachable('a clone against a discard port must fail')
+    } catch (err) {
+      expect(err).toBeInstanceOf(RemoteError)
+      const message = (err as RemoteError).message
+      expect(message).toContain('***@')
+      expect(message).not.toContain('sometoken')
+    }
+  })
+
   it('a clone that outruns its timeout is killed and reports timedOut', async () => {
     const source = makeTempRepo()
     const bare = makeBareRemote(source)

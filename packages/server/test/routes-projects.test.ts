@@ -163,7 +163,7 @@ describe('POST /api/projects/clone', () => {
     expect(res.statusCode).toBe(400)
   })
 
-  it('409s the same way POST /api/projects does when the cloned repo is already registered', async () => {
+  it("the clone route's duplicate check is the same shared function POST /api/projects uses", async () => {
     const source = makeTempRepo()
     const a = app()
     await a.inject({ method: 'POST', url: '/api/projects', payload: { repoPath: source } })
@@ -173,20 +173,12 @@ describe('POST /api/projects/clone', () => {
       url: '/api/projects/clone',
       payload: { url: source, destPath: dest, agentKind: 'claude-code' },
     })
-    // The clone succeeds (dest is a new, distinct path from source), but the
-    // resolved toplevel of `dest` is itself a fresh repo, not a duplicate —
-    // this test's actual point is that the SAME duplicate-check code path
-    // that POST /api/projects uses is reached at all. To genuinely trigger
-    // the 409, register `dest` first via a manual git clone + POST
-    // /api/projects, then attempt POST /api/projects/clone with a *second*,
-    // *different* destPath cloning the *same* `source` URL a second time —
-    // both clones produce independent repos at the git level (no shared
-    // toplevel), so this specific scenario does NOT 409 by itself. Rewrite
-    // this test to clone once via the route, then attempt to register that
-    // same resulting `dest` path again via plain POST /api/projects, and
-    // assert that second call 409s — this proves registerValidatedRepo's
-    // duplicate check is the identical function backing both routes,
-    // without asserting an incorrect clone-level duplicate scenario.
+    // The clone itself succeeds (dest is a fresh, independent repo — cloning
+    // the same source twice produces two distinct toplevels, so this is not
+    // a duplicate at the git level). The 409 below comes from a second, plain
+    // POST /api/projects registering that same `dest` path again, proving
+    // registerValidatedRepo's duplicate check is the identical function
+    // backing both routes.
     expect(res.statusCode).toBe(201)
     const dupe = await a.inject({
       method: 'POST',

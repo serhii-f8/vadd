@@ -178,11 +178,21 @@ export async function gitRemote(
 
   try {
     const result = await child
+    // Redacted for every caller, not just `cloneRepo`: every prior caller here
+    // only ever put a remote *name* into `args`, which `redactUserinfo` passes
+    // through untouched (it anchors on `scheme://`, see its doc comment) — but
+    // `cloneRepo` is the first caller whose `args` can contain a full,
+    // user-supplied URL, and amendment A21 explicitly names a URL-embedded
+    // credential as a supported path (no separate credential UI exists). A
+    // failed clone against `https://<token>@host/x.git` must not paint that
+    // token into `RemoteError.message`, which flows straight to the browser
+    // via the route's JSON error response.
+    const shown = args.map(redactUserinfo).join(' ')
     if (timedOut) {
-      throw new RemoteError(`git ${args.join(' ')} timed out after ${timeoutMs}ms`, true)
+      throw new RemoteError(`git ${shown} timed out after ${timeoutMs}ms`, true)
     }
     if (result.exitCode !== 0) {
-      throw new RemoteError(`git ${args.join(' ')} failed: ${result.all ?? ''}`.trim(), false)
+      throw new RemoteError(`git ${shown} failed: ${result.all ?? ''}`.trim(), false)
     }
     return result.stdout
   } finally {

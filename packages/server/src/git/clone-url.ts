@@ -40,7 +40,7 @@ export function validateCloneUrl(
   } catch {
     // Check for scp-like short form: user@host:path
     const scpMatch = input.match(/^([\w.-]+)@([\w.-]+):(.+)$/)
-    if (scpMatch && scpMatch[2]?.startsWith('-')) {
+    if (scpMatch?.[2]?.startsWith('-')) {
       return { ok: false, reason: 'hostname may not start with -' }
     }
     if (scpMatch) {
