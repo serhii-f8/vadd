@@ -621,7 +621,7 @@ describe('Low Energy Mode (amendment A12)', () => {
 })
 
 describe('Continue button on a terminal objective', () => {
-  it('shows a Continue button and opens a seeded NewObjectiveDialog', async () => {
+  it('shows a Continue button that opens a NewObjectiveDialog genuinely seeded from this objective', async () => {
     mockFetch({
       'GET /api/objectives/o1': { body: aggregate({ state: 'done' }) },
       'GET /api/objectives/o1/continuation-seed': {
@@ -640,6 +640,14 @@ describe('Continue button on a terminal objective', () => {
     const button = await screen.findByRole('button', { name: 'Continue' })
     await userEvent.click(button)
     await screen.findByText('New objective')
+    // Proves the `seed` prop actually reached `NewObjectiveDialog`, not just
+    // that a dialog with the generic "New objective" title opened — that
+    // title renders identically whether or not `seed` is passed, so on its
+    // own it can't tell a seeded open from an unseeded one. The Title input
+    // only ever gets to `'t'` by way of the seed fetch this click triggers.
+    await waitFor(() =>
+      expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('t'),
+    )
   })
 
   it('does not show a Continue button on a non-terminal objective', async () => {
@@ -649,6 +657,31 @@ describe('Continue button on a terminal objective', () => {
     // and throws regardless of the button under test; wait on one known
     // unique node instead ("paused" is a leaf text run in the state badge).
     await screen.findByText('paused')
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
+  })
+
+  // primary.ts maps FOUR states to 'outcome' — done/cancelled/failed AND
+  // setup_failed — but only the first three are the terminal, "nothing left
+  // to do here" states this button is for. setup_failed is a worktree that
+  // failed its one-shot setup command and still owns a live
+  // branchName/worktreePath; showing Continue there was unintended scope,
+  // not a design decision anyone made on purpose.
+  it('does not show a Continue button in setup_failed', async () => {
+    mockFetch({
+      'GET /api/objectives/o1': {
+        body: aggregate({
+          state: 'setup_failed',
+          objective: { ...aggregate().objective, status: 'setup_failed' },
+        }),
+      },
+      'GET /api/objectives/o1/diff': {
+        body: { files: [], totals: { files: 0, added: 0, removed: 0 } },
+      },
+    })
+    renderFocus()
+    // Scoped to the heading: "setup_failed" also appears verbatim in the
+    // state badge, which would make a bare text query ambiguous.
+    await screen.findByRole('heading', { name: 'setup_failed' })
     expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
   })
 })

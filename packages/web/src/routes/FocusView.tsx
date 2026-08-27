@@ -161,6 +161,16 @@ export function FocusView() {
    */
   const showProblem =
     state === 'paused' || state === 'failed' || state === 'setup_failed' || state === 'idle'
+  /**
+   * `primary === 'outcome'` covers FOUR states (`done`/`cancelled`/`failed`
+   * plus `setup_failed`, per `primary.ts`), but "Continue" is only meant for
+   * the three genuinely terminal ones. `setup_failed` is a worktree that
+   * failed its one-shot setup command — it still owns a live
+   * `branchName`/`worktreePath` and isn't the "nothing left to do here"
+   * state the other three are, so it stays off this list rather than
+   * inheriting a button nobody designed for it.
+   */
+  const canContinue = state === 'done' || state === 'cancelled' || state === 'failed'
 
   return (
     <main className="mx-auto max-w-3xl p-6">
@@ -324,16 +334,20 @@ export function FocusView() {
               ` · ${aggregate.objective.integrateAction}`}
           </h2>
           <EvidencePanel aggregate={aggregate} onCommand={() => undefined} readOnly />
-          <div className="mt-4">
-            <Button variant="outline" onClick={() => setContinuing(true)}>
-              Continue
-            </Button>
-          </div>
-          <NewObjectiveDialog
-            open={continuing}
-            onOpenChange={setContinuing}
-            seed={{ continuedFromId: aggregate.objective.id }}
-          />
+          {canContinue && (
+            <>
+              <div className="mt-4">
+                <Button variant="outline" onClick={() => setContinuing(true)}>
+                  Continue
+                </Button>
+              </div>
+              <NewObjectiveDialog
+                open={continuing}
+                onOpenChange={setContinuing}
+                seed={{ continuedFromId: aggregate.objective.id }}
+              />
+            </>
+          )}
         </section>
       )}
       {primary === 'resume' && (
