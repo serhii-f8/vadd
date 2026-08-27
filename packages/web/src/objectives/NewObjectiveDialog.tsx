@@ -52,9 +52,12 @@ const MODES: Array<{ value: Mode; label: string; detail: string }> = [
 export function NewObjectiveDialog({
   open,
   onOpenChange,
+  seed,
 }: {
   open: boolean
   onOpenChange: (value: boolean) => void
+  /** A "Continue" follow-up: pre-fills from a prior objective and hides the project picker. */
+  seed?: { continuedFromId: string }
 }) {
   const { projects, selectedId } = useProjects()
   const navigate = useNavigate()
@@ -77,7 +80,20 @@ export function NewObjectiveDialog({
     setGoalText('')
     setMode('standard')
     setProjectId(null)
-  }, [open])
+    if (!seed) return
+    api
+      .getContinuationSeed(seed.continuedFromId)
+      .then((s) => {
+        setProjectId(s.projectId)
+        setTitle(s.title)
+        setGoalText(
+          `${s.goalText}\n\n— Continuing "${s.title}" (${s.status}).` +
+            (s.lastClaim ? ` Final claim: ${s.lastClaim}.` : '') +
+            (s.totalCount > 0 ? ` ${s.verifiedCount}/${s.totalCount} evidence checks passed.` : ''),
+        )
+      })
+      .catch((e: Error) => setError(e.message))
+  }, [open, seed])
 
   const target = projectId ?? selectedId
 
@@ -86,7 +102,13 @@ export function NewObjectiveDialog({
     setBusy(true)
     setError(null)
     try {
-      const objective = await api.createObjective(target, title.trim(), goalText.trim(), mode)
+      const objective = await api.createObjective(
+        target,
+        title.trim(),
+        goalText.trim(),
+        mode,
+        seed?.continuedFromId,
+      )
       onOpenChange(false)
       navigate(`/o/${objective.id}`)
     } catch (e) {
@@ -107,7 +129,7 @@ export function NewObjectiveDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
-          {projects !== null && projects.length > 1 && (
+          {seed === undefined && projects !== null && projects.length > 1 && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="new-objective-project">Project</Label>
               <Select value={target ?? undefined} onValueChange={setProjectId}>

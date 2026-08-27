@@ -170,3 +170,66 @@ describe('NewObjectiveDialog', () => {
     expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('')
   })
 })
+
+describe('NewObjectiveDialog with a seed', () => {
+  it('pre-fills title and a recap goal from the continuation-seed route, and hides the project picker', async () => {
+    // Two registered projects, so a passing "hides the project picker" assertion
+    // is actually proving something: without the seed gate this dialog would
+    // show the picker (the pre-existing behavior below already covers
+    // `projects.length <= 1`).
+    const twoProjects = [
+      ...projects,
+      {
+        id: 'p2',
+        name: 'another-repo',
+        repoPath: '/var/www/another',
+        config: {},
+        agentKind: 'claude-code',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      },
+    ]
+    const { calls } = mockFetch({
+      'GET /api/projects': { body: twoProjects },
+      'GET /api/objectives/prior-1/continuation-seed': {
+        body: {
+          projectId: 'p1',
+          title: 'Fix rounding',
+          goalText: 'Totals are a cent off',
+          status: 'done',
+          lastClaim: 'Fixed the rounding bug',
+          verifiedCount: 2,
+          totalCount: 2,
+        },
+      },
+      'POST /api/projects/p1/objectives': { status: 201, body: { id: 'new-1' } },
+    })
+    render(
+      <MemoryRouter>
+        <ProjectsProvider>
+          <NewObjectiveDialog
+            open
+            onOpenChange={() => undefined}
+            seed={{ continuedFromId: 'prior-1' }}
+          />
+        </ProjectsProvider>
+      </MemoryRouter>,
+    )
+
+    const title = await screen.findByLabelText('Title')
+    await waitFor(() => expect((title as HTMLInputElement).value).toBe('Fix rounding'))
+    const goal = screen.getByLabelText('Goal') as HTMLTextAreaElement
+    expect(goal.value).toContain('Totals are a cent off')
+    expect(goal.value).toContain('Fixed the rounding bug')
+    expect(screen.queryByLabelText('Project')).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Create objective' }))
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === 'POST')?.body).toEqual({
+        title: 'Fix rounding',
+        goalText: goal.value,
+        mode: 'standard',
+        continuedFromId: 'prior-1',
+      }),
+    )
+  })
+})
