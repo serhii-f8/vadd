@@ -3,9 +3,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { expect, test } from 'vitest'
+import { dirname, join } from 'node:path'
+import { describe, expect, it, test } from 'vitest'
 import {
+  cloneRepo,
   fetchRemote,
   gitRemote,
   listRemotes,
@@ -407,4 +408,54 @@ test('a user own core.sshCommand survives, with BatchMode appended to it', async
     else process.env.GIT_SSH_COMMAND = previous
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+describe('cloneRepo', () => {
+  it('clones a real local repository', async () => {
+    const source = makeTempRepo()
+    const dest = join(mkdtempSync(join(tmpdir(), 'vadd-clone-dest-')), 'cloned')
+    await cloneRepo(source, dest)
+    const head = execFileSync('git', ['-C', dest, 'rev-parse', 'HEAD']).toString().trim()
+    expect(head).toHaveLength(40)
+  })
+
+  it('throws RemoteError on a nonexistent source', async () => {
+    const dest = join(mkdtempSync(join(tmpdir(), 'vadd-clone-dest-')), 'cloned')
+    await expect(cloneRepo('/tmp/vadd-does-not-exist-source', dest)).rejects.toBeInstanceOf(
+      RemoteError,
+    )
+  })
+
+  it('a clone that outruns its timeout is killed and reports timedOut', async () => {
+    const source = makeTempRepo()
+    const bare = makeBareRemote(source)
+    const scriptDir = mkdtempSync(join(tmpdir(), 'vadd-uploadpack-'))
+    const script = join(scriptDir, 'slow-upload-pack.sh')
+    writeFileSync(script, '#!/bin/sh\nexec sleep 30\n', { mode: 0o755 })
+    const dest = join(mkdtempSync(join(tmpdir(), 'vadd-clone-dest-')), 'cloned')
+    const started = Date.now()
+    try {
+      // `--no-local` forces git to go through the smart-transport upload-pack
+      // path even for a local filesystem source; without it, git's own
+      // hardlink-based local-clone optimization never spawns upload-pack at
+      // all, and this test would pass for the wrong reason (finishing fast,
+      // not timing out). Verify this empirically against the real git on
+      // this machine — if `--no-local` isn't sufficient to force the
+      // subprocess path, try prefixing `bare` with `file://` instead, same
+      // reasoning CLAUDE.md's "Traps Pass C paid for" already documents for
+      // the fetch case.
+      await gitRemote(
+        dirname(dest),
+        ['clone', '--no-local', `--upload-pack=${script}`, bare, dest],
+        1_000,
+      )
+      throw new Error('should have thrown')
+    } catch (err) {
+      expect(err).toBeInstanceOf(RemoteError)
+      expect((err as RemoteError).timedOut).toBe(true)
+    } finally {
+      rmSync(scriptDir, { recursive: true, force: true })
+    }
+    expect(Date.now() - started).toBeLessThan(5_000)
+  })
 })

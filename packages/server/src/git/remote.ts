@@ -1,3 +1,4 @@
+import { dirname } from 'node:path'
 import { execa } from 'execa'
 import { git } from './run.js'
 
@@ -353,6 +354,17 @@ export async function pullFastForward(worktreePath: string, remote: string): Pro
     )
   }
   await gitRemote(worktreePath, [...END_OF_OPTIONS.pull, remote, branch])
+}
+
+/**
+ * Clones `url` into `destPath`. `destPath`'s parent must already exist — the
+ * caller (the `POST /api/projects/clone` route) creates it, mirroring
+ * `createWorktree`'s `mkdir(dirname(worktreePath), { recursive: true })`
+ * precedent in `git-manager.ts`. `cwd` is `destPath`'s parent since no repo
+ * exists yet to run `git -C` against.
+ */
+export async function cloneRepo(url: string, destPath: string): Promise<void> {
+  await gitRemote(dirname(destPath), ['clone', '--', url, destPath])
 }
 
 /**
