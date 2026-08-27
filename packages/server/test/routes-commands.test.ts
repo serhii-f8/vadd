@@ -960,9 +960,28 @@ describe('GET /api/objectives/:id/continuation-seed', () => {
       })
     ).json().id as string
 
+    // Two task_result events, an older one and a newer one, with a status
+    // event in between — proves the route picks the MOST RECENT task_result
+    // (by insertion/event id order) rather than merely "any task_result".
+    // An implementation that found the first match regardless of order would
+    // return the older claim and fail this test.
     const now = new Date().toISOString()
     db.insert(events)
       .values([
+        {
+          objectiveId,
+          type: 'agent_event',
+          payload: {
+            event: { type: 'task_result', taskId: 't1', claim: "Attempted a fix, didn't work" },
+          },
+          createdAt: now,
+        },
+        {
+          objectiveId,
+          type: 'agent_event',
+          payload: { event: { type: 'status', headline: 'trying again' } },
+          createdAt: now,
+        },
         {
           objectiveId,
           type: 'agent_event',
