@@ -136,7 +136,7 @@ export function NewProjectDialog({
   }
 
   const submitClone = async () => {
-    if (cloneUrl.trim() === '' || cloneName.trim() === '') return
+    if (cloneUrl.trim() === '' || cloneParent.trim() === '' || cloneName.trim() === '') return
     setBusy(true)
     setError(null)
     try {

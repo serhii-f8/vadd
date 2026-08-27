@@ -210,6 +210,8 @@ describe('NewProjectDialog — Clone repository tab', () => {
     await renderDialog()
     await userEvent.click(screen.getByRole('tab', { name: 'Clone repository' }))
     await userEvent.type(screen.getByLabelText('Repository URL'), 'ext::sh -c evil')
+    await userEvent.click(screen.getByRole('button', { name: 'Browse…' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Select this folder' }))
     await userEvent.click(screen.getByRole('button', { name: 'Clone' }))
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('Invalid clone URL')
