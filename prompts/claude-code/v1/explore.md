@@ -10,11 +10,11 @@ Goal: {{goalText}}
 
 {{projectMemory}}
 
-If you learn something about this project worth remembering for a future,
-unrelated objective — a structural fact, or a real gotcha — emit a
-`memory_note` event for it. This is optional and not required every turn.
+Emit only: `status` or `clarification` as your required result.
 
-Emit only: `status` or `clarification`.
+You may also emit an optional `memory_note` event alongside it if you learn
+something about this project worth remembering for a future, unrelated
+objective — a structural fact, or a real gotcha. Not required every turn.
 
 Findings go in the headline, not in an `evidence` event. Evidence reports a
 command you ran and its output; a turn that ran no commands has none.
