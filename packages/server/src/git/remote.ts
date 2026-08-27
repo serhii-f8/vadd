@@ -235,6 +235,31 @@ function redactUserinfo(url: string): string {
 }
 
 /**
+ * The userinfo substring itself (no scheme, no trailing `@`), for scrubbing
+ * a KNOWN secret out of text `redactUserinfo` cannot reach.
+ *
+ * `redactUserinfo` only ever sees VADD's own url-shaped arguments, and its
+ * `scheme://` anchor is exactly right for that: `gitRemote`'s `args.join(' ')`
+ * echo is one of VADD's own strings, so redacting url-shaped tokens within it
+ * is enough. `cloneRepo`'s failure message is different — `RemoteError`
+ * concatenates `result.all`, the underlying transport's OWN stdout/stderr,
+ * verbatim. Measured directly (a fake `GIT_SSH_COMMAND` recording+echoing its
+ * own banner): OpenSSH's real auth-failure banner for `ssh://user:token@host/x`
+ * echoes `user:token@host: Permission denied (publickey).` with no `scheme://`
+ * anywhere in it — the userinfo has been lifted out of the url and pasted into
+ * a sentence a scheme-anchored regex cannot find. Same shape for curl's own
+ * auth-challenge text over https. Same anchoring as `URL_USERINFO` (`[^/]+`
+ * greedy up to the LAST `@` before the path, for the identical
+ * `a:p@ssword@h`-style reason documented there), but returning the captured
+ * userinfo itself rather than replacing it in place, since the caller needs
+ * the exact secret substring to hunt for in a message that never had a
+ * `scheme://` in front of it.
+ */
+function extractUserinfo(url: string): string | undefined {
+  return url.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/]+)@/)?.[1]
+}
+
+/**
  * `--` before every caller-supplied remote name, so git reads it as a value.
  *
  * Amendment A20 rests on "no route accepts a URL": every operation takes a
@@ -372,9 +397,33 @@ export async function pullFastForward(worktreePath: string, remote: string): Pro
  * `createWorktree`'s `mkdir(dirname(worktreePath), { recursive: true })`
  * precedent in `git-manager.ts`. `cwd` is `destPath`'s parent since no repo
  * exists yet to run `git -C` against.
+ *
+ * **A second redaction pass, beyond `gitRemote`'s own.** `gitRemote` already
+ * redacts the `args` echo in its `RemoteError` message (the url this function
+ * passes it), but that message also carries `result.all` — the transport's
+ * OWN error text, not VADD's. Measured directly: a real OpenSSH auth-failure
+ * banner for `ssh://user:token@host/x` reads `user:token@host: Permission
+ * denied (publickey).`, with the userinfo lifted out of the url and pasted
+ * into a sentence `redactUserinfo`'s `scheme://`-anchored regex cannot reach.
+ * `url` is the one place this function still holds the real secret, so on
+ * failure the known userinfo substring is hunted for and scrubbed out of
+ * whatever came back, regardless of which transport or message shape leaked
+ * it — this does not depend on knowing ssh's banner format, curl's auth
+ * challenge format, or any other transport's wording.
  */
 export async function cloneRepo(url: string, destPath: string): Promise<void> {
-  await gitRemote(dirname(destPath), ['clone', '--', url, destPath])
+  const secret = extractUserinfo(url)
+  try {
+    await gitRemote(dirname(destPath), ['clone', '--', url, destPath])
+  } catch (err) {
+    if (secret && err instanceof Error && err.message.includes(secret)) {
+      const scrubbed = err.message.split(secret).join('***')
+      throw err instanceof RemoteError
+        ? new RemoteError(scrubbed, err.timedOut)
+        : new Error(scrubbed)
+    }
+    throw err
+  }
 }
 
 /**

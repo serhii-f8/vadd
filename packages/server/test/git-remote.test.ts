@@ -444,6 +444,47 @@ describe('cloneRepo', () => {
     }
   })
 
+  it('scrubs a credential OpenSSH itself echoes into its own auth-failure banner', async () => {
+    // Reproduces the reviewer's exact finding: `redactUserinfo` is anchored
+    // on `scheme://`, but OpenSSH's real auth-failure banner for
+    // `ssh://user:token@host/x` reads `user:token@host: Permission denied
+    // (publickey).` — the userinfo lifted out of the url with no `scheme://`
+    // anywhere nearby, which the scheme-anchored regex cannot reach.
+    //
+    // A fake `GIT_SSH_COMMAND` reproduces that exact banner text without any
+    // real network: `github.com` never gets an outbound connection, and
+    // `git` invokes this script as its ssh transport, whose stdout git folds
+    // straight into the failure it reports.
+    const dir = mkdtempSync(join(tmpdir(), 'vadd-ssh-banner-'))
+    const fakeSsh = join(dir, 'fake-ssh.sh')
+    writeFileSync(
+      fakeSsh,
+      '#!/bin/sh\n' +
+        'echo "user:sekrit123@github.com: Permission denied (publickey)." >&2\n' +
+        'exit 1\n',
+      { mode: 0o755 },
+    )
+    const previous = process.env.GIT_SSH_COMMAND
+    process.env.GIT_SSH_COMMAND = fakeSsh
+    const dest = join(mkdtempSync(join(tmpdir(), 'vadd-clone-dest-')), 'cloned')
+    try {
+      await cloneRepo('ssh://user:sekrit123@github.com/x.git', dest)
+      expect.unreachable('a clone through a failing fake ssh must fail')
+    } catch (err) {
+      expect(err).toBeInstanceOf(RemoteError)
+      const message = (err as RemoteError).message
+      // The exact byte sequence the reviewer reproduced must not survive.
+      expect(message).toContain('Permission denied (publickey)')
+      expect(message).toContain('***@github.com')
+      expect(message).not.toContain('sekrit123')
+      expect(message).not.toContain('user:sekrit123')
+    } finally {
+      if (previous === undefined) delete process.env.GIT_SSH_COMMAND
+      else process.env.GIT_SSH_COMMAND = previous
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('a clone that outruns its timeout is killed and reports timedOut', async () => {
     const source = makeTempRepo()
     const bare = makeBareRemote(source)
