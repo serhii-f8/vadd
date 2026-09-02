@@ -68,9 +68,10 @@ type Entry = Awaited<ReturnType<AgentRegistry['ensure']>>
 export function renderTurnPrompt(
   objective: ObjectiveRef,
   turn: TurnInput,
-): { text: string; expect: AgentEventType[][] } {
+): { text: string; expect: AgentEventType[][]; permit: AgentEventType[] } {
   let text = turn.text ?? ''
   let expect: AgentEventType[][] = []
+  let permit: AgentEventType[] = []
   if (turn.phase !== undefined) {
     let template: PromptTemplate
     try {
@@ -81,6 +82,7 @@ export function renderTurnPrompt(
     // The template's front-matter is the single source of truth for what the
     // turn must produce: the machine will read the same field in phase 3.
     expect = template.expects
+    permit = template.permits
     text = renderTemplate(template, {
       title: objective.title,
       goalText: objective.goalText,
@@ -105,7 +107,7 @@ export function renderTurnPrompt(
     }
   }
 
-  return { text, expect }
+  return { text, expect, permit }
 }
 
 /**
@@ -127,7 +129,7 @@ function prepareTurn(
   objective: ObjectiveRef,
   turn: TurnInput,
 ): { turnId: string; text: string } {
-  const { text, expect } = renderTurnPrompt(objective, turn)
+  const { text, expect, permit } = renderTurnPrompt(objective, turn)
 
   // A second prompt while one is still open would have beginTurn silently
   // discard the first turn's buffered state (design rule 2: never drop
@@ -138,7 +140,7 @@ function prepareTurn(
   }
 
   const turnId = randomUUID()
-  entry.pipeline.beginTurn({ turnId, expect })
+  entry.pipeline.beginTurn({ turnId, expect, permit })
   // Published on the entry so the `cancel` request — a different request,
   // with no access to this closure — can end the same turn.
   entry.turnId = turnId

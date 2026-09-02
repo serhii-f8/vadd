@@ -31,6 +31,13 @@ export type PromptTemplate = {
    * "Unstructured output — open raw view" for fully structured output.
    */
   expects: AgentEventType[][]
+  /**
+   * Amendment A24: event types this turn may emit without owing them.
+   * Excluded from the pipeline's `unexpected_type` check; never consulted by
+   * `unmetExpectations()`, so a turn that emits only a permitted type still
+   * owes every `expects` group. Flat — no alternation groups.
+   */
+  permits: AgentEventType[]
   body: string
   /** Absolute path the template was read from, for error messages. */
   source: string
@@ -86,6 +93,13 @@ export function parseTemplate(raw: string, source: string): PromptTemplate {
     }
   }
 
+  const permits = list(fields.permits)
+  for (const p of permits) {
+    if (!(AGENT_EVENT_TYPES as readonly string[]).includes(p)) {
+      throw new Error(`Template ${source} permits unknown event type "${p}"`)
+    }
+  }
+
   const version = Number(fields.version)
   if (!Number.isInteger(version)) throw new Error(`Template ${source} has no integer version`)
   if (!fields.phase) throw new Error(`Template ${source} has no phase`)
@@ -94,6 +108,7 @@ export function parseTemplate(raw: string, source: string): PromptTemplate {
     version,
     phase: fields.phase,
     expects: expects as AgentEventType[][],
+    permits: permits as AgentEventType[],
     body: raw.slice(match[0].length),
     source,
   }

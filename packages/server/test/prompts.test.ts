@@ -48,6 +48,38 @@ test('rejects a template whose expects names an unknown event type', () => {
   ).toThrow(/invented/)
 })
 
+test('A24: parses a permits list, flat, and defaults it to []', () => {
+  const t = parseTemplate(
+    [
+      '---',
+      'version: 2',
+      'phase: propose',
+      'expects: [decision_needed]',
+      'permits: [artifact, memory_note]',
+      '---',
+      'b',
+    ].join('\n'),
+    'test',
+  )
+  expect(t.permits).toEqual(['artifact', 'memory_note'])
+  const none = parseTemplate(
+    ['---', 'version: 1', 'phase: p', 'expects: []', '---', 'b'].join('\n'),
+    'test',
+  )
+  expect(none.permits).toEqual([])
+})
+
+test('A24: rejects a permits entry naming an unknown event type', () => {
+  expect(() =>
+    parseTemplate(
+      ['---', 'version: 1', 'phase: x', 'expects: []', 'permits: [invented]', '---', 'b'].join(
+        '\n',
+      ),
+      'test',
+    ),
+  ).toThrow(/permits unknown event type "invented"/)
+})
+
 test('substitutes placeholders and leaves unknown ones visible', () => {
   const t = parseTemplate(
     ['---', 'version: 1', 'phase: p', 'expects: []', '---', 'A {{one}} B {{missing}}'].join('\n'),

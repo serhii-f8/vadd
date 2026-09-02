@@ -417,6 +417,54 @@ test('a turn declaring no expectations never reports unexpected_type', async () 
   )
 })
 
+test('A24: a permitted type raises no unexpected_type, while an unpermitted one still does', async () => {
+  const { out, pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: [['decision_needed']], permit: ['artifact'] })
+  pipe.ingest(
+    chunk(
+      '```vadd-event\n{"type":"artifact","cards":[{"id":"a","kind":"text","title":"T","body":"b"}]}\n```\n',
+    ),
+  )
+  pipe.ingest(chunk('```vadd-event\n{"type":"status","phase":"proposing","headline":"h"}\n```\n'))
+  await pipe.endTurn('t1')
+  const violations = out.filter((e) => e.kind === 'violation')
+  const unexpected = violations.filter(
+    (v) => v.kind === 'violation' && v.reason === 'unexpected_type',
+  )
+  expect(unexpected.map((v) => (v.kind === 'violation' ? v.raw : ''))).toEqual(['status'])
+})
+
+test('A24: a turn emitting only a permitted type still owes every expects group', async () => {
+  // The test that must fail if a permitted type is ever treated as satisfying
+  // an expects group. `decision_needed` is deliberately named in BOTH `expect`
+  // and `permit` here (an unrealistic template, but the discriminating unit
+  // test for the pipeline mechanic): this is what makes the mutation-check
+  // genuine. The brief's own example used disjoint permit/expect sets
+  // (`expect: [['decision_needed']], permit: ['artifact']`), which the
+  // prescribed Step 8 mutation — `for (const p of this.#permit)
+  // this.#seen.add(p)` — cannot discriminate against, since it only ever adds
+  // 'artifact' to `#seen`, never touching the unrelated 'decision_needed'
+  // group; running that mutation against the brief's own data left the whole
+  // suite green. Overlapping the two here is what actually exercises the
+  // "permit contaminates #seen" bug: the turn emits only `artifact` (a
+  // permitted type), never `decision_needed`, so the group must stay unmet.
+  const { out, pipe } = collect()
+  pipe.beginTurn({
+    turnId: 't1',
+    expect: [['decision_needed']],
+    permit: ['artifact', 'decision_needed'],
+  })
+  pipe.ingest(
+    chunk(
+      '```vadd-event\n{"type":"artifact","cards":[{"id":"a","kind":"text","title":"T","body":"b"}]}\n```\n',
+    ),
+  )
+  pipe.settle()
+  expect(pipe.unmetExpectations()).toEqual([['decision_needed']])
+  await pipe.endTurn('t1')
+  expect(out.some((e) => e.kind === 'violation' && e.reason === 'missing_expected')).toBe(true)
+})
+
 test('settle() parses a block whose closing fence carried no trailing newline', async () => {
   // The bug this exists for: FenceScanner.push() only decides on complete
   // lines, so a final ``` with no newline after it — i.e. the end of almost

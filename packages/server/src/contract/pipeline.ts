@@ -90,6 +90,7 @@ export class ContractPipeline {
 
   #turnId: string | null = null
   #expect: AgentEventType[][] = []
+  #permit: AgentEventType[] = []
   #seen = new Set<AgentEventType>()
   #evidenceHeadlines = new Set<string>()
   #claimedEvidenceRefs = new Set<string>()
@@ -112,11 +113,15 @@ export class ContractPipeline {
    * `failure` is the documented alternative to a phase's success event, so a
    * flat AND over the same list made a successful turn permanently unable to
    * satisfy its own contract.
+   *
+   * `permit` (amendment A24) names types that may appear without being owed:
+   * excluded from `unexpected_type`, invisible to `unmetExpectations()`.
    */
-  beginTurn(t: { turnId: string; expect?: AgentEventType[][] }): void {
+  beginTurn(t: { turnId: string; expect?: AgentEventType[][]; permit?: AgentEventType[] }): void {
     this.#scanner.flush()
     this.#turnId = t.turnId
     this.#expect = t.expect ?? []
+    this.#permit = t.permit ?? []
     this.#seen = new Set()
     this.#evidenceHeadlines = new Set()
     this.#claimedEvidenceRefs = new Set()
@@ -213,7 +218,11 @@ export class ContractPipeline {
       // raise precision by hiding emissions rather than by changing what the
       // agent does, which is measurement fraud, not a fix. This counter is how
       // the turn-budget prompt line gets measured instead of assumed.
-      if (this.#expect.length > 0 && !this.#expect.some((g) => g.includes(result.data.type))) {
+      if (
+        this.#expect.length > 0 &&
+        !this.#expect.some((g) => g.includes(result.data.type)) &&
+        !this.#permit.includes(result.data.type)
+      ) {
         this.#violation('unexpected_type', result.data.type)
       }
       this.#emitEvent(result.data, false)
