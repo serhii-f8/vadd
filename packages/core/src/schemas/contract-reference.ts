@@ -47,7 +47,11 @@ function describe(node: JsonSchemaNode): string {
         ? `, each one of ${item.enum.join(' | ')}`
         : item.type === 'string' && item.maxLength !== undefined
           ? `, each at most ${item.maxLength} chars`
-          : ''
+          : item.type === 'array' &&
+              item.items?.type === 'string' &&
+              item.items.maxLength !== undefined
+            ? `, each cell at most ${item.items.maxLength} chars`
+            : ''
 
     return `array of ${count}${noun}${each}`
   }

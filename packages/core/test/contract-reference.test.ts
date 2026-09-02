@@ -58,7 +58,7 @@ test('A24: documents every card kind under artifact, with its fields and caps', 
   expect(section).toMatch(/title.*at most 80/)
   expect(section).toMatch(/body.*at most 600/)
   expect(section).toMatch(/columns.*2–4 strings, each at most 40/)
-  expect(section).toMatch(/rows.*1–6 arrays/)
+  expect(section).toMatch(/rows.*1–6 arrays, each cell at most 80 chars/)
   expect(section).toMatch(/language.*at most 20/)
   // `z.literal` exports as `const`, not `enum` — the reference must say so.
   expect(section).toMatch(/notation.*exactly "mermaid"/)
