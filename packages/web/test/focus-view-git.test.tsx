@@ -59,6 +59,7 @@ describe('FocusView: where the git subset appears', () => {
       tasks: [],
       decisions: [],
       evidence: [],
+      artifacts: [],
       lastAutoApproval: null,
       lastStatus: null,
       lastAgentUpdateAt: null,

@@ -1,3 +1,4 @@
+import type { Card } from '@vadd/core/schemas/card.js'
 import type { EvidenceRow } from './evidence/group.js'
 import type { ViewStateName } from './focus/primary.js'
 
@@ -81,6 +82,17 @@ export type Decision = {
   chosenId: string | null
 }
 
+/** Amendment A24: one `artifact` event the agent emitted, as persisted. */
+export type Artifact = {
+  id: string
+  /** The machine state at ingest — `proposing` or `planning`. */
+  state: string
+  cards: Card[]
+  createdAt: string
+}
+
+export type { Card }
+
 /** `GET /api/objectives/:id` — spec §7's full aggregate. The only source of view state. */
 export type Aggregate = {
   objective: Objective
@@ -88,6 +100,8 @@ export type Aggregate = {
   tasks: PlanTask[]
   decisions: Decision[]
   evidence: EvidenceRow[]
+  /** Amendment A24: every artifact for this objective, newest first. */
+  artifacts: Artifact[]
   /**
    * The open clarifying question, read from the live actor's context. A
    * clarification writes no `decisions` row — this is the only place it exists,

@@ -10,6 +10,7 @@ function aggregate(over: Record<string, unknown> = {}) {
     tasks: [],
     decisions: [],
     evidence: [],
+    artifacts: [],
     lastAutoApproval: null,
     lastStatus: null,
     lastAgentUpdateAt: null,

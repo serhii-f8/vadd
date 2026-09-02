@@ -41,6 +41,7 @@ function agg(evidenceRows: unknown[], over: Record<string, unknown> = {}): Aggre
     tasks: [],
     decisions: [],
     evidence: evidenceRows,
+    artifacts: [],
     pendingClarification: null,
     lastAutoApproval: null,
     lastStatus: null,
