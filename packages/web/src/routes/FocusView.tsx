@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { type Aggregate, api } from '../api.js'
+import { ArtifactBlock } from '../cards/ArtifactBlock.js'
 import { EvidencePanel } from '../evidence/EvidencePanel.js'
 import { AbandonButton } from '../focus/AbandonButton.js'
 import { AutoApprovalBanner } from '../focus/AutoApprovalBanner.js'
@@ -296,6 +297,20 @@ export function FocusView() {
       )}
       {primary === 'plan' && (
         <PlanApproval tasks={aggregate.tasks} onCommand={(b) => void onCommand(b)} />
+      )}
+      {/*
+        Amendment A24. Rendered only where a decision or a plan is waiting:
+        `latestArtifactFor` answers null for every other state, so this is
+        also nothing at all under `review`, `live` and `outcome`. Secondary
+        content beneath the primary element above it — spec §8's one-primary
+        rule is untouched.
+      */}
+      {(primary === 'decision' || primary === 'plan') && (
+        <ArtifactBlock
+          artifacts={aggregate.artifacts}
+          state={state}
+          lowEnergy={aggregate.objective.lowEnergy}
+        />
       )}
       {primary === 'live' && (
         <LiveTask
