@@ -16,6 +16,7 @@ import type { FastifyInstance } from 'fastify'
 import type { Db } from '../../db/client.js'
 import {
   agentSessions,
+  artifacts,
   decisions,
   events,
   evidenceItems,
@@ -458,6 +459,15 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
         .orderBy(planTasks.ord)
         .all(),
       decisions: db.select().from(decisions).where(eq(decisions.objectiveId, row.id)).all(),
+      // Amendment A24: every artifact, newest first; the UI shows the newest
+      // per state. The aggregate is the channel because the frontend never
+      // reads SSE payloads (spec §7).
+      artifacts: db
+        .select()
+        .from(artifacts)
+        .where(eq(artifacts.objectiveId, row.id))
+        .orderBy(desc(artifacts.createdAt))
+        .all(),
       evidence: db.select().from(evidenceItems).where(eq(evidenceItems.objectiveId, row.id)).all(),
       ...activityFor(db, row.id),
       lastAutoApproval: lastAutoApprovalEvent
@@ -601,8 +611,10 @@ export function registerObjectiveRoutes(app: FastifyInstance, deps: AppDeps): vo
     // delete fails the constraint. `evidence_items` goes first because it also
     // references `plan_tasks`. Against the real server this list being short by
     // four tables removed a worktree and then 500'd, leaving a row pointing at
-    // a directory that no longer existed — hence one transaction.
+    // a directory that no longer existed — hence one transaction. Amendment A24's
+    // `artifacts` is the seventh.
     db.transaction((tx) => {
+      tx.delete(artifacts).where(eq(artifacts.objectiveId, objective.id)).run()
       tx.delete(evidenceItems).where(eq(evidenceItems.objectiveId, objective.id)).run()
       tx.delete(planTasks).where(eq(planTasks.objectiveId, objective.id)).run()
       tx.delete(decisions).where(eq(decisions.objectiveId, objective.id)).run()
