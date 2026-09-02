@@ -261,6 +261,38 @@ test('no bundled template requires an event that contradicts another it expects'
   }
 })
 
+test('A24: memory_note is permitted on every phase template except repair', () => {
+  for (const phase of PROMPT_PHASES) {
+    const t = loadTemplate(phase)
+    if (phase === 'repair') {
+      // Sent inside the same open turn, so it inherits the original
+      // template's permits — declaring its own would be a second source.
+      expect(t.permits).toEqual([])
+      continue
+    }
+    expect(t.permits, `${phase}.md`).toContain('memory_note')
+  }
+})
+
+test('A24: artifact is permitted on propose and plan, and nowhere else', () => {
+  for (const phase of PROMPT_PHASES) {
+    const permitted = loadTemplate(phase).permits.includes('artifact')
+    expect(permitted, `${phase}.md`).toBe(phase === 'propose' || phase === 'plan')
+  }
+})
+
+test('A24: propose.md and plan.md each carry an in-budget artifact example', () => {
+  for (const phase of ['propose', 'plan'] as const) {
+    const scanner = new FenceScanner()
+    const body = loadTemplate(phase).body
+    const blocks = [...scanner.push(body), ...scanner.flush().blocks]
+    const artifacts = blocks
+      .map((b) => AgentEvent.safeParse(JSON.parse(b.body)))
+      .filter((r) => r.success && r.data.type === 'artifact')
+    expect(artifacts.length, `${phase}.md has no artifact example`).toBe(1)
+  }
+})
+
 test('every template states its event budget, and it matches expects', () => {
   // `expects` is a server-side assertion the agent cannot read. Nothing ever
   // told it what a turn may emit, and in the fourth gate run eleven of sixteen

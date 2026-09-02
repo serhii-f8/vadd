@@ -1,7 +1,8 @@
 ---
-version: 1
+version: 2
 phase: execute-task-investigation
 expects: [task_result|failure, evidence|failure]
+permits: [memory_note]
 ---
 Investigate. Do not change any code — this objective ends in a report, not a
 diff.

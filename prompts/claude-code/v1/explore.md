@@ -1,7 +1,8 @@
 ---
-version: 1
+version: 2
 phase: explore
 expects: [status|clarification]
+permits: [memory_note]
 ---
 Read enough of this repository to understand the goal below. Do not change any
 file yet.

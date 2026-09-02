@@ -1,7 +1,8 @@
 ---
-version: 1
+version: 2
 phase: execute-task
 expects: [task_result|failure, evidence|failure]
+permits: [memory_note]
 ---
 Implement this task and nothing else.
 

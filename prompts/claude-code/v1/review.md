@@ -1,7 +1,8 @@
 ---
-version: 1
+version: 2
 phase: review
 expects: [status|failure]
+permits: [memory_note]
 ---
 Review the diff on this branch against the objective. Change nothing.
 

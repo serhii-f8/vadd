@@ -1,7 +1,8 @@
 ---
-version: 1
+version: 2
 phase: clarify
 expects: [clarification]
+permits: [memory_note]
 ---
 The goal below is ambiguous. Ask the one question whose answer changes what you
 would build.

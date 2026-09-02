@@ -1,7 +1,8 @@
 ---
-version: 1
+version: 2
 phase: plan
 expects: [plan]
+permits: [artifact, memory_note]
 ---
 Break the goal into ordered tasks. Each task must be independently verifiable.
 
@@ -29,3 +30,12 @@ Emit exactly one `plan` event, at most 12 tasks:
 
 Titles are at most 15 words. Descriptions say what the task achieves, not how
 you will type it.
+
+You may also emit one `artifact` event of one to six cards for what the tasks
+build toward — a diagram of the pieces and how they connect, the interface the
+tasks converge on. A card with `role: "architecture"` is the one a reader will
+look for later. Skip it when the task list already says everything.
+
+```vadd-event
+{"type":"artifact","cards":[{"id":"flow","kind":"diagram","title":"Where the export runs","role":"architecture","notation":"mermaid","source":"flowchart LR\n  A[Request] --> B[Queue]\n  B --> C[Worker]\n  C --> D[(exports table)]","caption":"The worker is the only new process"}]}
+```

@@ -1,7 +1,8 @@
 ---
-version: 1
+version: 2
 phase: verify
 expects: [evidence]
+permits: [memory_note]
 ---
 VADD has already run this objective's verification commands and recorded their
 results. Do not run them again.
