@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
 import { expect, test } from 'vitest'
 import { createDb } from '../src/db/client.js'
-import { agentSessions, objectives, projects } from '../src/db/schema.js'
+import { agentSessions, artifacts, objectives, projects } from '../src/db/schema.js'
 import { withTempHome } from './fixtures/temp-repo.js'
 
 const drizzleFolder = fileURLToPath(new URL('../drizzle', import.meta.url))
@@ -87,6 +87,19 @@ test('migrations apply to a populated database at the 0000 baseline', () => {
   expect(migrated?.mode).toBe('standard')
   expect(migrated?.baseSha).toBeNull()
   expect(migrated?.integrateAction).toBeNull()
+
+  // A24's 0010 creates `artifacts` with a real FK; a populated parent must
+  // accept a child row after the whole chain has applied.
+  db.insert(artifacts)
+    .values({
+      id: 'a1',
+      objectiveId: 'o0',
+      state: 'proposing',
+      cards: [{ id: 'x', kind: 'text', title: 'T', body: 'b' }],
+      createdAt: new Date().toISOString(),
+    })
+    .run()
+  expect(db.select().from(artifacts).all()).toHaveLength(1)
 })
 
 test('foreign keys are enforced again after migrating a populated database', () => {

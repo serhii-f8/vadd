@@ -1,4 +1,4 @@
-import type { AgentKind } from '@vadd/core'
+import type { AgentKind, Card } from '@vadd/core'
 import { sql } from 'drizzle-orm'
 import { check, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
@@ -296,5 +296,30 @@ export const projectMemory = sqliteTable('project_memory', {
    * `objectives.continuedFromId`.
    */
   sourceObjectiveId: text('source_objective_id'),
+  createdAt: text('created_at').notNull(),
+})
+
+/**
+ * Amendment A24. One row per `artifact` event the agent emitted — design
+ * material for a pending decision or plan, never a machine input.
+ *
+ * Real FK, no cascade, like `decisions`/`plan_tasks`/`evidence_items`: an
+ * artifact is the objective's own and dies with it, unlike `project_memory`
+ * (a fact about the project) or `objectives.continuedFromId` (a link that
+ * degrades). `DELETE /api/objectives/:id`'s transaction clears it — seventh
+ * table.
+ */
+export const artifacts = sqliteTable('artifacts', {
+  id: text('id').primaryKey(),
+  objectiveId: text('objective_id')
+    .notNull()
+    .references(() => objectives.id),
+  /**
+   * The machine state at ingest (`proposing`, `planning`), or the row's
+   * `status` when no actor was live. The UI pairs an artifact with its
+   * primary element by this, not by guessing from timestamps.
+   */
+  state: text('state').notNull(),
+  cards: text('cards', { mode: 'json' }).$type<Card[]>().notNull(),
   createdAt: text('created_at').notNull(),
 })

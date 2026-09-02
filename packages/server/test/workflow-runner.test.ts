@@ -5,6 +5,7 @@ import { AgentRegistry } from '../src/agent/registry.js'
 import type { ContractEmission } from '../src/contract/pipeline.js'
 import { createDb, type Db } from '../src/db/client.js'
 import {
+  artifacts,
   events,
   machineSnapshots,
   objectives,
@@ -335,5 +336,40 @@ describe('WorkflowRunner', () => {
       .get()
     expect(row?.headline).toBe('Auth lives in src/auth/')
     expect(row?.kind).toBe('architecture')
+  })
+
+  it('an artifact persists an artifacts row carrying the actor state and never reaches the actor', () => {
+    runner.start('o')
+    runner.send('o', { type: 'START' })
+    const before = db
+      .select()
+      .from(machineSnapshots)
+      .where(eq(machineSnapshots.objectiveId, 'o'))
+      .get()
+    const sendSpy = vi.spyOn(runner, 'send')
+
+    emitFromPipeline('o', {
+      kind: 'event',
+      turnId: 't',
+      extracted: false,
+      sourceEventIds: [1],
+      event: {
+        type: 'artifact',
+        cards: [{ id: 'why', kind: 'text', title: 'Why a queue', body: 'Requests time out.' }],
+      },
+    })
+
+    expect(sendSpy).not.toHaveBeenCalled()
+    const after = db
+      .select()
+      .from(machineSnapshots)
+      .where(eq(machineSnapshots.objectiveId, 'o'))
+      .get()
+    expect(after).toEqual(before)
+    expect(runner.get('o')?.getSnapshot().value).toBe('exploring')
+
+    const row = db.select().from(artifacts).where(eq(artifacts.objectiveId, 'o')).get()
+    expect(row?.state).toBe('exploring')
+    expect(row?.cards).toHaveLength(1)
   })
 })

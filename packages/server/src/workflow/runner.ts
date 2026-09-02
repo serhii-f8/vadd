@@ -15,6 +15,7 @@ import type { ContractEmission } from '../contract/pipeline.js'
 import type { Db } from '../db/client.js'
 import { objectives, projectMemory } from '../db/schema.js'
 import type { EventBus } from '../events/event-bus.js'
+import { recordArtifact } from './artifacts.js'
 import { bindEffects, recordDecisionChoice } from './effects.js'
 import { commitTransition } from './store.js'
 import { cancelOpenTurn } from './turn.js'
@@ -195,9 +196,22 @@ export class WorkflowRunner {
       this.#recordMemoryNote(objectiveId, emission.event)
       return
     }
+    // An artifact is design material for the pending decision or plan, not a
+    // phase-transition signal — intercepted before `toMachineEvent` exactly
+    // like `memory_note`, and `toMachineEvent`'s parameter type excludes it so
+    // this branch cannot silently go missing. The state recorded is the live
+    // actor's; a late emission with no actor (after `stop()`) falls back to
+    // the row's status rather than being dropped.
     if (emission.event.type === 'artifact') {
-      // Task 6 persists it. Until then, intercepted and dropped is still
-      // "never reaches the actor" — the property the type exclusion pins.
+      const actor = this.#actors.get(objectiveId)
+      const row = this.#db
+        .select({ status: objectives.status })
+        .from(objectives)
+        .where(eq(objectives.id, objectiveId))
+        .get()
+      if (!row) return
+      const state = actor ? String(actor.getSnapshot().value) : row.status
+      recordArtifact(this.#db, objectiveId, state, emission.event)
       return
     }
     this.send(objectiveId, toMachineEvent(emission.event))
