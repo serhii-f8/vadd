@@ -48,6 +48,26 @@ test('is derived from the schema, not hand-written', () => {
   expect(ref).toContain('evidenceRefs')
 })
 
+test('A24: documents every card kind under artifact, with its fields and caps', () => {
+  const ref = contractReference()
+  const section = ref.slice(ref.indexOf('### artifact'))
+  expect(section).toMatch(/cards.*1–6 objects, one of the kinds below/)
+  for (const kind of ['text', 'table', 'code', 'diagram']) {
+    expect(section, `missing kind ${kind}`).toMatch(new RegExp(`kind \`${kind}\``))
+  }
+  expect(section).toMatch(/title.*at most 80/)
+  expect(section).toMatch(/body.*at most 600/)
+  expect(section).toMatch(/columns.*2–4 strings, each at most 40/)
+  expect(section).toMatch(/rows.*1–6 arrays/)
+  expect(section).toMatch(/language.*at most 20/)
+  // `z.literal` exports as `const`, not `enum` — the reference must say so.
+  expect(section).toMatch(/notation.*exactly "mermaid"/)
+  expect(section).toMatch(/role.*optional.*one of architecture \| comparison \| interface \| note/)
+})
+
 test('stays compact enough to inline into a profile CLAUDE.md', () => {
-  expect(contractReference().split('\n').length).toBeLessThan(80)
+  // Raised from 80 when A24 added the four-kind card union: the artifact
+  // section alone is ~30 lines, and every one of them is a cap the agent can
+  // learn nowhere else.
+  expect(contractReference().split('\n').length).toBeLessThan(130)
 })

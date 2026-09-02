@@ -10,10 +10,13 @@ type JsonSchemaNode = {
   items?: JsonSchemaNode
   properties?: Record<string, JsonSchemaNode>
   required?: string[]
+  /** A nested discriminated union — `artifact.cards[]` is the first. */
+  anyOf?: JsonSchemaNode[]
 }
 
 /** `string, at most 80 chars` — the constraint half of one field's line. */
 function describe(node: JsonSchemaNode): string {
+  if (node.const !== undefined) return `exactly ${JSON.stringify(node.const)}`
   if (node.enum) return `one of ${node.enum.join(' | ')}`
   if (node.type === 'array') {
     const item = node.items ?? {}
@@ -29,11 +32,15 @@ function describe(node: JsonSchemaNode): string {
     else if (min !== undefined) count = `at least ${min} `
 
     const noun =
-      item.type === 'object'
-        ? `objects { ${Object.keys(item.properties ?? {}).join(', ')} }`
-        : item.type === 'string'
-          ? 'strings'
-          : `${item.type ?? 'value'}s`
+      item.anyOf !== undefined
+        ? 'objects, one of the kinds below'
+        : item.type === 'object'
+          ? `objects { ${Object.keys(item.properties ?? {}).join(', ')} }`
+          : item.type === 'array'
+            ? 'arrays'
+            : item.type === 'string'
+              ? 'strings'
+              : `${item.type ?? 'value'}s`
 
     const each =
       item.enum !== undefined
@@ -53,17 +60,27 @@ function describe(node: JsonSchemaNode): string {
   return node.type ?? 'value'
 }
 
-function fieldLines(variant: JsonSchemaNode, indent: string): string[] {
+function fieldLines(variant: JsonSchemaNode, indent: string, skip = 'type'): string[] {
   const required = new Set(variant.required ?? [])
   const lines: string[] = []
   for (const [name, node] of Object.entries(variant.properties ?? {})) {
-    if (name === 'type') continue
+    if (name === skip) continue
     const need = required.has(name) ? 'required' : 'optional'
     lines.push(`${indent}- \`${name}\` (${need}): ${describe(node)}`)
-    // One level of nesting is enough for this union: only
-    // decision_needed.options has object items.
     const item = node.type === 'array' ? node.items : undefined
     if (item?.type === 'object') lines.push(...fieldLines(item, `${indent}  `))
+    // A nested discriminated union (`artifact.cards[]`): one sub-block per
+    // kind, its own discriminator named on the heading line and skipped in
+    // the field list, so the agent learns every card kind's fields and caps
+    // here — the only place it can.
+    if (item?.anyOf !== undefined) {
+      for (const sub of item.anyOf) {
+        const kind = sub.properties?.kind?.const
+        if (kind === undefined) continue
+        lines.push(`${indent}  - kind \`${kind}\`:`)
+        lines.push(...fieldLines(sub, `${indent}    `, 'kind'))
+      }
+    }
   }
   return lines
 }
