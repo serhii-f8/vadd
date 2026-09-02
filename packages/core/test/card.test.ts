@@ -52,7 +52,13 @@ test('table shape caps', () => {
 })
 
 test('a table row one cell short is rejected, naming the row', () => {
-  const r = Card.safeParse({ ...table, rows: [['a', 'b', 'c'], ['a', 'b']] })
+  const r = Card.safeParse({
+    ...table,
+    rows: [
+      ['a', 'b', 'c'],
+      ['a', 'b'],
+    ],
+  })
   expect(r.success).toBe(false)
   if (!r.success) expect(r.error.issues[0]?.path).toEqual(['rows', 1])
 })

@@ -50,6 +50,13 @@ export {
   Phase,
 } from './schemas/agent-event.js'
 export {
+  type AgentKind,
+  CloneProjectBody,
+  CreateObjectiveBody,
+  ObjectiveCommand,
+  RegisterProjectBody,
+} from './schemas/api.js'
+export {
   ARTIFACT_MAX_CARDS,
   Card,
   type CardKind,
@@ -57,13 +64,6 @@ export {
   CODE_LINE_CAP,
   DIAGRAM_LINE_CAP,
 } from './schemas/card.js'
-export {
-  type AgentKind,
-  CloneProjectBody,
-  CreateObjectiveBody,
-  ObjectiveCommand,
-  RegisterProjectBody,
-} from './schemas/api.js'
 export { contractReference } from './schemas/contract-reference.js'
 export { agentEventJsonSchema } from './schemas/json-schema.js'
 export {

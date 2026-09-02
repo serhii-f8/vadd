@@ -33,7 +33,10 @@ const TableCard = z.object({
   ...base,
   kind: z.literal('table'),
   columns: z.array(z.string().max(40)).min(2).max(4),
-  rows: z.array(z.array(z.string().max(80))).min(1).max(6),
+  rows: z
+    .array(z.array(z.string().max(80)))
+    .min(1)
+    .max(6),
 })
 
 const CodeCard = z.object({
