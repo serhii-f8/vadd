@@ -35,6 +35,30 @@ describe('TextCard', () => {
     await userEvent.click(screen.getByRole('button', { name: /show/i }))
     expect(screen.getByText('Hidden body')).toBeTruthy()
   })
+
+  // Found by the browser pass (2026-09-02): toggling Low Energy Mode on an
+  // objective whose Decision Card is already showing does not re-render the
+  // route from scratch — `ArtifactBlock`'s already-mounted cards receive a
+  // new `defaultCollapsed` prop, not a fresh mount. A collapse toggle backed
+  // only by `useState(defaultCollapsed)` reads that prop once, at mount, and
+  // never again, so a live Low Energy toggle had no visible effect at all on
+  // any card already on screen — confirmed live before this test was written.
+  it('collapses when defaultCollapsed flips from false to true after mount, without unmounting', () => {
+    const card = { id: 'a', kind: 'text' as const, title: 'T', body: 'Visible body' }
+    const { rerender } = render(<TextCard card={card} defaultCollapsed={false} />)
+    expect(screen.getByText('Visible body')).toBeTruthy()
+    rerender(<TextCard card={card} defaultCollapsed={true} />)
+    expect(screen.queryByText('Visible body')).toBeNull()
+    expect(screen.getByRole('button', { name: /show/i })).toBeTruthy()
+  })
+
+  it('expands when defaultCollapsed flips from true to false after mount (Low Energy toggled off)', () => {
+    const card = { id: 'a', kind: 'text' as const, title: 'T', body: 'Visible body' }
+    const { rerender } = render(<TextCard card={card} defaultCollapsed={true} />)
+    expect(screen.queryByText('Visible body')).toBeNull()
+    rerender(<TextCard card={card} defaultCollapsed={false} />)
+    expect(screen.getByText('Visible body')).toBeTruthy()
+  })
 })
 
 describe('TableCard', () => {
