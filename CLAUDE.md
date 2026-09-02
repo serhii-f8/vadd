@@ -356,16 +356,27 @@ All three found by building the thing, not by reasoning about it in advance.
 ## Commands
 
 ```
-pnpm dev                           # Fastify on 127.0.0.1:4319 + Vite on 127.0.0.1:5319
-pnpm test                          # Vitest
-pnpm typecheck                     # tsc -b
-pnpm lint                          # Biome (lint + format; the only such tool)
-pnpm format                        # Biome, writing fixes
-pnpm transcript:export <objId>     # dump events rows → evals/transcripts/<name>.jsonl
-pnpm eval                          # eval harness: precision/recall vs. golden transcripts (M1)
-npx @vadd/cli                      # packaged entry point → localhost web app (M2)
+pnpm dev                                 # Fastify on 127.0.0.1:4319 + Vite on 127.0.0.1:5319 (Vite proxies /api to the server)
+pnpm test                                # Vitest, both projects (`node` + `web`)
+pnpm typecheck                           # tsc -b over all four packages
+pnpm lint                                # Biome (lint + format; the only such tool)
+pnpm format                              # Biome, writing fixes
+pnpm schema:export                       # regenerate prompts/claude-code/v1/agent-event.schema.json from the Zod union — never hand-edit that file
+pnpm --filter @vadd/server db:generate   # drizzle-kit → a new packages/server/drizzle/*.sql; hand-check it (see the drizzle-kit traps under phases 4–6)
+pnpm --filter @vadd/web build            # real Vite build — the only check that catches bundle-only failures (CSS imports, browser-hostile barrels)
+pnpm --filter @vadd/cli build            # esbuild + Vite bundle into packages/cli/dist (also runs on prepack)
+pnpm --filter @vadd/cli smoke            # pack → scratch global install → run → HTTP-driven smoke test of the packaged binary
+pnpm transcript:export <objId>           # dump events rows → evals/transcripts/<name>.jsonl
+pnpm eval                                # eval harness: precision/recall vs. golden transcripts (M1)
+npx @vadd/cli                            # packaged entry point → localhost web app (M2)
 ```
 
 Single Vitest file: `pnpm vitest run <path>`; single test: add `-t "<name>"`. The real-adapter integration test is skipped unless `VADD_E2E=1`. `pnpm eval` runs against the recorded corpus and its labels and **currently exits non-zero** — the gate genuinely fails (see Current state), which is the harness working, not a setup problem. It exits non-zero on an unlabelled transcript or an orphan label too, so keep `evals/transcripts/*.jsonl` and `evals/labels/*.labels.json` in exact name correspondence.
 
 For a corpus re-record, run the server as `npx tsx src/index.ts` under the `env -u` list below — **not** `pnpm dev`, whose `tsx watch` reloads on any file touch into an `EADDRINUSE` race that has already killed one run mid-turn.
+
+Real-adapter E2E, when credentials exist: `VADD_E2E=1 pnpm vitest run packages/server/test/e2e-real-agent.test.ts`, under the same `env -u` list (a Claude Code session's own env vars block the adapter). CI (`.github/workflows/ci.yml`) runs lint → typecheck → test → eval on every PR and push to `main`/`master`, with `VADD_E2E` unset and `pnpm eval` as `continue-on-error`.
+
+Runtime configuration is env vars only: `VADD_HOME` (state directory, default `~/.vadd`), `VADD_PORT` (default 4319), and three the packaged `bin.js` sets for itself — `VADD_WEB_DIST`, `VADD_MIGRATIONS_DIR`, `VADD_PROMPTS_DIR`. There is no config file for the server itself; `.vadd/config.json` is the *user repo's* verification spec.
+
+Browser verification: launch Chrome and drive it in **separate** invocations (a `pkill` that names the debugging port kills the launching shell too). `google-chrome --headless=new --remote-debugging-port=9222 ...`, take the `webSocketDebuggerUrl` of the `/json/list` entry whose `type` is `"page"` (the first entry is often an extension background page, which hangs the script), then `node scripts/browser-shot.mjs <ws-url> <outdir> goto|<url> wait|<ms> click|<css>~<text> type|<css>~<value> theme|dark shot|<name> eval|<js>` (`click` prefers an exact trimmed-text match, then substring; the comment inside the script showing `click|button|Release` is stale — the separator is `~`). Always against a scratch `VADD_HOME` and scratch ports, never the live `~/.vadd` or the running dev server. Recipe and traps: `docs/superpowers/notes/2026-08-25-first-agent-browser-render.md`.
