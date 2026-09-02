@@ -75,6 +75,27 @@ export function fitsReadingBudget(event: AgentEvent): BudgetViolation[] {
       level1('headline', event.headline)
       level2('probableCause+suggestedActions', [event.probableCause, ...event.suggestedActions])
       break
+    case 'artifact':
+      event.cards.forEach((card, i) => {
+        level1(`cards[${i}].title`, card.title)
+        switch (card.kind) {
+          case 'text':
+            level2(`cards[${i}].body`, [card.body])
+            break
+          case 'table':
+            // Headers and every cell together: six rows of 20-word cells cost
+            // as much to read as a 100-word paragraph (spec §3.2).
+            level2(`cards[${i}].cells`, [...card.columns, ...card.rows.flat()])
+            break
+          case 'code':
+          case 'diagram':
+            // The body is code or Mermaid, bounded by its line cap in the
+            // schema, not by a word count — it is not prose.
+            if (card.caption !== undefined) level1(`cards[${i}].caption`, card.caption)
+            break
+        }
+      })
+      break
   }
   return found
 }

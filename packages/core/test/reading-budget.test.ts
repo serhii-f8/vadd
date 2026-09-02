@@ -125,3 +125,72 @@ test('flags a long verification field as a Level 1 violation', () => {
     },
   ])
 })
+
+test('A24: a card title is Level 1', () => {
+  const bad: AgentEvent = {
+    type: 'artifact',
+    cards: [{ id: 'a', kind: 'text', title: words(LEVEL_1_WORD_LIMIT + 1), body: 'ok' }],
+  }
+  expect(fitsReadingBudget(bad)).toEqual([
+    {
+      level: 1,
+      field: 'cards[0].title',
+      words: LEVEL_1_WORD_LIMIT + 1,
+      limit: LEVEL_1_WORD_LIMIT,
+    },
+  ])
+})
+
+test('A24: a text body is Level 2', () => {
+  const bad: AgentEvent = {
+    type: 'artifact',
+    cards: [{ id: 'a', kind: 'text', title: 'T', body: words(LEVEL_2_WORD_LIMIT + 1) }],
+  }
+  expect(fitsReadingBudget(bad).map((v) => v.field)).toEqual(['cards[0].body'])
+})
+
+test('A24: a table is one Level 2 block over headers and every cell', () => {
+  const bad: AgentEvent = {
+    type: 'artifact',
+    cards: [
+      {
+        id: 't',
+        kind: 'table',
+        title: 'T',
+        columns: [words(10), words(10)],
+        rows: [
+          [words(20), words(20)],
+          [words(11), words(10)],
+        ],
+      },
+    ],
+  }
+  expect(fitsReadingBudget(bad)).toEqual([
+    { level: 2, field: 'cards[0].cells', words: 81, limit: LEVEL_2_WORD_LIMIT },
+  ])
+})
+
+test('A24: code and diagram bodies are not word-counted; captions are Level 1', () => {
+  const ok: AgentEvent = {
+    type: 'artifact',
+    cards: [
+      { id: 'c', kind: 'code', title: 'T', language: 'ts', code: words(200), caption: 'short' },
+      { id: 'd', kind: 'diagram', title: 'T', notation: 'mermaid', source: words(200) },
+    ],
+  }
+  expect(fitsReadingBudget(ok)).toEqual([])
+  const bad: AgentEvent = {
+    type: 'artifact',
+    cards: [
+      {
+        id: 'c',
+        kind: 'code',
+        title: 'T',
+        language: 'ts',
+        code: 'x',
+        caption: words(LEVEL_1_WORD_LIMIT + 1),
+      },
+    ],
+  }
+  expect(fitsReadingBudget(bad).map((v) => v.field)).toEqual(['cards[0].caption'])
+})
