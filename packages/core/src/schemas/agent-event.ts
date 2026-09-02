@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ARTIFACT_MAX_CARDS, Card } from './card.js'
 
 /**
  * The workflow phases an agent can report from. These are the machine's states
@@ -124,6 +125,16 @@ export const AgentEvent = z.discriminatedUnion('type', [
     headline: z.string().max(120),
     content: z.string().max(400),
   }),
+  /**
+   * Amendment A24. Typed cards beside a `decision_needed` or `plan`. Never a
+   * machine input: `WorkflowRunner.ingest` intercepts it like `memory_note`.
+   */
+  z
+    .object({
+      type: z.literal('artifact'),
+      cards: z.array(Card).min(1).max(ARTIFACT_MAX_CARDS),
+    })
+    .strict(),
 ])
 export type AgentEvent = z.infer<typeof AgentEvent>
 
@@ -136,5 +147,6 @@ export const AGENT_EVENT_TYPES = [
   'evidence',
   'failure',
   'memory_note',
+  'artifact',
 ] as const
 export type AgentEventType = (typeof AGENT_EVENT_TYPES)[number]

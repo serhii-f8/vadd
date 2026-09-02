@@ -50,6 +50,14 @@ export {
   Phase,
 } from './schemas/agent-event.js'
 export {
+  ARTIFACT_MAX_CARDS,
+  Card,
+  type CardKind,
+  CardRole,
+  CODE_LINE_CAP,
+  DIAGRAM_LINE_CAP,
+} from './schemas/card.js'
+export {
   type AgentKind,
   CloneProjectBody,
   CreateObjectiveBody,

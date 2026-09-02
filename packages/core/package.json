@@ -6,7 +6,8 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./scoring/option-priority.js": "./src/scoring/option-priority.ts"
+    "./scoring/option-priority.js": "./src/scoring/option-priority.ts",
+    "./schemas/card.js": "./src/schemas/card.ts"
   },
   "dependencies": {
     "xstate": "^5.20.1",

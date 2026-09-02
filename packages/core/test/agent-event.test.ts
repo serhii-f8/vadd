@@ -100,6 +100,10 @@ test('every declared type parses at least one fixture', () => {
       headline: 'Auth lives in src/auth/',
       content: 'JWT validation happens in middleware.ts.',
     },
+    artifact: {
+      type: 'artifact',
+      cards: [{ id: 'why', kind: 'text', title: 'Why a queue', body: 'Requests time out.' }],
+    },
   }
   for (const type of AGENT_EVENT_TYPES) {
     expect(AgentEvent.safeParse(fixtures[type]).success, type).toBe(true)

@@ -164,13 +164,15 @@ const AGENT_EVENT_TO_MACHINE = {
  * mapping the server owned privately could drift from the states the test
  * enumerates without anything failing.
  *
- * The parameter type deliberately excludes `memory_note`: it is
- * project-scoped metadata, not a phase-transition signal, and has no entry
- * in `AGENT_EVENT_TO_MACHINE`. `WorkflowRunner.ingest` intercepts and
- * persists it before this function is ever called — narrowing the
- * parameter here makes that invariant a type error to violate, rather than
- * an unmapped lookup silently producing `{ type: undefined, event }`.
+ * The parameter type deliberately excludes `memory_note` and `artifact`: both
+ * are display/metadata, not phase-transition signals, and have no entries in
+ * `AGENT_EVENT_TO_MACHINE`. `WorkflowRunner.ingest` intercepts both before this
+ * function is ever called — narrowing the parameter here makes that invariant
+ * a type error to violate, rather than an unmapped lookup silently producing
+ * `{ type: undefined, event }`.
  */
-export function toMachineEvent(event: Exclude<AgentEvent, { type: 'memory_note' }>): WorkflowEvent {
+export function toMachineEvent(
+  event: Exclude<AgentEvent, { type: 'memory_note' | 'artifact' }>,
+): WorkflowEvent {
   return { type: AGENT_EVENT_TO_MACHINE[event.type], event } as WorkflowEvent
 }

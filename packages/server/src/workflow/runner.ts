@@ -195,6 +195,11 @@ export class WorkflowRunner {
       this.#recordMemoryNote(objectiveId, emission.event)
       return
     }
+    if (emission.event.type === 'artifact') {
+      // Task 6 persists it. Until then, intercepted and dropped is still
+      // "never reaches the actor" — the property the type exclusion pins.
+      return
+    }
     this.send(objectiveId, toMachineEvent(emission.event))
   }
 
