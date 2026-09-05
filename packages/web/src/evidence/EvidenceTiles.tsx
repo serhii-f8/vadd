@@ -1,6 +1,6 @@
 import { CircleAlert, Info, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import type { GroupedEvidence } from './group.js'
+import { currentRequired, type GroupedEvidence } from './group.js'
 
 /**
  * The evidence set at a glance, before the rows: what decides whether Done
@@ -8,8 +8,9 @@ import type { GroupedEvidence } from './group.js'
  * amber (warnings). Counts only — the rows below carry the words.
  */
 export function EvidenceTiles({ grouped }: { grouped: GroupedEvidence }) {
-  const requiredPassed = grouped.required.filter((r) => r.status === 'pass').length
-  const requiredTotal = grouped.required.length
+  const current = currentRequired(grouped.required)
+  const requiredPassed = current.filter((r) => r.status === 'pass').length
+  const requiredTotal = current.length
   const allGreen = requiredTotal > 0 && requiredPassed === requiredTotal
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

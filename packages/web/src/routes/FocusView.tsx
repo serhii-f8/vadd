@@ -23,6 +23,7 @@ import { ProblemAlert } from '../focus/ProblemAlert.js'
 import { phasesFor } from '../focus/phase.js'
 import { primaryElementFor, type ViewStateName } from '../focus/primary.js'
 import { TaskList } from '../focus/TaskList.js'
+import { useMediaQuery } from '../lib/use-media-query.js'
 import { NewObjectiveDialog } from '../objectives/NewObjectiveDialog.js'
 
 /**
@@ -39,6 +40,7 @@ const GIT_STATES = new Set(['paused', 'awaitingReview', 'failed'])
 export function FocusView() {
   const { id } = useParams<{ id: string }>()
   const { projects } = useProjects()
+  const md = useMediaQuery('(min-width: 768px)')
   const [aggregate, setAggregate] = useState<Aggregate | null>(null)
   /**
    * Two error kinds, deliberately separate. A load or stream error is transient
@@ -203,6 +205,7 @@ export function FocusView() {
               decisions: aggregate.decisions,
               lastStatusPhase: aggregate.lastStatus?.phase ?? null,
             })}
+            compact={!md}
           />
         )}
 

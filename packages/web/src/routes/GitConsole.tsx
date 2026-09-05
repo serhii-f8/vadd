@@ -404,14 +404,14 @@ export function GitConsole() {
       />
 
       {topology === null && error === null && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
           <Skeleton className="h-64 w-full rounded-xl" />
           <Skeleton className="h-64 w-full rounded-xl" />
         </div>
       )}
 
       {topology !== null && (
-        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
           {/* History, left: the graph is the reason this console exists. */}
           <section className="flex flex-col gap-2 rounded-xl bg-card py-3 ring-1 ring-foreground/10">
             <div className="flex flex-wrap items-center justify-between gap-2 px-3.5">

@@ -56,9 +56,9 @@ export function QuestMap() {
   const nodes = useMemo(() => toFlowNodes(objectives ?? []), [objectives])
 
   return (
-    <>
+    <main className="flex flex-col px-4 py-6 md:px-8">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Map</h1>
+        <h1 className="text-[22px] font-semibold tracking-tight">Map</h1>
       </header>
 
       {error !== null && (
@@ -129,10 +129,12 @@ export function QuestMap() {
               nodesDraggable={false}
               nodesConnectable={false}
               fitView
+              // Two cards must not be blown up to fill the canvas: fit, never enlarge.
+              fitViewOptions={{ maxZoom: 1 }}
             />
           </div>
         </TooltipProvider>
       )}
-    </>
+    </main>
   )
 }

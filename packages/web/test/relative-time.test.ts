@@ -23,4 +23,11 @@ describe('relativeTime', () => {
   it('never goes negative on clock skew', () => {
     expect(relativeTime(ago(-5_000), now)).toBe('now')
   })
+
+  it('has a short form for dense columns', () => {
+    expect(relativeTime(ago(58 * 60_000), now, { short: true })).toBe('58m')
+    expect(relativeTime(ago(2 * 3_600_000), now, { short: true })).toBe('2h')
+    expect(relativeTime(ago(30 * 3_600_000), now, { short: true })).toBe('1d')
+    expect(relativeTime(ago(20_000), now, { short: true })).toBe('now')
+  })
 })

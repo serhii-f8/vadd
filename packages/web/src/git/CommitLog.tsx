@@ -93,7 +93,7 @@ export function CommitLog({ commits }: { commits: GitCommit[] }) {
               dateTime={commit.at}
               className="w-14 shrink-0 text-right font-mono text-xs text-muted-foreground"
             >
-              {relativeTime(commit.at, now)}
+              {relativeTime(commit.at, now, { short: true })}
             </time>
           </li>
         )

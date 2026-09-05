@@ -180,7 +180,7 @@ export function FocusHeader({
                 <MoreHorizontal />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="min-w-48">
               <DropdownMenuItem asChild>
                 <a href={`/api/objectives/${objective.id}/raw`}>
                   <FileText />

@@ -49,13 +49,12 @@ export function IconRail({
                   to={navTo(to, selectedId)}
                   end={to === '/'}
                   aria-label={label}
-                  className={({ isActive }) =>
-                    `relative flex size-10 items-center justify-center rounded-xl hover:no-underline ${
-                      isActive
-                        ? 'bg-accent text-accent-foreground'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                    }`
-                  }
+                  // A string, not a function: `TooltipTrigger asChild` merges
+                  // className through Radix's Slot, which joins strings — a
+                  // function was stringified to its source and every class
+                  // lost, so the badge floated up against the sticky aside
+                  // (seen at 820px, 2026-09-05). NavLink sets aria-current.
+                  className="relative flex size-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground hover:no-underline aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground"
                 >
                   <Icon className="size-[18px]" aria-hidden="true" />
                   {to === '/' && needsYou > 0 && (

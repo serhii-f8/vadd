@@ -10,8 +10,12 @@ import type { GitOwner } from '../api.js'
 export function OwnerBadge({ owner }: { owner: GitOwner }) {
   if (owner.kind === 'vadd') {
     return (
-      <Badge variant="outline" className="font-normal" asChild>
-        <Link to={`/o/${owner.objectiveId}`}>{owner.objectiveTitle}</Link>
+      // Bounded: an objective title can be a whole sentence, and unbounded it
+      // pushed the branch row — and the page — past the viewport (2026-09-05).
+      <Badge variant="outline" className="max-w-40 font-normal" asChild>
+        <Link to={`/o/${owner.objectiveId}`} title={owner.objectiveTitle}>
+          <span className="truncate">{owner.objectiveTitle}</span>
+        </Link>
       </Badge>
     )
   }

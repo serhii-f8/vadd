@@ -1,7 +1,7 @@
 import { GitBranch } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type { Aggregate } from '../api.js'
-import { groupEvidence } from '../evidence/group.js'
+import { currentRequired, groupEvidence } from '../evidence/group.js'
 import { statusFor } from '../routes/stateColor.js'
 import type { ViewStateName } from './primary.js'
 import { stateLabel } from './state-label.js'
@@ -13,7 +13,7 @@ export function OutcomeSummary({ aggregate }: { aggregate: Aggregate }) {
   const state = aggregate.state as ViewStateName
   const status = statusFor(state)
   const verified = aggregate.tasks.filter((t) => t.status === 'verified').length
-  const { required } = groupEvidence(aggregate.evidence)
+  const required = currentRequired(groupEvidence(aggregate.evidence).required)
   const requiredPassed = required.filter((r) => r.status === 'pass').length
   const action = aggregate.objective.integrateAction
   return (

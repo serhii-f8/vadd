@@ -28,6 +28,23 @@ export type GroupedEvidence = {
   warnings: EvidenceRow[]
 }
 
+/**
+ * The required set as the `evidenceComplete` guard sees it: one row per
+ * `commandId`, the newest. `required` above keeps every run as history — a
+ * suite that went red and then green shows both — but a *count* of it
+ * reports old failures as if they were current: a done objective read
+ * "8 not passing" on 2026-09-05 with every current row green.
+ */
+export function currentRequired(required: EvidenceRow[]): EvidenceRow[] {
+  const latest = new Map<string, EvidenceRow>()
+  for (const r of required) {
+    if (r.commandId === null) continue
+    const seen = latest.get(r.commandId)
+    if (!seen || seen.createdAt <= r.createdAt) latest.set(r.commandId, r)
+  }
+  return [...latest.values()]
+}
+
 function newestFirst(a: EvidenceRow, b: EvidenceRow): number {
   return b.createdAt.localeCompare(a.createdAt)
 }

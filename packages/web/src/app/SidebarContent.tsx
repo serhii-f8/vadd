@@ -21,6 +21,8 @@ export type SidebarContentProps = {
   onAddProject: () => void
   /** Fired on every navigation, so a drawer can close itself. */
   onNavigate?: () => void
+  /** Leaves room for the sheet's own close button in the top row. */
+  inDrawer?: boolean
 }
 
 /**
@@ -33,6 +35,7 @@ export function SidebarContent({
   onNewObjective,
   onAddProject,
   onNavigate,
+  inDrawer = false,
 }: SidebarContentProps) {
   const { projects, selectedId, error } = useProjects()
   const hasProjects = projects !== null && projects.length > 0
@@ -42,7 +45,7 @@ export function SidebarContent({
 
   return (
     <div className="flex h-full flex-col gap-4 p-3">
-      <div className="flex items-center justify-between px-2">
+      <div className={`flex items-center justify-between px-2 ${inDrawer ? 'pr-8' : ''}`}>
         <Link
           to={navTo('/', selectedId)}
           onClick={onNavigate}

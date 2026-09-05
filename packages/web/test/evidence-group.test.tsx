@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type EvidenceRow, groupEvidence } from '../src/evidence/group.js'
+import { currentRequired, type EvidenceRow, groupEvidence } from '../src/evidence/group.js'
 
 function row(over: Partial<EvidenceRow> = {}): EvidenceRow {
   return {
@@ -86,5 +86,37 @@ describe('groupEvidence', () => {
 
   it('handles an empty set without inventing groups', () => {
     expect(groupEvidence([])).toEqual({ required: [], advisory: [], warnings: [] })
+  })
+
+  it('currentRequired keeps one row per commandId, the newest', () => {
+    const row = (
+      id: string,
+      commandId: string,
+      status: 'pass' | 'fail',
+      createdAt: string,
+    ): EvidenceRow => ({
+      id,
+      commandId,
+      taskId: null,
+      kind: 'test',
+      status,
+      headline: id,
+      summary: [],
+      artifactPath: null,
+      decidedBy: null,
+      createdAt,
+    })
+    const { required } = groupEvidence([
+      row('old-red', 'suite', 'fail', '2026-09-05T10:00:00.000Z'),
+      row('new-green', 'suite', 'pass', '2026-09-05T11:00:00.000Z'),
+      row('lint', 'lint', 'pass', '2026-09-05T10:30:00.000Z'),
+    ])
+    // History keeps both suite runs; the current set has one, and it is green.
+    expect(required).toHaveLength(3)
+    expect(
+      currentRequired(required)
+        .map((r) => r.id)
+        .sort(),
+    ).toEqual(['lint', 'new-green'])
   })
 })

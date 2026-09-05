@@ -30,8 +30,9 @@ function Shell() {
     (o) => statusFor(o.status as ViewStateName).tone === 'attention',
   ).length
 
-  const sidebar = (
+  const sidebar = (inDrawer: boolean) => (
     <SidebarContent
+      inDrawer={inDrawer}
       objectives={objectives}
       connected={connected}
       onNewObjective={() => {
@@ -54,7 +55,7 @@ function Shell() {
           sidebar was a plain flex child that scrolled away with the page. */}
       {xl ? (
         <aside className="sticky top-0 h-screen w-60 shrink-0 overflow-y-auto border-r border-sidebar-border bg-sidebar">
-          {sidebar}
+          {sidebar(false)}
         </aside>
       ) : md ? (
         <IconRail
@@ -80,7 +81,7 @@ function Shell() {
         <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
           <SheetContent side="left" aria-describedby={undefined}>
             <SheetTitle className="sr-only">Navigation</SheetTitle>
-            {sidebar}
+            {sidebar(true)}
           </SheetContent>
         </Sheet>
       )}
