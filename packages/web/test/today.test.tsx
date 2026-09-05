@@ -208,4 +208,50 @@ describe('Today', () => {
     expect(screen.getByText('7')).toBeTruthy()
     expect(screen.getByText(/tasks verified/i)).toBeTruthy()
   })
+
+  it('lists what is still open below the counts, from the live objective list', async () => {
+    mockFetch({
+      'GET /api/projects': {
+        body: [{ id: 'p1', name: 'Flexpick', repoPath: '/r', agentKind: 'claude-code' }],
+      },
+      'GET /api/projects/p1/today': {
+        body: { date: '2026-09-05', verifiedTasks: 4, decisionsMade: 1, checksPassed: 6 },
+      },
+      'GET /api/objectives': {
+        body: [
+          {
+            id: 'o1',
+            projectId: 'p1',
+            title: 'Score History',
+            status: 'awaitingPlanApproval',
+            worktreePath: null,
+            branchName: 'vadd/493356bd',
+            integrateAction: null,
+            mode: 'standard',
+            updatedAt: '2026-09-05T10:00:00.000Z',
+            verifiedCount: 0,
+            totalCount: 8,
+          },
+          {
+            id: 'o2',
+            projectId: 'p1',
+            title: 'Old and done',
+            status: 'done',
+            worktreePath: null,
+            branchName: null,
+            integrateAction: 'commit',
+            mode: 'standard',
+            updatedAt: '2026-08-17T10:00:00.000Z',
+            verifiedCount: 6,
+            totalCount: 6,
+          },
+        ],
+      },
+    })
+    renderToday()
+    expect(await screen.findByText('4')).toBeTruthy()
+    expect(await screen.findByRole('link', { name: /Score History/ })).toBeTruthy()
+    expect(screen.getByText('Waiting for plan approval')).toBeTruthy()
+    expect(screen.queryByText('Old and done')).toBeNull()
+  })
 })
