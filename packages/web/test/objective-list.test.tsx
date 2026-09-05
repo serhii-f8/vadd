@@ -22,6 +22,8 @@ const objective = (over: Record<string, unknown> = {}) => ({
   worktreePath: '/tmp/wt',
   branchName: 'vadd/abc12345',
   integrateAction: null,
+  mode: 'standard',
+  updatedAt: '2026-09-05T09:57:00.000Z',
   verifiedCount: 1,
   totalCount: 3,
   ...over,
@@ -41,7 +43,8 @@ describe('ObjectiveList', () => {
       </MemoryRouter>,
     )
     expect(await screen.findByText('Fix the login redirect')).toBeTruthy()
-    expect(screen.getByText('executing')).toBeTruthy()
+    // Human words, not the machine name (spec §3.2).
+    expect(screen.getByText('Executing')).toBeTruthy()
   })
 
   it('links each row to its Focus View', async () => {
