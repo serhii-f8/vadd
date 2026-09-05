@@ -105,6 +105,27 @@ function setup(behavior: 'immediate' | 'hang') {
   return { db, bus, agents, objective, cancelCalls }
 }
 
+describe('renderTurnPrompt preface', () => {
+  it('prepends the preface to a phase prompt, separated by a blank line', () => {
+    const objective = { id: 'o', title: 't', goalText: 'g', worktreePath: null }
+    const { text } = renderTurnPrompt(objective, {
+      phase: 'execute-task',
+      vars: { taskTitle: 'T', taskDescription: 'D' },
+      preface: '## Objective context\nGoal: g',
+    })
+    expect(text.startsWith('## Objective context\nGoal: g\n\n')).toBe(true)
+    expect(text).toContain('Task: T')
+  })
+
+  it('renders identically with no preface', () => {
+    const objective = { id: 'o', title: 't', goalText: 'g', worktreePath: null }
+    const plain = renderTurnPrompt(objective, { phase: 'propose' })
+    const explicit = renderTurnPrompt(objective, { phase: 'propose', preface: undefined })
+    expect(explicit.text).toBe(plain.text)
+    expect(plain.text.startsWith('\n')).toBe(false)
+  })
+})
+
 describe('turnTimeoutMs', () => {
   it('defaults to 20 minutes', () => {
     const db = freshDb()

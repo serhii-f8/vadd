@@ -182,9 +182,18 @@ export class ContractPipeline {
     let parsed: unknown
     try {
       parsed = JSON.parse(body)
-    } catch {
+    } catch (err) {
       // No repair heuristics in v1 (design §3.3). Parse failures are a counted
       // eval metric, so the corpus decides whether repair is worth building.
+      //
+      // Retained for the repair turn like a schema rejection: told only "that
+      // turn owes status", an agent that believes it already sent the block
+      // substitutes rather than corrects (m1-timebox-decision.md §7 item 2).
+      // The parser's own reason plus the block's opening is what it needs to
+      // recognise and fix the one it wrote.
+      const reason = err instanceof Error ? err.message : String(err)
+      const opening = body.trim().slice(0, 60)
+      this.#schemaRejections.push(`a block that is not valid JSON (${reason}): ${opening}…`)
       this.#violation('parse', body)
       return
     }
@@ -343,8 +352,9 @@ export class ContractPipeline {
   }
 
   /**
-   * Blocks this turn emitted that failed schema validation, each as one line
-   * naming the type, the failing field and the rule broken.
+   * Blocks this turn emitted that were rejected — schema failures as one line
+   * naming the type, the failing field and the rule broken; unparseable JSON
+   * as the parser's reason and the block's opening characters.
    *
    * The repair turn needs this and never had it. A turn whose `decision_needed`
    * was rejected for an over-long `label` was told only "That turn owes

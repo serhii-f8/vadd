@@ -338,6 +338,38 @@ describe('WorkflowRunner', () => {
     expect(row?.kind).toBe('architecture')
   })
 
+  it('a memory_note repeating an existing headline updates that row instead of adding a twin', () => {
+    // `buildProjectMemoryPromptBlock` injects the five newest rows per kind.
+    // Without this, an agent that re-learns the same gotcha on every
+    // objective (it will — the note is the whole point) fills all five slots
+    // with copies and crowds out everything else the project knows.
+    runner.start('o')
+    runner.send('o', { type: 'START' })
+    const note = (content: string): ContractEmission => ({
+      kind: 'event',
+      turnId: 't',
+      extracted: false,
+      sourceEventIds: [1],
+      event: { type: 'memory_note', kind: 'known_issue', headline: 'CI is flaky', content },
+    })
+    emitFromPipeline('o', note('Parallel runs collide on port 4319.'))
+    emitFromPipeline('o', note('Parallel runs collide on port 4319; serialise them.'))
+
+    const rows = db.select().from(projectMemory).where(eq(projectMemory.projectId, 'proj-1')).all()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.content).toBe('Parallel runs collide on port 4319; serialise them.')
+
+    // Same headline under the other kind is a different fact, not a twin.
+    emitFromPipeline('o', {
+      kind: 'event',
+      turnId: 't',
+      extracted: false,
+      sourceEventIds: [1],
+      event: { type: 'memory_note', kind: 'architecture', headline: 'CI is flaky', content: 'x' },
+    })
+    expect(db.select().from(projectMemory).all()).toHaveLength(2)
+  })
+
   it('an artifact persists an artifacts row carrying the actor state and never reaches the actor', () => {
     runner.start('o')
     runner.send('o', { type: 'START' })

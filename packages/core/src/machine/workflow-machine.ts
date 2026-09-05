@@ -43,6 +43,7 @@ export function initialContext(input: WorkflowInput): WorkflowContext {
     approvals: [],
     pendingDecisionId: null,
     pendingClarification: null,
+    clarifications: [],
     turnEvents: [],
     lastFailure: null,
     resumeState: null,
@@ -257,7 +258,18 @@ export const workflowMachine = setup({
       on: {
         ANSWER_CLARIFICATION: {
           target: 'exploring',
-          actions: assign({ pendingClarification: () => null }),
+          actions: assign({
+            // Keep the pair, not just clear the question: `exploring`'s entry
+            // re-sends the explore prompt, and the answer has to be in it.
+            clarifications: ({ context, event }) =>
+              event.type === 'ANSWER_CLARIFICATION' && context.pendingClarification !== null
+                ? [
+                    ...(context.clarifications ?? []),
+                    { question: context.pendingClarification, answer: event.answer },
+                  ]
+                : (context.clarifications ?? []),
+            pendingClarification: () => null,
+          }),
         },
       },
     },

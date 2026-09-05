@@ -1,11 +1,13 @@
 ---
-version: 2
+version: 3
 phase: verify
 expects: [evidence]
 permits: [memory_note]
 ---
 VADD has already run this objective's verification commands and recorded their
-results. Do not run them again.
+results. Do not run them again. What they found:
+
+{{commandResults}}
 
 Judge each acceptance check below against the work as it stands, and report one
 `evidence` event per check.

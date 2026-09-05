@@ -348,6 +348,24 @@ test('schemaRejections is empty once the turn is closed', async () => {
   expect(pipe.schemaRejections()).toEqual([])
 })
 
+test('an unparseable block is retained as a rejection the repair turn can quote', async () => {
+  // m1-timebox-decision.md §7 item 2: a schema rejection named its field and
+  // rule, but unparseable JSON told the repair turn only what it owed — so an
+  // agent that believed it had sent the block had no reason to resend it.
+  const { pipe } = collect()
+  pipe.beginTurn({ turnId: 't1', expect: [['status']] })
+  pipe.ingest(
+    chunk('```vadd-event\n{"type":"status","phase":"exploring","headline":"Read it",}\n```\n'),
+  )
+  const r = pipe.schemaRejections()
+  expect(r).toHaveLength(1)
+  expect(r[0]).toMatch(/not valid JSON/)
+  // The JSON parser's own reason, and enough of the block to recognise it.
+  expect(r[0]).toMatch(/JSON/)
+  expect(r[0]).toContain('{"type":"status"')
+  await pipe.endTurn('t1')
+})
+
 test('a rejection names the type even when type itself is what failed', async () => {
   const { pipe } = collect()
   pipe.beginTurn({ turnId: 't1', expect: [['status']] })

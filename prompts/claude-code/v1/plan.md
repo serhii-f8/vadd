@@ -1,5 +1,5 @@
 ---
-version: 3
+version: 4
 phase: plan
 expects: [plan]
 permits: [artifact, memory_note]
@@ -14,7 +14,8 @@ If a task is a deliberate TDD "red" step — its entire purpose is a test that
 must fail until a later task fixes it — declare `expectFailing` naming the
 command id(s) from that list this task is expected to leave failing. Every
 other required command must still be expected to pass. Omit `expectFailing`
-for a task meant to leave everything green.
+for a task meant to leave everything green, and always when the list is
+"none".
 
 Emit only: `plan` as your required result.
 

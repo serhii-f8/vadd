@@ -118,8 +118,161 @@ function verificationChecksVar(context: WorkflowContext): string | null {
  * to exempt is a normal outcome, not a broken prompt.
  */
 function verifyCommandIdsVar(context: WorkflowContext): string {
-  if (!context.verificationSpec) return ''
-  return context.verificationSpec.verify.commands.map((c) => c.id).join(', ')
+  const ids = context.verificationSpec?.verify.commands.map((c) => c.id) ?? []
+  // A literal "none", not an empty string: "Available verification commands: "
+  // trailing off reads as a rendering fault, and `plan.md` can only tell the
+  // agent to omit `expectFailing` for a list it can see is empty.
+  return ids.length === 0 ? 'none' : ids.join(', ')
+}
+
+/**
+ * The option the user chose, as one line for the `plan` prompt — or null when
+ * this objective has no decided decision (Fast Fix skips `proposing`; a
+ * hand-driven objective may never have had one).
+ *
+ * `DECIDE` fills in `decisions.chosenId` and moves the machine to `planning`,
+ * whose prompt used to carry only the goal: the agent planned without ever
+ * being told which of its own options had been picked, and had to infer it
+ * from a plan-shaped question about a goal it had already proposed for. The
+ * label and the option's own `verification` string are the two fields the
+ * plan needs; the rest of the card is the agent's own text.
+ */
+function decisionLine(db: Db, objectiveId: string, context: WorkflowContext): string | null {
+  if (!context.pendingDecisionId) return null
+  const row = db
+    .select()
+    .from(decisions)
+    .where(and(eq(decisions.id, context.pendingDecisionId), eq(decisions.objectiveId, objectiveId)))
+    .get()
+  if (!row?.chosenId) return null
+  const options = Array.isArray(row.options)
+    ? (row.options as { id?: unknown; label?: unknown; verification?: unknown }[])
+    : []
+  const chosen = options.find((o) => o.id === row.chosenId)
+  if (!chosen || typeof chosen.label !== 'string') return null
+  const verification =
+    typeof chosen.verification === 'string' && chosen.verification.length > 0
+      ? ` Verify it by: ${chosen.verification}`
+      : ''
+  return `Decision taken: "${chosen.label}" — the user chose it from the options you offered.${verification}`
+}
+
+/**
+ * Every clarification the user has answered, for the re-explore prompt. The
+ * machine used to drop the answer on the floor and re-send the identical
+ * goal, so the agent could re-ask the question it had just had answered.
+ */
+function clarificationsBlock(context: WorkflowContext): string | null {
+  const pairs = context.clarifications ?? []
+  if (pairs.length === 0) return null
+  return [
+    'Clarified with the user (do not ask these again):',
+    ...pairs.map((c) => `- Q: ${c.question}\n  A: ${c.answer}`),
+  ].join('\n')
+}
+
+/**
+ * What a non-standard mode changes about the phase, for the `propose` and
+ * `plan` prompts — which otherwise read as written for a standard feature
+ * objective (TDD red steps, "independently verifiable" tasks) regardless of
+ * mode. The templates stay mode-agnostic so one file serves all three.
+ */
+function modeNote(mode: WorkflowContext['mode']): string | null {
+  switch (mode) {
+    case 'fastfix':
+      return (
+        'This is a Fast Fix: a small, low-risk change. Plan a single task when one ' +
+        'suffices — a one-task plan can be approved without waiting for the user; a ' +
+        'longer one cannot.'
+      )
+    case 'investigation':
+      return (
+        'This is an investigation objective: read-only, no code changes. Each task ' +
+        'is a question to answer with cited evidence, and the objective ends in a ' +
+        'report rather than a diff.'
+      )
+    default:
+      return null
+  }
+}
+
+/**
+ * The `goalText` a phase prompt receives: the objective's goal, then whatever
+ * turn-scoped context that phase needs, each as its own paragraph. Folded
+ * into `goalText` rather than given placeholders of their own so that a user
+ * override of the template (D11) that kept `{{goalText}}` keeps receiving
+ * them — the same reuse amendment A10 chose for the revision note.
+ */
+function goalWithContext(context: WorkflowContext, parts: (string | null)[]): string {
+  const extras = parts.filter((p): p is string => p !== null && p.length > 0)
+  if (context.reviseInstruction) extras.push(`Revision note: ${context.reviseInstruction}`)
+  return [context.goalText, ...extras].join('\n\n')
+}
+
+/**
+ * One line per command row EvidenceCollector recorded for the current run,
+ * for `verify.md`'s `{{commandResults}}`. The template tells the agent the
+ * commands were already run and not to run them again; showing what they
+ * found is what makes that instruction followable rather than a reason to
+ * run them anyway.
+ */
+function commandResultsVar(db: Db, objectiveId: string, context: WorkflowContext): string {
+  const runId = context.verificationRunId
+  if (runId === null) return 'No command results recorded.'
+  const rows = db
+    .select()
+    .from(evidenceItems)
+    .where(eq(evidenceItems.objectiveId, objectiveId))
+    .all()
+    .filter((r) => r.commandId !== null && r.artifactPath?.includes(`/${runId}/`) === true)
+  if (rows.length === 0) return 'No command results recorded.'
+  return rows.map((r) => `- ${r.commandId}: ${r.status} — ${r.headline}`).join('\n')
+}
+
+/**
+ * M1 design §6: a fresh session mid-objective is "seeded with goal + current
+ * task + verified-task headlines". `AgentRegistry` always opens a blank
+ * session, and every phase template past `explore` carries only its own
+ * phase's input — `execute-task.md` a title and a description — so after a
+ * restart, a crash or a timed-out turn the agent implemented task N knowing
+ * nothing of the goal, the plan, the decision or the project's memory. This
+ * is that seed, sent as a preface to the first prompt of the new session.
+ */
+function objectiveBrief(
+  db: Db,
+  row: ObjectiveRow,
+  context: WorkflowContext,
+  decision: string | null,
+): string {
+  const lines: string[] = [
+    '## Objective context',
+    '',
+    'This is a new agent session. Earlier turns for this objective ran in a session',
+    'that no longer exists, and nothing from them is in your context — trust the',
+    'worktree, not your memory of it.',
+    '',
+    `Goal: ${context.goalText}`,
+  ]
+  const mode = modeNote(context.mode)
+  if (mode) lines.push('', mode)
+  const clarified = clarificationsBlock(context)
+  if (clarified) lines.push('', clarified)
+  if (decision) lines.push('', decision)
+  if (context.tasks.length > 0) {
+    lines.push('', `Plan (${context.tasks.length} tasks):`)
+    context.tasks.forEach((t, i) => {
+      const status =
+        i < context.currentTaskIndex
+          ? 'verified'
+          : i === context.currentTaskIndex
+            ? 'current'
+            : 'pending'
+      lines.push(`${i + 1}. [${status}] ${t.title}`)
+    })
+  }
+  const memory = buildProjectMemoryPromptBlock(db, row.projectId)
+  if (memory !== 'No project memory recorded yet.') lines.push('', memory)
+  return lines.join('\n')
 }
 
 async function sendPromptEffect(
@@ -141,6 +294,12 @@ async function sendPromptEffect(
     }
   }
 
+  // Read once, up front: `goalWithContext` and the brief both need the row's
+  // project, and every git-touching action re-reads it fresh for the same
+  // reason `loadObjective`'s comment gives.
+  const row = loadObjective(deps.db, objectiveId)
+  const decision = decisionLine(deps.db, objectiveId, context)
+
   let vars: Record<string, string> = {}
   if (phase === 'execute-task' || phase === 'execute-task-investigation') {
     const taskVars = executeTaskVars(context)
@@ -155,26 +314,25 @@ async function sendPromptEffect(
       return
     }
     vars = taskVars
+  } else if (phase === 'explore') {
+    // A re-explore after `clarifying` carries every answered question; the
+    // first explore has none and renders the bare goal.
+    vars = { goalText: goalWithContext(context, [clarificationsBlock(context)]) }
   } else if (phase === 'propose') {
-    // Mirrors the `plan` phase's A10 handling just below: a REVISE-triggered
-    // re-propose overrides `goalText` in the default merge the same way, since
-    // `propose.md` has no placeholder of its own to carry a revision note.
-    vars = context.reviseInstruction
-      ? { goalText: `${context.goalText}\n\nRevision note: ${context.reviseInstruction}` }
-      : {}
+    // `propose.md` has only `{{goalText}}`: the mode note (investigation
+    // only — Fast Fix never proposes) and amendment A10's revision note ride
+    // on it, the way `plan` below does.
+    vars = { goalText: goalWithContext(context, [modeNote(context.mode)]) }
   } else if (phase === 'plan') {
-    const verifyCommandIds = verifyCommandIdsVar(context)
     // Amendment A10: a REVISE from awaitingPlanApproval re-enters `planning`,
-    // whose template only has `{{goalText}}` and now also `{{verifyCommandIds}}`
-    // — override goalText in the default merge (`renderTurnPrompt` spreads
-    // `turn.vars` after it) rather than adding a new placeholder, the same
-    // reuse `executeTaskVars` already relies on.
-    vars = context.reviseInstruction
-      ? {
-          goalText: `${context.goalText}\n\nRevision note: ${context.reviseInstruction}`,
-          verifyCommandIds,
-        }
-      : { verifyCommandIds }
+    // whose template only has `{{goalText}}` and `{{verifyCommandIds}}` —
+    // the decision the user took, the mode note and the revision note all
+    // override goalText in the default merge (`renderTurnPrompt` spreads
+    // `turn.vars` after it) rather than adding placeholders.
+    vars = {
+      goalText: goalWithContext(context, [decision, modeNote(context.mode)]),
+      verifyCommandIds: verifyCommandIdsVar(context),
+    }
   } else if (phase === 'verify') {
     const verificationChecks = verificationChecksVar(context)
     // A null spec, or one with no checks, must never let the literal
@@ -189,10 +347,12 @@ async function sendPromptEffect(
       runner.send(objectiveId, { type: 'TURN_FAILED', reason: 'error', message })
       return
     }
-    vars = { verificationChecks }
+    vars = {
+      verificationChecks,
+      commandResults: commandResultsVar(deps.db, objectiveId, context),
+    }
   }
 
-  const row = loadObjective(deps.db, objectiveId)
   const objectiveRef = {
     id: row.id,
     projectId: row.projectId,
@@ -207,6 +367,15 @@ async function sendPromptEffect(
       projectMemory: buildProjectMemoryPromptBlock(deps.db, objectiveRef.projectId),
     }
   }
+
+  // Decided before `ensure()` below can change the answer: a session that has
+  // to be started for any phase past `explore` is a fresh one mid-objective,
+  // and the first prompt it sees carries the brief. `explore` is exempt — its
+  // template already carries the goal and the project memory, and a
+  // re-explore's clarifications ride on `goalText` above.
+  const fresh = !deps.agents.get(objectiveId)
+  const preface =
+    fresh && phase !== 'explore' ? objectiveBrief(deps.db, row, context, decision) : undefined
 
   // `runTurn` requires a session that already exists — it calls `agents.get()`
   // and throws `TurnRejected('No active agent session', 500)` on a miss. The
@@ -234,7 +403,7 @@ async function sendPromptEffect(
 
   let attempt: Promise<TurnOutcome>
   try {
-    attempt = runTurn(deps, objectiveRef, { phase, vars })
+    attempt = runTurn(deps, objectiveRef, { phase, vars, preface })
   } catch (err) {
     // `runTurn` can throw synchronously (`TurnRejected` — e.g. a turn already
     // in flight, or a bad phase). No turn was opened, so there is nothing to

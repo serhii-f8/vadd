@@ -278,11 +278,13 @@ describe('bindEffects', () => {
   let settleNext: () => void
   let promptedPhases: () => string[]
   let lastPromptText: () => string
+  let agents: AgentRegistry
 
   beforeEach(async () => {
     const ctx = setup()
     db = ctx.db
     runner = ctx.runner
+    agents = ctx.agents
     wt = ctx.wt
     promptCalls = ctx.promptCalls
     queueEvents = ctx.queueEvents
@@ -475,6 +477,95 @@ describe('bindEffects', () => {
     // The default state in this file's fixtures — no explicit update to
     // objectives.verificationSpec, so it stays null.
     await toAwaitingPlanApproval()
+    expect(lastPromptText()).not.toContain('{{')
+  })
+
+  it('the plan prompt names the option the user chose', async () => {
+    // DECIDE used to fill in `decisions.chosenId` and nothing else: the plan
+    // prompt carried only the goal, so the agent planned without knowing
+    // which of its own options had been picked.
+    await toAwaitingPlanApproval()
+    expect(lastPromptText()).toContain('Decision taken: "Option A"')
+    expect(lastPromptText()).toContain('tests pass')
+    expect(lastPromptText()).not.toContain('Option B')
+  })
+
+  it('the plan prompt says "none" rather than trailing off when no command is resolved', async () => {
+    await toAwaitingPlanApproval()
+    expect(lastPromptText()).toContain('Available verification commands: none')
+  })
+
+  it('a re-explore after a clarification carries the question and the answer', async () => {
+    runner.start('o')
+    queueEvents(
+      [{ type: 'clarification', question: 'Which environment?', suggestedAnswers: ['local'] }],
+      [STATUS_EVENT],
+    )
+    runner.send('o', { type: 'START' })
+    await settleFakeTurn() // explore settles -> clarifying
+    expect(runner.get('o')?.getSnapshot().value).toBe('clarifying')
+
+    runner.send('o', { type: 'ANSWER_CLARIFICATION', answer: 'staging' })
+    await vi.waitFor(() => expect(promptedPhases()).toEqual(['explore', 'explore']))
+    expect(lastPromptText()).toContain('Which environment?')
+    expect(lastPromptText()).toContain('staging')
+    // Still the explore template — the answer rides on the goal, not a
+    // second template the D11 override mechanism would have to know about.
+    expect(lastPromptText()).toContain('Goal: g')
+  })
+
+  it("an investigation objective's plan prompt says the tasks are questions, not changes", async () => {
+    db.update(objectives).set({ mode: 'investigation' }).where(eq(objectives.id, 'o')).run()
+    await toAwaitingPlanApproval()
+    expect(lastPromptText()).toMatch(/investigation/i)
+    expect(lastPromptText()).toMatch(/no code change/i)
+  })
+
+  it("a fast-fix objective's plan prompt asks for a single task", async () => {
+    db.update(objectives).set({ mode: 'fastfix' }).where(eq(objectives.id, 'o')).run()
+    runner.start('o')
+    queueEvents([STATUS_EVENT], [PLAN_EVENT])
+    runner.send('o', { type: 'START' })
+    await settleFakeTurn() // explore settles -> planning (Fast Fix skips propose)
+    await vi.waitFor(() => expect(promptedPhases()).toEqual(['explore', 'plan']))
+    expect(lastPromptText()).toMatch(/Fast Fix/)
+    expect(lastPromptText()).toMatch(/single task/i)
+  })
+
+  it('a turn that has to start a fresh session mid-objective is prefaced with an objective brief', async () => {
+    // M1 design §6: a fresh session is "seeded with goal + current task +
+    // verified-task headlines". The registry always opens a blank session,
+    // and execute-task.md carries only the task — so after a restart, crash
+    // or timeout the agent implemented task N knowing nothing else.
+    await toExecuting(EXECUTE_TASK_OK)
+    expect(lastPromptText()).not.toContain('Objective context')
+
+    await agents.stop('o')
+    runner.send('o', { type: 'PAUSE' })
+    await vi.waitFor(() => expect(runner.get('o')?.getSnapshot().value).toBe('paused'))
+    runner.send('o', { type: 'RESUME' })
+    await vi.waitFor(() => expect(promptCalls()).toBeGreaterThanOrEqual(5))
+
+    const text = lastPromptText()
+    expect(text).toContain('Objective context')
+    expect(text).toContain('Goal: g')
+    expect(text).toContain('Decision taken: "Option A"')
+    expect(text).toContain('1. [current] Write a failing test')
+    expect(text).toContain('2. [pending] Fix it')
+    // The brief precedes the phase prompt; it does not replace it.
+    expect(text.indexOf('Objective context')).toBeLessThan(text.indexOf('Implement this task'))
+  })
+
+  it('the verify prompt reports the recorded command results beside the checks', async () => {
+    db.update(objectives)
+      .set({ verificationSpec: SPEC_WITH_CHECK })
+      .where(eq(objectives.id, 'o'))
+      .run()
+    await toExecuting(EXECUTE_TASK_OK)
+    await settleFakeTurn() // execute-task settles -> verifying -> collector -> verify prompt
+    await vi.waitFor(() => expect(promptedPhases()).toContain('verify'))
+    expect(lastPromptText()).toContain('check-0: Bug is reproduced by a failing test')
+    expect(lastPromptText()).toMatch(/- test: pass/)
     expect(lastPromptText()).not.toContain('{{')
   })
 

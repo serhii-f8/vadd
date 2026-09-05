@@ -85,7 +85,10 @@ test('vars supplied by the caller satisfy the phases the objective row cannot', 
       payload: {
         type: 'prompt',
         phase: 'verify',
-        vars: { verificationChecks: 'check-0: Bug reproduced by a failing test' },
+        vars: {
+          verificationChecks: 'check-0: Bug reproduced by a failing test',
+          commandResults: '- test: pass',
+        },
       },
     })
     expect(res.statusCode).toBe(202)

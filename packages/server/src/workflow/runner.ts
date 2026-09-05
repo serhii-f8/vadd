@@ -7,7 +7,7 @@ import {
   toMachineEvent,
   type workflowMachine,
 } from '@vadd/core'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { ActorRefFrom } from 'xstate'
 import { createActor } from 'xstate'
 import type { AgentRegistry } from '../agent/registry.js'
@@ -115,8 +115,15 @@ export class WorkflowRunner {
     // snapshot's own copy of it can be stale by the time of a restart. The
     // row is the source of truth here, the same way `start()`'s
     // `initialContext` already treats it for a fresh actor.
-    const resumable = snapshot as { context?: { lowEnergy?: boolean } }
-    if (resumable.context) resumable.context.lowEnergy = row.lowEnergy
+    const resumable = snapshot as {
+      context?: { lowEnergy?: boolean; clarifications?: unknown[] }
+    }
+    if (resumable.context) {
+      resumable.context.lowEnergy = row.lowEnergy
+      // Snapshots written before `clarifications` existed restore without
+      // it; an `assign` spreading `undefined` would then throw mid-turn.
+      resumable.context.clarifications ??= []
+    }
     // xstate v5 types `input` as required on `ActorOptions` whenever the
     // machine's own input type isn't `undefined` (`RequiredActorOptionsKeys`
     // in createActor.d.ts), with no exemption for `snapshot` — even though at
@@ -227,6 +234,32 @@ export class WorkflowRunner {
       .where(eq(objectives.id, objectiveId))
       .get()
     if (!objective) return
+    const now = new Date().toISOString()
+    // Same project, same kind, same headline: the agent re-learned a fact it
+    // (or a predecessor) already recorded. Refresh that row — newest content,
+    // newest timestamp, so it stays inside the five-per-kind injection window
+    // — rather than adding a twin that would crowd a different fact out of
+    // `buildProjectMemoryPromptBlock`'s cap. A22's design listed
+    // deduplication as out of its own scope, not as undesirable.
+    const existing = this.#db
+      .select({ id: projectMemory.id })
+      .from(projectMemory)
+      .where(
+        and(
+          eq(projectMemory.projectId, objective.projectId),
+          eq(projectMemory.kind, event.kind),
+          eq(projectMemory.headline, event.headline),
+        ),
+      )
+      .get()
+    if (existing) {
+      this.#db
+        .update(projectMemory)
+        .set({ content: event.content, sourceObjectiveId: objectiveId, createdAt: now })
+        .where(eq(projectMemory.id, existing.id))
+        .run()
+      return
+    }
     this.#db
       .insert(projectMemory)
       .values({
@@ -236,7 +269,7 @@ export class WorkflowRunner {
         headline: event.headline,
         content: event.content,
         sourceObjectiveId: objectiveId,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
       })
       .run()
   }

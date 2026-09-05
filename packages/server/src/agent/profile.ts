@@ -1,9 +1,9 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { contractReference } from '@vadd/core'
 import { vaddHome } from '../paths.js'
-import { bundledPromptDir, parseTemplate } from '../prompts/renderer.js'
+import { loadTemplate } from '../prompts/renderer.js'
 
 /**
  * A token only VADD's own generated CLAUDE.md contains.
@@ -45,10 +45,10 @@ export function ensureAgentProfile(): string {
     copyFileSync(credentialsSrc, join(dir, '.credentials.json'))
   }
 
-  const addendum = parseTemplate(
-    readFileSync(join(bundledPromptDir(), 'system-addendum.md'), 'utf8'),
-    'system-addendum.md',
-  ).body
+  // D11: a `~/.vadd/prompts/system-addendum.md` override wins over the
+  // bundled file, exactly as it does for every phase template. Read here, at
+  // profile generation, so an edit takes effect on the next server start.
+  const addendum = loadTemplate('system-addendum').body
 
   writeFileSync(
     join(dir, 'CLAUDE.md'),

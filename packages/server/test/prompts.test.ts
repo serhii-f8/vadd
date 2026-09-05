@@ -171,8 +171,21 @@ test('verify.md asks for the checks, not the commands', () => {
   // judges the acceptance checks — the one thing running a command cannot
   // produce — so shipping `{{verificationCommands}}` would be asking it to
   // re-run a suite VADD has already run and recorded.
+  //
+  // It does carry the *results* of those commands: "do not run them again"
+  // is only a fair instruction when the agent can see what running them
+  // found.
   const body = loadTemplate('verify').body
-  expect(placeholdersIn(body)).toEqual(['verificationChecks'])
+  expect(placeholdersIn(body).sort()).toEqual(['commandResults', 'verificationChecks'])
+})
+
+test('system-addendum honours a user override the way every phase template does (D11)', () => {
+  mkdirSync(userPromptDir(), { recursive: true })
+  writeFileSync(
+    join(userPromptDir(), 'system-addendum.md'),
+    ['---', 'version: 1', 'phase: system', 'expects: []', '---', 'MY ADDENDUM'].join('\n'),
+  )
+  expect(loadTemplate('system-addendum').body.trim()).toBe('MY ADDENDUM')
 })
 
 test('the objective-derived vars alone leave five templates unsatisfied', () => {

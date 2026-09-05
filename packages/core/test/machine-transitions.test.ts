@@ -112,6 +112,38 @@ describe('the happy path', () => {
     expect(actor.getSnapshot().value).toBe('exploring')
   })
 
+  it('ANSWER_CLARIFICATION keeps the question and answer in context for the re-explore prompt', () => {
+    // The answer used to be dropped on the floor: the handler nulled
+    // `pendingClarification` and re-entered `exploring`, whose prompt carried
+    // the identical goal — so the agent could re-ask the very question the
+    // user had just answered. The pair has to survive here for `effects.ts`
+    // to fold into the next explore prompt.
+    const actor = start()
+    actor.send({ type: 'START' })
+    actor.send({
+      type: 'CLARIFICATION',
+      event: { type: 'clarification', question: 'which db?', suggestedAnswers: [] },
+    })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'ANSWER_CLARIFICATION', answer: 'sqlite' })
+    expect(actor.getSnapshot().context.clarifications).toEqual([
+      { question: 'which db?', answer: 'sqlite' },
+    ])
+    expect(actor.getSnapshot().context.pendingClarification).toBeNull()
+
+    // A second round appends rather than replaces.
+    actor.send({
+      type: 'CLARIFICATION',
+      event: { type: 'clarification', question: 'which env?', suggestedAnswers: [] },
+    })
+    actor.send({ type: 'TURN_FINISHED' })
+    actor.send({ type: 'ANSWER_CLARIFICATION', answer: 'staging' })
+    expect(actor.getSnapshot().context.clarifications).toEqual([
+      { question: 'which db?', answer: 'sqlite' },
+      { question: 'which env?', answer: 'staging' },
+    ])
+  })
+
   it('proposing → awaitingDecision → planning', () => {
     const actor = start()
     actor.send({ type: 'START' })

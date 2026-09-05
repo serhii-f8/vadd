@@ -1,9 +1,9 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { contractReference } from '@vadd/core'
 import { vaddHome } from '../../paths.js'
-import { bundledPromptDir, parseTemplate } from '../../prompts/renderer.js'
+import { loadTemplate } from '../../prompts/renderer.js'
 import type { AgentKindConfig } from './types.js'
 
 /**
@@ -47,10 +47,9 @@ export function codexConfig(): AgentKindConfig {
       // still additionally discovered rather than shadowed outright — the
       // override file always wins at the global-scope layer regardless of
       // what else CODEX_HOME might also contain.
-      const addendum = parseTemplate(
-        readFileSync(join(bundledPromptDir(), 'system-addendum.md'), 'utf8'),
-        'system-addendum.md',
-      ).body
+      // D11: same override path as `ensureAgentProfile()` — one addendum file
+      // serves both agents, so an override edits both.
+      const addendum = loadTemplate('system-addendum').body
 
       writeFileSync(
         join(dir, 'AGENTS.override.md'),

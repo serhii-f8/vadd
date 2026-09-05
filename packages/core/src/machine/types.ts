@@ -103,6 +103,19 @@ export type WorkflowContext = {
   pendingDecisionId: string | null
   pendingClarification: string | null
   /**
+   * Every clarification the agent asked and the user answered, oldest first.
+   *
+   * `ANSWER_CLARIFICATION` used to null `pendingClarification` and drop the
+   * answer itself, so the re-entered `exploring` sent the identical goal and
+   * the agent could re-ask the question the user had just answered. The pairs
+   * live in context, not a table: they are turn-scoped input to the next
+   * explore prompt (`effects.ts` folds them into `goalText`), and the
+   * persisted snapshot already carries context across a restart. A snapshot
+   * written before this field existed restores without it — `WorkflowRunner.
+   * resume` backfills `[]`, the same way it re-syncs `lowEnergy`.
+   */
+  clarifications: { question: string; answer: string }[]
+  /**
    * Which `AgentEvent` types the *open turn* has produced.
    *
    * The machine advances on `TURN_FINISHED`, not on the first agent event: a

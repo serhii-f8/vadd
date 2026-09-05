@@ -145,6 +145,7 @@ const ctx = (over: Partial<WorkflowContext>): WorkflowContext =>
     approvals: [],
     pendingDecisionId: null,
     pendingClarification: null,
+    clarifications: [],
     turnEvents: [],
     lastFailure: null,
     resumeState: null,

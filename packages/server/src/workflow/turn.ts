@@ -49,6 +49,13 @@ type TurnInput = {
   text?: string
   vars?: Record<string, string>
   timeoutMs?: number
+  /**
+   * Text placed before the rendered template, separated by a blank line.
+   * `sendPromptEffect` uses it for the objective brief a fresh session gets
+   * mid-objective (M1 design §6). Not a template placeholder on purpose: a
+   * user override of any phase template (D11) keeps receiving it.
+   */
+  preface?: string
 }
 type Entry = Awaited<ReturnType<AgentRegistry['ensure']>>
 
@@ -105,6 +112,10 @@ export function renderTurnPrompt(
         400,
       )
     }
+  }
+
+  if (turn.preface !== undefined && turn.preface.length > 0) {
+    text = `${turn.preface}\n\n${text}`
   }
 
   return { text, expect, permit }

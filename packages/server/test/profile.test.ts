@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
@@ -50,6 +50,20 @@ test('is idempotent and regenerates a hand-edited CLAUDE.md', () => {
   writeFileSync(join(dir, 'CLAUDE.md'), 'tampered')
   ensureAgentProfile()
   expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8')).toContain(PROFILE_CANARY)
+})
+
+test('a user override of system-addendum.md reaches the generated CLAUDE.md (D11)', () => {
+  mkdirSync(join(home, 'prompts'), { recursive: true })
+  writeFileSync(
+    join(home, 'prompts', 'system-addendum.md'),
+    ['---', 'version: 1', 'phase: system', 'expects: []', '---', 'MY ADDENDUM RULES'].join('\n'),
+  )
+  const dir = ensureAgentProfile()
+  const claudeMd = readFileSync(join(dir, 'CLAUDE.md'), 'utf8')
+  expect(claudeMd).toContain('MY ADDENDUM RULES')
+  expect(claudeMd).toContain(PROFILE_CANARY)
+  // The event reference is generated, never part of the override.
+  expect(claudeMd).toContain('## Event reference')
 })
 
 test('CLAUDE.md carries the generated event reference, not just prose rules', () => {

@@ -164,6 +164,13 @@ export const AUTO_TEMPLATE_VARS = ['title', 'goalText'] as const
  * `sendPromptEffect` always supplies it for the `explore` phase — the literal
  * "No project memory recorded yet." sentence when the project has none — so
  * it is never left as a literal placeholder either.
+ *
+ * `commandResults` is `verify.md`'s: one `- <commandId>: <status> — <headline>`
+ * line per command row EvidenceCollector recorded for the current run.
+ * `verify.md` tells the agent VADD already ran the commands and not to run
+ * them again, which is only a fair instruction when it can see what they
+ * found. `sendPromptEffect` always supplies it for the `verify` phase — a
+ * "No command results recorded." sentence when the run produced no rows.
  */
 export const CALLER_TEMPLATE_VARS = [
   'verificationChecks',
@@ -173,6 +180,7 @@ export const CALLER_TEMPLATE_VARS = [
   'missing',
   'verifyCommandIds',
   'projectMemory',
+  'commandResults',
 ] as const
 
 /** Distinct `{{name}}` placeholders in a template body or a rendered prompt. */
