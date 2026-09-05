@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
+import { ProjectsProvider } from '../src/app/ProjectsContext.js'
 import { FocusView } from '../src/routes/FocusView.js'
 import { mockFetch } from './setup.js'
 
@@ -50,11 +51,15 @@ function task(ord: number, status: string, title: string, startedAt: string | nu
 }
 
 function renderFocus() {
+  // The Focus View derives the shell's project from its objective, which
+  // needs the provider — as in production, where `AppShell` supplies it.
   return render(
     <MemoryRouter initialEntries={['/o/o1']}>
-      <Routes>
-        <Route path="/o/:id" element={<FocusView />} />
-      </Routes>
+      <ProjectsProvider>
+        <Routes>
+          <Route path="/o/:id" element={<FocusView />} />
+        </Routes>
+      </ProjectsProvider>
     </MemoryRouter>,
   )
 }
@@ -62,6 +67,7 @@ function renderFocus() {
 describe('Focus View activity', () => {
   it("shows the agent's last status while it is working", async () => {
     mockFetch({
+      'GET /api/projects': { body: [] },
       'GET /api/objectives/o1': () => ({
         body: aggregate({
           tasks: [task(0, 'running', 'Create a scratch file')],
@@ -75,6 +81,7 @@ describe('Focus View activity', () => {
 
   it('lists every plan task without a hover', async () => {
     mockFetch({
+      'GET /api/projects': { body: [] },
       'GET /api/objectives/o1': () => ({
         body: aggregate({
           tasks: [
@@ -92,6 +99,7 @@ describe('Focus View activity', () => {
 
   it('hides the plan in Low Energy Mode, which is the point of the mode', async () => {
     mockFetch({
+      'GET /api/projects': { body: [] },
       'GET /api/objectives/o1': () => ({
         body: aggregate({
           objective: { lowEnergy: true },
@@ -106,6 +114,7 @@ describe('Focus View activity', () => {
 
   it('says why a paused objective stopped', async () => {
     mockFetch({
+      'GET /api/projects': { body: [] },
       'GET /api/objectives/o1': () => ({
         body: aggregate({
           state: 'paused',
@@ -125,6 +134,7 @@ describe('Focus View activity', () => {
 
   it('does not report a stale problem while the agent is working', async () => {
     mockFetch({
+      'GET /api/projects': { body: [] },
       'GET /api/objectives/o1': () => ({
         body: aggregate({
           state: 'executing',

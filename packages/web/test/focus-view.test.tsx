@@ -320,7 +320,9 @@ describe('FocusView primary element by state', () => {
       'POST /api/objectives/o1/events': { status: 202, body: { ok: true } },
     })
     renderFocus()
-    await userEvent.click(await screen.findByRole('button', { name: 'Abandon' }))
+    // Abandon lives in the header's overflow menu now, still behind its dialog.
+    await userEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Abandon objective/ }))
     await userEvent.click(await screen.findByRole('button', { name: 'Abandon objective' }))
     expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ type: 'abandon' })
   })
@@ -338,7 +340,7 @@ describe('FocusView primary element by state', () => {
       },
     })
     renderFocus()
-    expect(await screen.findByText(/setting up/i)).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: /setting up/i })).toBeTruthy()
   })
 
   it('renders the failure evidence read-only in setup_failed', async () => {
@@ -434,15 +436,20 @@ describe('FocusView: no header actions while setup runs', () => {
     // `runSetup` is fire-and-forget in the worktree Abandon would remove, and
     // it writes the status again when it finishes — so an Abandon here races a
     // running `composer install` and then has its `cancelled` overwritten.
-    expect(screen.queryByRole('button', { name: /abandon/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /pause/i })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(await screen.findByRole('menuitem', { name: /Raw transcript/ })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: /abandon/i })).toBeNull()
   })
 
   it('still offers them in a live state', async () => {
     mockFetch({ 'GET /api/objectives/o1': { body: aggregate({ state: 'executing' }) } })
     renderFocus()
-    expect(await screen.findByRole('button', { name: /abandon/i })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /pause/i })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: /pause/i })).toBeTruthy()
+    // Abandon is in the overflow menu, where the creating state above must
+    // not offer it either — hence the same menu is opened in both tests.
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(await screen.findByRole('menuitem', { name: /abandon/i })).toBeTruthy()
   })
 })
 
@@ -545,7 +552,7 @@ describe('Low Energy Mode (amendment A12)', () => {
     })
     renderFocus()
     await screen.findByText(/executing/)
-    await userEvent.click(screen.getByRole('button', { name: /low energy/i }))
+    await userEvent.click(screen.getByRole('switch', { name: /low energy/i }))
     await waitFor(() =>
       expect(
         calls.some(

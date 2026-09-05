@@ -116,7 +116,7 @@ describe('FocusView: where the git subset appears', () => {
     // Waited for, not asserted on an empty first render: the aggregate
     // arrives asynchronously, so a bare queryBy would pass before anything
     // had rendered at all.
-    expect(await screen.findByText('Fix the login redirect')).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Fix the login redirect' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /commit staged/i })).toBeNull()
   })
 
@@ -125,7 +125,7 @@ describe('FocusView: where the git subset appears', () => {
     // strip here. With `done` — outside GIT_STATES — the state rule would
     // suppress it anyway and the worktree guard would go untested.
     renderFocus(aggregate({ state: 'paused', objective: { worktreePath: null } }))
-    expect(await screen.findByText('Fix the login redirect')).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Fix the login redirect' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /commit staged/i })).toBeNull()
   })
 
@@ -134,7 +134,7 @@ describe('FocusView: where the git subset appears', () => {
     // is pinned by its own unit tests above; this records that the two are
     // separate rules, not one.
     renderFocus(aggregate({ state: 'executing' }))
-    expect(await screen.findByText('Fix the login redirect')).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Fix the login redirect' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /commit staged/i })).toBeNull()
   })
 })
