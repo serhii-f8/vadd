@@ -15,6 +15,11 @@ type ProjectsValue = {
   selectedId: string | null
   selected: Project | null
   select: (id: string | null) => void
+  /**
+   * Registers the project a screen belongs to, so the shell follows the
+   * screen rather than the URL. `null` withdraws it. Prefer `useDerivedProject`.
+   */
+  setDerived: (id: string | null) => void
   error: string | null
   /** Lets a successful New Project dialog add its row without a refetch. */
   addProject: (p: Project) => void
@@ -29,6 +34,48 @@ export function useProjects(): ProjectsValue {
 }
 
 /**
+ * Browser-local view preference, exactly like `vadd.theme`: which project the
+ * user last looked at. Not application state — nothing in `~/.vadd/`.
+ */
+export const PROJECT_STORAGE_KEY = 'vadd.project'
+
+/** Every `localStorage` access is guarded, for the reason `ThemeProvider` gives. */
+export function readStoredProject(): string | null {
+  try {
+    return localStorage.getItem(PROJECT_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function storeProject(id: string): void {
+  try {
+    localStorage.setItem(PROJECT_STORAGE_KEY, id)
+  } catch {
+    // Preference is lost on reload; the session still honours the choice.
+  }
+}
+
+/**
+ * For a screen that belongs to exactly one project — the Focus View, whose
+ * objective has a `projectId`. While it is mounted the shell's switcher, its
+ * links and the Back link all name that project, whatever the URL says;
+ * on unmount the registration is withdrawn.
+ *
+ * Found in a browser on 2026-09-05: with nothing deriving it, viewing a
+ * `flexpick.net` objective showed `vadd-demo-repo` in the sidebar and Back
+ * went there.
+ */
+export function useDerivedProject(id: string | null | undefined): void {
+  const { setDerived } = useProjects()
+  useEffect(() => {
+    if (id == null) return
+    setDerived(id)
+    return () => setDerived(null)
+  }, [id, setDerived])
+}
+
+/**
  * One fetch, one selection, for the whole app.
  *
  * Both `/` and `/today` used to carry their own `<select>` and their own
@@ -39,6 +86,7 @@ export function useProjects(): ProjectsValue {
 export function ProjectsProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [derived, setDerivedState] = useState<string | null>(null)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const param = searchParams.get('project')
@@ -68,33 +116,43 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
    */
   const select = useCallback(
     (id: string | null) => {
+      if (id !== null) storeProject(id)
       navigate({ pathname: '/', search: id === null ? '' : `?project=${encodeURIComponent(id)}` })
     },
     [navigate],
   )
+
+  // Looking at an objective is as clear a statement of "this is my project"
+  // as picking it from the switcher, so it is remembered the same way.
+  const setDerived = useCallback((id: string | null) => {
+    if (id !== null) storeProject(id)
+    setDerivedState(id)
+  }, [])
 
   const addProject = useCallback((p: Project) => {
     setProjects((rows) => [...(rows ?? []), p])
   }, [])
 
   const value = useMemo<ProjectsValue>(() => {
-    // The URL wins when it names a project that exists; otherwise fall back to
-    // the first, so a page never renders with no project at all while one is
-    // available. An unknown id in the URL is treated as absent rather than as
-    // an error — a stale bookmark should degrade, not break.
+    // Resolution order, first match wins: the screen's own project, then the
+    // URL, then the remembered one, then the first registered — so a page
+    // never renders with no project while one is available. An id that names
+    // no project (a stale bookmark, a deleted project in storage) is treated
+    // as absent rather than as an error: it should degrade, not break.
+    const find = (id: string | null) =>
+      id === null ? undefined : (projects ?? []).find((p) => p.id === id)
     const selected =
-      (param !== null ? (projects ?? []).find((p) => p.id === param) : undefined) ??
-      (projects ?? [])[0] ??
-      null
+      find(derived) ?? find(param) ?? find(readStoredProject()) ?? (projects ?? [])[0] ?? null
     return {
       projects,
       selectedId: selected?.id ?? null,
       selected,
       select,
+      setDerived,
       error,
       addProject,
     }
-  }, [projects, param, select, error, addProject])
+  }, [projects, derived, param, select, setDerived, error, addProject])
 
   return <ProjectsContext.Provider value={value}>{children}</ProjectsContext.Provider>
 }

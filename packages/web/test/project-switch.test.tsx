@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { ProjectsProvider, useProjects } from '../src/app/ProjectsContext.js'
 import { mockFetch } from './setup.js'
 
@@ -41,6 +41,10 @@ function renderAt(initial: string) {
 }
 
 describe('switching projects', () => {
+  // `select()` now remembers the choice in localStorage, and jsdom shares it
+  // across the tests in one file: a clean slate is what each test assumes.
+  beforeEach(() => localStorage.clear())
+
   /**
    * The Focus View is scoped to one objective, and an objective belongs to one
    * project. Switching the project while looking at one left the user on a

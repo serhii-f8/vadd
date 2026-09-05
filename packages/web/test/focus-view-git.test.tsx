@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
+import { ProjectsProvider } from '../src/app/ProjectsContext.js'
 import { GitStrip } from '../src/focus/GitStrip.js'
 import { FocusView } from '../src/routes/FocusView.js'
 import { mockFetch } from './setup.js'
@@ -83,12 +84,19 @@ describe('FocusView: where the git subset appears', () => {
   }
 
   function renderFocus(agg: unknown) {
-    mockFetch({ 'GET /api/objectives/o1': { body: agg } })
+    mockFetch({
+      'GET /api/objectives/o1': { body: agg },
+      'GET /api/projects': { body: [] },
+    })
+    // The Focus View derives the shell's project from its objective, which
+    // needs the provider — as in production, where `AppShell` supplies it.
     return render(
       <MemoryRouter initialEntries={['/o/o1']}>
-        <Routes>
-          <Route path="/o/:id" element={<FocusView />} />
-        </Routes>
+        <ProjectsProvider>
+          <Routes>
+            <Route path="/o/:id" element={<FocusView />} />
+          </Routes>
+        </ProjectsProvider>
       </MemoryRouter>,
     )
   }

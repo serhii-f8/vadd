@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { type Aggregate, api } from '../api.js'
+import { useDerivedProject } from '../app/ProjectsContext.js'
 import { ArtifactBlock } from '../cards/ArtifactBlock.js'
 import { EvidencePanel } from '../evidence/EvidencePanel.js'
 import { AbandonButton } from '../focus/AbandonButton.js'
@@ -84,6 +85,11 @@ export function FocusView() {
   useEffect(() => {
     void refetch()
   }, [refetch])
+
+  // The shell follows the screen: while this objective is on screen the
+  // switcher, the nav links and Back all name its project. Above the early
+  // return below, so the hook order is stable across the loading render.
+  useDerivedProject(aggregate?.objective.projectId)
 
   // Spec §7: the server is the single source of truth, and this view performs
   // no client-side transitions. Events are a *change signal* — their payloads
@@ -177,7 +183,10 @@ export function FocusView() {
     <main className="mx-auto max-w-3xl p-6">
       <header className="sticky top-0 z-10 -mx-6 mb-6 flex items-baseline justify-between gap-4 border-b border-border bg-background px-6 py-4">
         <div>
-          <Link to="/" className="text-sm underline">
+          <Link
+            to={`/?project=${encodeURIComponent(aggregate.objective.projectId)}`}
+            className="text-sm underline"
+          >
             ← Objectives
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight">{aggregate.objective.title}</h1>
