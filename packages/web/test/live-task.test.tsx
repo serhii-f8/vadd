@@ -1,4 +1,5 @@
 import { act, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { PlanTask } from '../src/api.js'
 import { formatElapsed } from '../src/focus/elapsed.js'
@@ -168,5 +169,75 @@ describe('LiveTask', () => {
     // A spinner is a purely visual signal; a screen-reader user gets nothing
     // from it. `role="status"` is what makes "something is happening" audible.
     expect(screen.getByRole('status')).toBeTruthy()
+  })
+
+  it('shows a stale notice, with Pause, once the heartbeat is older than a minute', async () => {
+    const onCommand = vi.fn()
+    render(
+      <LiveTask
+        tasks={[task({ ord: 0, status: 'running' })]}
+        lastStatus={null}
+        lastAgentUpdateAt={new Date(Date.now() - 90_000).toISOString()}
+        onCommand={onCommand}
+      />,
+    )
+    expect(screen.getByText(/No agent output for/).textContent).toMatch(/1m 30s/)
+    await userEvent.click(screen.getByRole('button', { name: /pause/i }))
+    expect(onCommand).toHaveBeenCalledWith({ type: 'pause' })
+  })
+
+  it('shows no stale notice while output is recent', () => {
+    render(
+      <LiveTask
+        tasks={[task({ ord: 0, status: 'running' })]}
+        lastStatus={null}
+        lastAgentUpdateAt={new Date(Date.now() - 20_000).toISOString()}
+      />,
+    )
+    expect(screen.queryByText(/No agent output/)).toBeNull()
+  })
+
+  it('shows how much of the plan is verified, as a bar and a count', () => {
+    render(
+      <LiveTask
+        tasks={[
+          task({ ord: 0, status: 'verified' }),
+          task({ ord: 1, status: 'verified' }),
+          task({ ord: 2, status: 'running' }),
+          task({ ord: 3 }),
+        ]}
+        lastStatus={null}
+        lastAgentUpdateAt={null}
+      />,
+    )
+    expect(
+      screen.getByRole('progressbar', { name: 'Plan progress' }).getAttribute('aria-valuenow'),
+    ).toBe('2')
+    expect(screen.getByText('2/4 verified')).toBeTruthy()
+  })
+
+  it('counts passed checks and warnings from the evidence so far', () => {
+    const row = (id: string, status: 'pass' | 'warn' | 'fail') => ({
+      id,
+      commandId: null,
+      taskId: null,
+      kind: 'check' as const,
+      status,
+      headline: id,
+      summary: [],
+      artifactPath: null,
+      decidedBy: null,
+      createdAt: '2026-09-05T10:00:00.000Z',
+    })
+    render(
+      <LiveTask
+        tasks={[task({ ord: 0, status: 'running' })]}
+        lastStatus={null}
+        lastAgentUpdateAt={null}
+        evidence={[row('a', 'pass'), row('b', 'pass'), row('c', 'fail'), row('d', 'warn')]}
+      />,
+    )
+    expect(screen.getByText('2 checks passed')).toBeTruthy()
+    expect(screen.getByText('1 warning')).toBeTruthy()
   })
 })

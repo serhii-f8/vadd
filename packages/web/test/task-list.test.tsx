@@ -62,4 +62,23 @@ describe('TaskList', () => {
     const rows = screen.getAllByRole('listitem')
     expect(within(rows[2] as HTMLElement).getByText('3')).toBeTruthy()
   })
+
+  it('shows how long a verified task took', () => {
+    render(
+      <TaskList
+        tasks={[
+          task({
+            ord: 0,
+            status: 'verified',
+            startedAt: '2026-09-05T10:00:00.000Z',
+            finishedAt: '2026-09-05T10:01:42.000Z',
+          }),
+          task({ ord: 1, status: 'running', startedAt: '2026-09-05T10:02:00.000Z' }),
+        ]}
+      />,
+    )
+    const rows = screen.getAllByRole('listitem')
+    expect(within(rows[0] as HTMLElement).getByText('1m 42s')).toBeTruthy()
+    expect(within(rows[1] as HTMLElement).queryByText(/\dm \d\ds/)).toBeNull()
+  })
 })

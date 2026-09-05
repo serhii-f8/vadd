@@ -319,6 +319,10 @@ export function FocusView() {
             tasks={aggregate.tasks}
             lastStatus={aggregate.lastStatus}
             lastAgentUpdateAt={aggregate.lastAgentUpdateAt}
+            state={state as ViewStateName}
+            evidence={aggregate.evidence}
+            rawHref={`/api/objectives/${aggregate.objective.id}/raw`}
+            onCommand={(b) => void onCommand(b)}
           />
         )}
         {primary === 'review' && (
