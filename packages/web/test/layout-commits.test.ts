@@ -98,4 +98,19 @@ describe('layoutCommits', () => {
     expect(laid).toHaveLength(1)
     expect(laid[0]?.lane).toBe(0)
   })
+
+  it('says whether a commit’s own lane continues below it', () => {
+    const M = 'a'.repeat(40)
+    const A = 'b'.repeat(40)
+    const F = 'c'.repeat(40)
+    const B = 'd'.repeat(40)
+    const laid = layoutCommits([
+      { sha: M, parents: [A, F] },
+      { sha: A, parents: [B] },
+      { sha: F, parents: [B] },
+      { sha: B, parents: [] },
+    ])
+    // M and A continue; F narrows back into B's lane; B is a root.
+    expect(laid.map((r) => r.continues)).toEqual([true, true, false, false])
+  })
 })

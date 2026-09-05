@@ -1,64 +1,103 @@
+import { Cloud, GitBranch, Tag } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import type { GitCommit } from '../api.js'
-import { laneCount, layoutCommits, type RailSegment } from './layout-commits.js'
+import { relativeTime } from '../lib/relative-time.js'
+import { ROW_HEIGHT, RowGutter } from './CommitGraph.js'
+import { laneCount, layoutCommits } from './layout-commits.js'
 
-const LANE_WIDTH = 12
-
-/**
- * The rail gutter is drawn as monospace text rather than SVG: it is a fixed
- * grid of columns, it inherits the row height for free, and it stays aligned
- * when the browser reflows the subject beside it.
- *
- * Reads the row's real `rails`, not just its own `lane`: a segment where
- * `from === to` is a straight pass-through (`│`); a segment where
- * `from !== to` is a diagonal — a branch joining or leaving — rendered as
- * `×`, visually distinct from a straight rail. The commit's own lane always
- * gets its dot, even on a row where that lane is also the source of an
- * outgoing diagonal (a divergence) or the target of one (a convergence).
- * A lane with no segment touching it at all is blank, not a decorative bar.
- */
-function railText(lane: number, lanes: number, rails: RailSegment[]): string {
-  const cells: string[] = []
-  for (let i = 0; i < lanes; i++) {
-    if (i === lane) {
-      cells.push('●')
-      continue
-    }
-    const diagonal = rails.some((r) => r.from !== r.to && (r.from === i || r.to === i))
-    if (diagonal) {
-      cells.push('×')
-      continue
-    }
-    const straight = rails.some((r) => r.from === r.to && r.from === i)
-    cells.push(straight ? '│' : ' ')
+/** How a ref reads: a local branch, a VADD branch, a remote-tracking ref, or a tag. */
+function RefChip({ name }: { name: string }) {
+  // `<remote>/<branch>` reads as remote-tracking. A local branch that happens
+  // to carry a slash (`feature/x`) is misread as remote here — the log route
+  // does not say which is which, and a cloud icon is the lesser wrong.
+  if (name.includes('/') && !name.startsWith('vadd/')) {
+    return (
+      <Badge variant="outline" className="h-[18px] font-mono font-normal text-muted-foreground">
+        <Cloud aria-hidden="true" />
+        {name}
+      </Badge>
+    )
   }
-  return cells.join('')
+  if (name.startsWith('vadd/')) {
+    return (
+      <Badge className="h-[18px] bg-status-done/15 font-mono font-normal text-foreground">
+        <GitBranch aria-hidden="true" />
+        {name}
+      </Badge>
+    )
+  }
+  if (/^v?\d+\.\d+/.test(name)) {
+    return (
+      <Badge variant="secondary" className="h-[18px] font-mono font-normal">
+        <Tag aria-hidden="true" />
+        {name}
+      </Badge>
+    )
+  }
+  return (
+    <Badge className="h-[18px] bg-status-active/15 font-mono font-normal text-foreground">
+      <GitBranch aria-hidden="true" />
+      {name}
+    </Badge>
+  )
 }
 
 export function CommitLog({ commits }: { commits: GitCommit[] }) {
   const laid = layoutCommits(commits)
   const lanes = Math.max(1, laneCount(laid))
+  const now = Date.now()
 
   return (
     <ol className="flex flex-col" aria-label="History">
-      {laid.map(({ commit, lane, rails }) => (
-        <li key={commit.sha} className="flex items-baseline gap-3 py-0.5 text-sm">
-          <span
-            aria-hidden
-            className="shrink-0 font-mono text-xs text-muted-foreground"
-            style={{ width: `${lanes * LANE_WIDTH}px` }}
+      {laid.map(({ commit, lane, rails, continues }, i) => {
+        const prev = laid[i - 1]
+        // A lane that ended on the row above must not arrive here: the
+        // layout records the own-lane segment before it learns the lane
+        // closes, so that one segment is dropped on the way down.
+        const prevRails =
+          prev === undefined
+            ? []
+            : prev.rails.filter(
+                (r) => !(r.from === r.to && r.from === prev.lane && !prev.continues),
+              )
+        return (
+          <li
+            key={commit.sha}
+            className="flex items-center gap-2.5 pr-2 text-sm"
+            style={{ minHeight: ROW_HEIGHT }}
           >
-            {railText(lane, lanes, rails)}
-          </span>
-          <code className="shrink-0 text-xs text-muted-foreground">{commit.sha.slice(0, 7)}</code>
-          <span className="min-w-0 flex-1 truncate">{commit.subject}</span>
-          {commit.refs.map((r) => (
-            <span key={r} className="shrink-0 rounded border border-border px-1 text-xs">
-              {r}
+            <RowGutter
+              lane={lane}
+              lanes={lanes}
+              rails={rails}
+              prevRails={prevRails}
+              continues={continues}
+            />
+            <code className="w-14 shrink-0 text-xs text-muted-foreground">
+              {commit.sha.slice(0, 7)}
+            </code>
+            <span
+              className={`min-w-0 flex-1 truncate ${
+                commit.subject.startsWith('vadd-checkpoint:') ? 'text-muted-foreground' : ''
+              }`}
+            >
+              {commit.subject}
             </span>
-          ))}
-          <span className="shrink-0 text-xs text-muted-foreground">{commit.author}</span>
-        </li>
-      ))}
+            {commit.refs.map((r) => (
+              <RefChip key={r} name={r} />
+            ))}
+            <span className="hidden w-16 shrink-0 truncate text-right text-xs text-muted-foreground sm:inline">
+              {commit.author}
+            </span>
+            <time
+              dateTime={commit.at}
+              className="w-14 shrink-0 text-right font-mono text-xs text-muted-foreground"
+            >
+              {relativeTime(commit.at, now)}
+            </time>
+          </li>
+        )
+      })}
     </ol>
   )
 }

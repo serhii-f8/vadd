@@ -11,6 +11,13 @@ export type LaidOutCommit<T extends GraphCommit> = {
   commit: T
   lane: number
   rails: RailSegment[]
+  /**
+   * Whether the commit's own lane carries on below it. False for a root and
+   * for a commit whose first parent another lane was already waiting for
+   * (the graph narrows there) — `rails` alone cannot say, since the own
+   * lane's straight segment is captured before the parents are assigned.
+   */
+  continues: boolean
 }
 
 /**
@@ -80,7 +87,7 @@ export function layoutCommits<T extends GraphCommit>(commits: T[]): LaidOutCommi
       rails.push({ from: lane, to: target })
     }
 
-    result.push({ commit, lane, rails })
+    result.push({ commit, lane, rails, continues: open[lane] !== null })
   }
 
   return result
