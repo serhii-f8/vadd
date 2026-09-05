@@ -27,12 +27,17 @@ describe('PlanApproval — A11 expectFailing', () => {
         onCommand={vi.fn()}
       />,
     )
-    expect(screen.getByText(/expects failing: test/i)).toBeTruthy()
+    // The declared ids are the editable field's value — one editor, not a badge beside a copy.
+    expect(
+      (screen.getByLabelText('Task 1 expected failing commands') as HTMLInputElement).value,
+    ).toBe('test')
   })
 
   it('shows no badge for a task with no expectFailing', () => {
     render(<PlanApproval tasks={[task()]} onCommand={vi.fn()} />)
-    expect(screen.queryByText(/expects failing/i)).toBeNull()
+    expect(
+      (screen.getByLabelText('Task 1 expected failing commands') as HTMLInputElement).value,
+    ).toBe('')
   })
 
   it('preserves an agent-declared expectFailing through approve when the human only edits the title', async () => {
@@ -91,5 +96,23 @@ describe('PlanApproval — A11 expectFailing', () => {
       type: 'revise',
       instruction: 'The plan is wrong — propose a different approach.',
     })
+  })
+
+  it('counts pending edits in the action bar, and only once something changed', async () => {
+    const user = userEvent.setup()
+    render(
+      <PlanApproval
+        tasks={[
+          task({ id: 't1', ord: 0, title: 'Write the failing test' }),
+          task({ id: 't2', ord: 1, title: 'Fix it' }),
+        ]}
+        onCommand={() => undefined}
+      />,
+    )
+    expect(screen.queryByText(/edits? pending/)).toBeNull()
+    await user.type(screen.getByLabelText('Task 1 title'), '!')
+    expect(screen.getByText(/1 edit pending/)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Remove task 2' }))
+    expect(screen.getByText(/2 edits pending/)).toBeTruthy()
   })
 })
