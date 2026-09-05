@@ -50,7 +50,7 @@ describe('DecisionCard actions', () => {
     const onCommand = vi.fn()
     render(<DecisionCard decision={decision} onCommand={onCommand} />)
     await userEvent.click(screen.getByRole('radio', { name: 'Round at display time' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Choose' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Choose selected' }))
     expect(onCommand).toHaveBeenCalledWith({ type: 'decide', decisionId: 'd1', optionId: 'a' })
   })
 
