@@ -6,6 +6,14 @@ import { ProjectsProvider, useProjects } from '../src/app/ProjectsContext.js'
 import { ObjectiveList } from '../src/routes/ObjectiveList.js'
 import { mockFetch } from './setup.js'
 
+/** The board is always scoped to a project; the live hook fetches nothing without one. */
+const project = {
+  id: 'p1',
+  name: 'flexpick.net',
+  repoPath: '/var/www/flexpick',
+  agentKind: 'claude-code',
+}
+
 const objective = (over: Record<string, unknown> = {}) => ({
   id: 'o1',
   projectId: 'p1',
@@ -22,7 +30,7 @@ const objective = (over: Record<string, unknown> = {}) => ({
 describe('ObjectiveList', () => {
   it('lists objectives with their state', async () => {
     mockFetch({
-      'GET /api/projects': { body: [] },
+      'GET /api/projects': { body: [project] },
       'GET /api/objectives': { body: [objective()] },
     })
     render(
@@ -38,7 +46,7 @@ describe('ObjectiveList', () => {
 
   it('links each row to its Focus View', async () => {
     mockFetch({
-      'GET /api/projects': { body: [] },
+      'GET /api/projects': { body: [project] },
       'GET /api/objectives': { body: [objective()] },
     })
     render(
@@ -54,7 +62,7 @@ describe('ObjectiveList', () => {
 
   it('distinguishes a done objective whose work was discarded', async () => {
     mockFetch({
-      'GET /api/projects': { body: [] },
+      'GET /api/projects': { body: [project] },
       'GET /api/objectives': {
         body: [objective({ status: 'done', integrateAction: 'discard' })],
       },
@@ -71,7 +79,7 @@ describe('ObjectiveList', () => {
 
   it('shows the server error rather than an empty list', async () => {
     mockFetch({
-      'GET /api/projects': { body: [] },
+      'GET /api/projects': { body: [project] },
       'GET /api/objectives': { status: 500, body: { error: 'boom' } },
     })
     render(
@@ -86,7 +94,7 @@ describe('ObjectiveList', () => {
 
   it('says so plainly when there are none', async () => {
     mockFetch({
-      'GET /api/projects': { body: [] },
+      'GET /api/projects': { body: [project] },
       'GET /api/objectives': { body: [] },
     })
     render(
@@ -101,7 +109,7 @@ describe('ObjectiveList', () => {
 
   it('shows the verified/total fraction and a state dot', async () => {
     mockFetch({
-      'GET /api/projects': { body: [] },
+      'GET /api/projects': { body: [project] },
       'GET /api/objectives': { body: [objective()] },
     })
     render(
@@ -202,7 +210,7 @@ describe('ObjectiveList', () => {
   })
 
   it('shows an empty state that offers the next action', async () => {
-    mockFetch({ 'GET /api/projects': { body: [] }, 'GET /api/objectives': { body: [] } })
+    mockFetch({ 'GET /api/projects': { body: [project] }, 'GET /api/objectives': { body: [] } })
     render(
       <MemoryRouter>
         <ProjectsProvider>
@@ -215,7 +223,7 @@ describe('ObjectiveList', () => {
 
   it('labels the status dot rather than relying on color alone', async () => {
     mockFetch({
-      'GET /api/projects': { body: [] },
+      'GET /api/projects': { body: [project] },
       'GET /api/objectives': { body: [objective({ status: 'awaitingReview' })] },
     })
     render(

@@ -4,8 +4,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { api, type ObjectiveListRow, type ProjectMemoryNote } from '../api.js'
+import { api, type ProjectMemoryNote } from '../api.js'
 import { useProjects } from '../app/ProjectsContext.js'
+import { useLiveObjectives } from '../app/useLiveObjectives.js'
 import type { ViewStateName } from '../focus/primary.js'
 import { statusFor } from './stateColor.js'
 
@@ -33,18 +34,10 @@ function MemorySection({ label, notes }: { label: string; notes: ProjectMemoryNo
 
 export function ObjectiveList() {
   const { selectedId } = useProjects()
-  const [objectives, setObjectives] = useState<ObjectiveListRow[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // Live: refetched on every event the server publishes, so a state change
+  // reaches the board without a reload.
+  const { objectives, error } = useLiveObjectives(selectedId)
   const [memoryNotes, setMemoryNotes] = useState<ProjectMemoryNote[] | null>(null)
-
-  useEffect(() => {
-    setObjectives(null)
-    setError(null)
-    api
-      .listObjectives(selectedId ?? undefined)
-      .then(setObjectives)
-      .catch((e: Error) => setError(e.message))
-  }, [selectedId])
 
   useEffect(() => {
     setMemoryNotes(null)
