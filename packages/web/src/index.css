@@ -143,3 +143,28 @@
     @apply font-sans;
   }
 }
+
+/* Motion for "the agent is working": a pulsing status dot and an
+   indeterminate bar. Token colours only, so both survive the dark theme. */
+@keyframes vadd-pulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--status-active), transparent 40%);
+  }
+  to {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+@keyframes vadd-indet {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+@utility animate-pulse-dot {
+  animation: vadd-pulse 1.6s ease-out infinite;
+}
+@utility animate-indet {
+  animation: vadd-indet 1.4s ease-in-out infinite;
+}

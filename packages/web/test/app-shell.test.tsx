@@ -49,17 +49,20 @@ function renderShell(initial = '/') {
 
 describe('AppShell', () => {
   beforeEach(() => {
-    vi.stubGlobal('matchMedia', () => ({
-      matches: false,
+    // Query-aware: the shell picks its layout from `(min-width: …)` queries,
+    // and these tests describe the full-sidebar layout unless they say so.
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('min-width'),
       addEventListener: () => {},
       removeEventListener: () => {},
     }))
+    localStorage.clear()
   })
 
   it('renders navigation to all destinations', async () => {
     mockFetch({ 'GET /api/projects': { body: projects } })
     renderShell()
-    expect(await screen.findByRole('link', { name: 'Objectives' })).toBeTruthy()
+    expect(await screen.findByRole('link', { name: /^Objectives/ })).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Today' })).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Map' })).toBeTruthy()
   })
@@ -69,7 +72,9 @@ describe('AppShell', () => {
     renderShell('/today')
     const today = await screen.findByRole('link', { name: 'Today' })
     expect(today.getAttribute('aria-current')).toBe('page')
-    expect(screen.getByRole('link', { name: 'Objectives' }).getAttribute('aria-current')).toBe(null)
+    expect(screen.getByRole('link', { name: /^Objectives/ }).getAttribute('aria-current')).toBe(
+      null,
+    )
   })
 
   it('defaults the selection to the first project', async () => {
@@ -105,7 +110,7 @@ describe('AppShell', () => {
     mockFetch({ 'GET /api/projects': { status: 500, body: { error: 'db is down' } } })
     renderShell()
     expect(await screen.findByRole('alert')).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Objectives' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /^Objectives/ })).toBeTruthy()
   })
 
   it('disables New objective until a project exists', async () => {
@@ -120,6 +125,58 @@ describe('AppShell', () => {
     renderShell()
     const button = await screen.findByRole('button', { name: /New objective/ })
     expect(button.hasAttribute('disabled')).toBe(false)
+  })
+
+  it('shows how many objectives need you on the Objectives entry', async () => {
+    mockFetch({
+      'GET /api/projects': { body: projects },
+      'GET /api/objectives': {
+        body: [
+          {
+            id: 'o1',
+            projectId: 'p1',
+            title: 'Decide',
+            status: 'awaitingDecision',
+            worktreePath: null,
+            branchName: null,
+            integrateAction: null,
+            updatedAt: '2026-09-05T10:00:00.000Z',
+            verifiedCount: 0,
+            totalCount: 0,
+          },
+          {
+            id: 'o2',
+            projectId: 'p1',
+            title: 'Run',
+            status: 'executing',
+            worktreePath: null,
+            branchName: null,
+            integrateAction: null,
+            updatedAt: '2026-09-05T10:00:00.000Z',
+            verifiedCount: 0,
+            totalCount: 0,
+          },
+        ],
+      },
+    })
+    renderShell()
+    expect(await screen.findByRole('link', { name: /^Objectives.*1 needs you/ })).toBeTruthy()
+    // And the running one is in Working now, from this screen.
+    expect(screen.getByRole('link', { name: /Run/ }).getAttribute('href')).toBe('/o/o2')
+  })
+
+  it('renders a top bar below md and opens the sidebar in a drawer', async () => {
+    vi.stubGlobal('matchMedia', () => ({
+      matches: false,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+    mockFetch({ 'GET /api/projects': { body: projects } })
+    renderShell()
+    const open = await screen.findByRole('button', { name: 'Open navigation' })
+    expect(screen.queryByRole('combobox', { name: 'Project' })).toBeNull()
+    await userEvent.click(open)
+    expect(await screen.findByRole('combobox', { name: 'Project' })).toBeTruthy()
   })
 
   it('mounts the theme control', async () => {
@@ -187,14 +244,16 @@ describe('AppShell', () => {
       </ThemeProvider>,
     )
 
-    expect(await screen.findByText('Fix the login redirect')).toBeTruthy()
+    // An executing objective now shows twice on purpose — the board row and
+    // the sidebar's Working now — so the assertion is "present", not "once".
+    expect((await screen.findAllByText('Fix the login redirect')).length).toBeGreaterThan(0)
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('combobox', { name: 'Project' }))
     const option = await screen.findByRole('option', { name: 'vadd' })
     await user.click(option)
 
-    expect(await screen.findByText('Wire the ACP adapter')).toBeTruthy()
-    expect(screen.queryByText('Fix the login redirect')).toBeNull()
+    expect((await screen.findAllByText('Wire the ACP adapter')).length).toBeGreaterThan(0)
+    expect(screen.queryAllByText('Fix the login redirect')).toHaveLength(0)
   })
 })
