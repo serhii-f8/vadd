@@ -231,8 +231,10 @@ describe('DiffList inside the panel', () => {
     })
     render(<EvidencePanel aggregate={agg([])} onCommand={() => undefined} />)
     expect(await screen.findByText('app/Auth.php')).toBeTruthy()
-    expect(screen.getByText(/\+12/)).toBeTruthy()
-    expect(screen.getByText(/−3|-3/)).toBeTruthy()
+    // The counts now show twice on purpose — per file and in the section's
+    // totals — so "present", not "once".
+    expect(screen.getAllByText(/\+12/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/−3|-3/).length).toBeGreaterThan(0)
     expect(screen.queryByTestId('file-diff')).toBeNull()
   })
 
@@ -305,5 +307,43 @@ describe('DiffList inside the panel', () => {
     await userEvent.click(await screen.findByRole('button', { name: /app\/Auth.php/ }))
     expect(await screen.findByText(/Could not load diff/)).toBeTruthy()
     expect(screen.queryByTestId('file-diff')).toBeNull()
+  })
+
+  it('sums the set into three tiles above the rows', async () => {
+    mockFetch(noDiff)
+    const row = (id: string, commandId: string | null, status: 'pass' | 'fail' | 'warn') => ({
+      id,
+      commandId,
+      taskId: null,
+      kind: 'test' as const,
+      status,
+      headline: id,
+      summary: [],
+      artifactPath: null,
+      decidedBy: null,
+      createdAt: `2026-09-05T10:00:0${id.length}.000Z`,
+    })
+    render(
+      <EvidencePanel
+        aggregate={agg([
+          row('suite', 'suite', 'pass'),
+          row('lint', 'lint', 'pass'),
+          row('claim', null, 'pass'),
+          row('cp-warn', null, 'warn'),
+        ])}
+        onCommand={() => undefined}
+      />,
+    )
+    expect(screen.getByText('2/2')).toBeTruthy()
+    expect(screen.getByText('all green')).toBeTruthy()
+    expect(screen.getByText('amber')).toBeTruthy()
+  })
+
+  it('keeps the tiles off where the caller says the panel is secondary', async () => {
+    mockFetch(noDiff)
+    render(
+      <EvidencePanel aggregate={agg([evidence()])} onCommand={() => undefined} tiles={false} />,
+    )
+    expect(screen.queryByText(/These decide whether Done is reachable/)).toBeNull()
   })
 })

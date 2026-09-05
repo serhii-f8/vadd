@@ -1,3 +1,4 @@
+import { FileText, Undo2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -7,6 +8,7 @@ import { type Aggregate, api } from '../api.js'
 import { useDerivedProject, useProjects } from '../app/ProjectsContext.js'
 import { ArtifactBlock } from '../cards/ArtifactBlock.js'
 import { EvidencePanel } from '../evidence/EvidencePanel.js'
+import { ActionBar } from '../focus/ActionBar.js'
 import { AutoApprovalBanner } from '../focus/AutoApprovalBanner.js'
 import { ClarificationPrompt } from '../focus/ClarificationPrompt.js'
 import { DecisionCard } from '../focus/DecisionCard.js'
@@ -14,6 +16,7 @@ import { FocusHeader } from '../focus/FocusHeader.js'
 import { GitStrip } from '../focus/GitStrip.js'
 import { IntegrationChooser } from '../focus/IntegrationChooser.js'
 import { LiveTask } from '../focus/LiveTask.js'
+import { OutcomeSummary } from '../focus/OutcomeSummary.js'
 import { PhaseStepper } from '../focus/PhaseStepper.js'
 import { PlanApproval } from '../focus/PlanApproval.js'
 import { ProblemAlert } from '../focus/ProblemAlert.js'
@@ -177,6 +180,10 @@ export function FocusView() {
    * inheriting a button nobody designed for it.
    */
   const canContinue = state === 'done' || state === 'cancelled' || state === 'failed'
+  /** Names the checkpoint a rollback returns to — the last task that has one. */
+  const lastCheckpointed = [...aggregate.tasks].reverse().find((t) => t.checkpointRef !== null)
+  const rollbackLabel =
+    lastCheckpointed === undefined ? 'Roll back' : `Roll back to task ${lastCheckpointed.ord + 1}`
 
   return (
     <main>
@@ -328,7 +335,7 @@ export function FocusView() {
         {primary === 'review' && (
           <>
             <EvidencePanel aggregate={aggregate} onCommand={(b) => void onCommand(b)} />
-            <div className="mt-4 flex gap-2">
+            <ActionBar>
               <Button onClick={() => void onCommand({ type: 'approve_task' })}>Approve</Button>
               <Button
                 variant="outline"
@@ -339,9 +346,18 @@ export function FocusView() {
                 Revise
               </Button>
               <Button variant="outline" onClick={() => void onCommand({ type: 'rollback' })}>
-                Roll back
+                <Undo2 />
+                {rollbackLabel}
               </Button>
-            </div>
+              <span className="flex-1" />
+              <a
+                href={`/api/objectives/${aggregate.objective.id}/raw`}
+                className="flex items-center gap-1 text-xs text-muted-foreground underline"
+              >
+                <FileText className="size-3" aria-hidden="true" />
+                Open raw logs
+              </a>
+            </ActionBar>
           </>
         )}
         {primary === 'integration' && (
@@ -351,12 +367,8 @@ export function FocusView() {
           />
         )}
         {primary === 'outcome' && (
-          <section>
-            <h2 className="text-lg font-medium">
-              {state}
-              {aggregate.objective.integrateAction !== null &&
-                ` · ${aggregate.objective.integrateAction}`}
-            </h2>
+          <section className="flex flex-col gap-4">
+            <OutcomeSummary aggregate={aggregate} />
             <EvidencePanel aggregate={aggregate} onCommand={() => undefined} readOnly />
             {canContinue && (
               <>
@@ -402,7 +414,11 @@ export function FocusView() {
             picks the tick up.
           */}
             {state === 'paused' && (
-              <EvidencePanel aggregate={aggregate} onCommand={(b) => void onCommand(b)} />
+              <EvidencePanel
+                aggregate={aggregate}
+                onCommand={(b) => void onCommand(b)}
+                tiles={false}
+              />
             )}
           </>
         )}

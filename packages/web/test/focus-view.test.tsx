@@ -687,9 +687,11 @@ describe('Continue button on a terminal objective', () => {
       },
     })
     renderFocus()
-    // Scoped to the heading: "setup_failed" also appears verbatim in the
-    // state badge, which would make a bare text query ambiguous.
-    await screen.findByRole('heading', { name: 'setup_failed' })
+    // The outcome summary names the state in words; the header carries the
+    // machine name, so the region is what disambiguates.
+    expect((await screen.findByRole('region', { name: 'Outcome' })).textContent).toContain(
+      'Setup failed',
+    )
     expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
   })
 })
