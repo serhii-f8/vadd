@@ -1,11 +1,14 @@
+import { CircleAlert, Cloud, Home, Layers } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   ApiError,
   api,
+  type GitBranch,
   type GitCommit,
   type GitMutationReport,
   type GitRemote,
@@ -16,7 +19,18 @@ import { useProjects } from '../app/ProjectsContext.js'
 import { CommitLog } from '../git/CommitLog.js'
 import { ConfirmButton } from '../git/ConfirmButton.js'
 import { OwnerBadge } from '../git/OwnerBadge.js'
+import { RowActions } from '../git/RowActions.js'
+import { SyncHeader } from '../git/SyncHeader.js'
+import { TopologyPanel } from '../git/TopologyPanel.js'
 import { UndoBanner } from '../git/UndoBanner.js'
+
+/** The dot beside a branch: what kind of branch it is, in the status tokens. */
+function branchDot(b: GitBranch): string {
+  if (b.isCurrent) return 'bg-status-active'
+  if (b.owner.kind === 'vadd') return 'bg-status-done'
+  if (b.owner.kind === 'orphan') return 'bg-status-failed'
+  return 'bg-status-idle'
+}
 
 export function GitConsole() {
   const { selectedId } = useProjects()
@@ -324,13 +338,14 @@ export function GitConsole() {
         'published or reconciled only from a terminal.'
 
   return (
-    <main className="flex flex-col gap-6">
-      <header className="flex items-baseline justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Git</h1>
-        <Button variant="outline" size="sm" onClick={() => void load()}>
-          Refresh
-        </Button>
-      </header>
+    <main className="flex flex-col gap-5 px-4 py-6 md:px-8">
+      <SyncHeader
+        topology={topology}
+        remotes={remotes}
+        busy={busy}
+        onMutate={(op, body) => void runMutation(op, body)}
+        onRefresh={() => void load()}
+      />
 
       {error !== null && (
         <Alert variant="destructive">
@@ -388,321 +403,373 @@ export function GitConsole() {
         }}
       />
 
-      {topology === null && error === null && <Skeleton className="h-8 w-full" />}
+      {topology === null && error === null && (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <Skeleton className="h-64 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full rounded-xl" />
+        </div>
+      )}
 
       {topology !== null && (
-        <>
-          <section>
-            <h2 className="mb-2 text-lg font-medium">Worktrees</h2>
-            <ul className="flex flex-col gap-1" aria-label="Worktrees">
-              {topology.worktrees.map((w) => (
-                <li key={w.path} className="flex items-baseline gap-2 text-sm">
-                  <code className="min-w-0 flex-1 truncate">{w.path}</code>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {w.branch ?? 'detached'}
-                  </span>
-                  {w.prunable && <span className="shrink-0 text-xs">prunable</span>}
-                  <OwnerBadge owner={w.owner} />
-                  <ConfirmButton
-                    label="Stash"
-                    confirmLabel="Stash all changes here?"
-                    disabled={busy}
-                    onConfirm={() => void runMutation('stash', { worktree: w.path })}
-                  />
-                  {/*
-                    Refused on a VADD-owned worktree, so it is not offered
-                    there either: /diff, rollback and integrate: discard all
-                    depend on objectives.branchName, and discard deletes the
-                    branch it is handed. The server refuses this
-                    independently — the UI hiding it is convenience, not the
-                    guard.
-                  */}
-                  {w.owner.kind !== 'vadd' && topology.currentBranch !== null && (
-                    <ConfirmButton
-                      label="Switch branch"
-                      confirmLabel={`Switch to ${topology.currentBranch}?`}
-                      disabled={busy}
-                      onConfirm={() =>
-                        void runMutation('checkout', {
-                          worktree: w.path,
-                          branch: topology.currentBranch as string,
-                        })
-                      }
-                    />
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="mb-2 text-lg font-medium">Remotes</h2>
-            {remotesError !== null ? (
-              <Alert variant="destructive">
-                <AlertDescription>{remotesError}</AlertDescription>
-              </Alert>
-            ) : (
-              <ul className="flex flex-col gap-1" aria-label="Remotes">
-                {/*
-                  An empty list under a heading reads as a broken section
-                  rather than as an answer — seen in a browser on 2026-08-25.
-                  Say the true thing instead.
-                */}
-                {remotes.length === 0 && (
-                  <li className="text-sm text-muted-foreground">
-                    No remotes configured. Fetch, pull and push need one.
-                  </li>
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+          {/* History, left: the graph is the reason this console exists. */}
+          <section className="flex flex-col gap-2 rounded-xl bg-card py-3 ring-1 ring-foreground/10">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3.5">
+              <h2 className="flex items-center gap-2 text-sm font-medium">
+                History
+                {(ref ?? topology.currentBranch) !== null && (
+                  <Badge variant="outline" className="font-mono font-normal">
+                    {ref ?? topology.currentBranch}
+                  </Badge>
                 )}
-                {remotes.map((r) => (
-                  <li key={r.name} className="flex items-baseline gap-2 text-sm">
-                    <span className="shrink-0 font-medium">{r.name}</span>
-                    <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                      {r.fetchUrl}
-                    </code>
-                    {/* Shown only when it diverges — most remotes push where they fetch. */}
-                    {r.pushUrl !== r.fetchUrl && (
-                      <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                        push: {r.pushUrl}
-                      </code>
-                    )}
-                    <ConfirmButton
-                      label="Fetch"
-                      confirmLabel={`Fetch ${r.name}?`}
-                      disabled={busy}
-                      onConfirm={() => void runMutation('fetch', { remote: r.name })}
-                    />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          {(strays.length > 0 || straysError !== null) && (
-            <section>
-              <h2 className="mb-2 text-lg font-medium">Stray worktrees</h2>
-              {straysError !== null ? (
-                <Alert variant="destructive">
-                  <AlertDescription>{straysError}</AlertDescription>
-                </Alert>
-              ) : (
-                <ul className="flex flex-col gap-1" aria-label="Stray worktrees">
+              </h2>
+              {logError === null && commits[0] !== undefined && (
+                <div className="flex flex-wrap items-center gap-2">
                   {/*
-                    Rows wrap (`flex-wrap`), so an armed confirm label moves to
-                    its own line rather than crushing the path beside it. Seen
-                    in a browser on 2026-08-25: the growing button collapsed
-                    the row's `min-w-0 flex-1 truncate` path to a few
-                    characters at exactly the moment the user needed to read
-                    which directory they were about to delete.
+                    Only the tip. Squash, reword and drop are all narrowed
+                    to ranges ending at HEAD: rewriting mid-branch needs a
+                    rebase, and a rebase that conflicts stops in a state
+                    this pass has no UI for (design §11).
                   */}
-                  {strays.map((s) => (
-                    <li key={s.path} className="flex flex-wrap items-baseline gap-2 text-sm">
-                      <code className="min-w-0 flex-1 truncate">{s.path}</code>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {s.kind === 'vanished' ? 'directory is gone' : 'git does not track this'}
-                      </span>
-                      {s.claim !== null && (
-                        <span className="shrink-0 truncate text-xs">{s.claim.objectiveTitle}</span>
-                      )}
-                      {/*
-                        Two labels, because the two kinds cost different
-                        things. Releasing a vanished row clears a record and
-                        touches no file; releasing a stranded one deletes a
-                        directory whose size is not knowable from here, which
-                        is why that label names the path rather than an
-                        objective — an unclaimed stray has no objective, and a
-                        label implying otherwise would be worse than none.
-
-                        The `vanished` label used to read "Clear this record?
-                        Nothing on disk is touched." with nothing identifying
-                        WHICH record — several vanished rows in the list would
-                        arm identical-looking confirm buttons, the same shape
-                        of finding already recorded once for Pass C's two
-                        push-confirm buttons. `vanished`'s `claim` is never
-                        null by construction (only a claimed path can be
-                        classified vanished — see `strays.ts`), so the
-                        objective's own title is always available to name.
-                      */}
-                      <ConfirmButton
-                        label="Release"
-                        confirmLabel={
-                          s.kind === 'vanished'
-                            ? `Clear the record for “${s.claim.objectiveTitle}”? Nothing on disk is touched.`
-                            : `Delete ${s.path} and everything in it?`
-                        }
-                        disabled={busy}
-                        onConfirm={() => void runMutation('release', { path: s.path })}
-                        // Only one of these two actually destroys anything.
-                        tone={s.kind === 'stranded' ? 'destructive' : 'caution'}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          )}
-
-          <section>
-            <h2 className="mb-2 text-lg font-medium">Branches</h2>
-            <ul className="flex flex-col gap-1" aria-label="Branches">
-              {topology.branches.map((b) => (
-                <li key={b.name} className="flex items-baseline gap-2 text-sm">
-                  <span className="min-w-0 flex-1 truncate">{b.name}</span>
-                  {b.upstream !== null && (
-                    <span className="shrink-0 text-xs text-muted-foreground">→ {b.upstream}</span>
-                  )}
-                  {b.ahead !== null && (
-                    <span className="shrink-0 text-xs text-muted-foreground">{b.ahead} ahead</span>
-                  )}
-                  {b.behind !== null && (
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {b.behind} behind
-                    </span>
-                  )}
-                  {b.isCurrent && <span className="shrink-0 text-xs">current</span>}
-                  <OwnerBadge owner={b.owner} />
-                  {/*
-                    One control per remote rather than guessing which of
-                    several a click meant — the common single-remote case
-                    still reads as one plain "Push" button.
-                  */}
-                  {remotes.map((r) => (
+                  {commits[1] !== undefined && (
                     <ConfirmButton
-                      key={`push-${r.name}`}
-                      label={remotes.length > 1 ? `Push to ${r.name}` : 'Push'}
-                      /*
-                        Both arms name the remote. The VADD arm used to drop
-                        it, so with two remotes configured the two push
-                        buttons on one `vadd/<8hex>` row showed identical
-                        armed text naming neither — at the exact moment of
-                        the destructive second click.
-                      */
-                      confirmLabel={
-                        b.owner.kind === 'vadd'
-                          ? `Push ${b.name} to ${r.name}? The remote copy outlives integrate: discard.`
-                          : `Push ${b.name} to ${r.name}?`
-                      }
+                      label="Squash last two"
+                      confirmLabel={`Squash the last two commits into one?${publishedSuffix(2)}`}
                       disabled={busy}
                       onConfirm={() =>
-                        void runMutation('push', {
+                        void runMutation('squash', {
                           worktree: topology.mainRepoPath,
-                          remote: r.name,
-                          branch: b.name,
-                          setUpstream: b.upstream === null,
+                          from: (commits[1] as GitCommit).sha,
+                          to: (commits[0] as GitCommit).sha,
+                          message: (commits[1] as GitCommit).subject,
                         })
                       }
                     />
-                  ))}
-                  {b.isCurrent &&
-                    remotes.map((r) => (
-                      <ConfirmButton
-                        key={`pull-${r.name}`}
-                        label={remotes.length > 1 ? `Pull from ${r.name}` : 'Pull'}
-                        confirmLabel={`Pull from ${r.name}?`}
-                        disabled={busy}
-                        onConfirm={() =>
-                          void runMutation('pull', {
-                            worktree: topology.mainRepoPath,
-                            remote: r.name,
-                          })
-                        }
-                      />
-                    ))}
-                  {b.owner.kind !== 'vadd' && !b.isCurrent && (
-                    <ConfirmButton
-                      label="Delete branch"
-                      confirmLabel={`Delete ${b.name}?`}
-                      disabled={busy}
-                      onConfirm={() => {
-                        if (selectedId === null) return
-                        setBusy(true)
-                        setOutcome(null)
-                        void api
-                          .gitMutate(selectedId, 'branch/delete', { name: b.name })
-                          .then(({ report }) => setOutcome({ kind: 'ok', report }))
-                          .catch((e: Error) =>
-                            setOutcome({ kind: 'refused', message: e.message, objectiveId: null }),
-                          )
-                          .finally(() => {
-                            setBusy(false)
-                            void load()
-                          })
-                      }}
-                    />
                   )}
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="mb-2 text-lg font-medium">History</h2>
+                  <ConfirmButton
+                    label="Drop commit"
+                    confirmLabel={`Really drop “${commits[0].subject}”?${publishedSuffix(1)}`}
+                    disabled={busy}
+                    onConfirm={() =>
+                      void runMutation('drop', {
+                        worktree: topology.mainRepoPath,
+                        sha: (commits[0] as GitCommit).sha,
+                      })
+                    }
+                  />
+                </div>
+              )}
+            </div>
             {logError !== null ? (
-              <Alert variant="destructive">
-                <AlertDescription>{logError}</AlertDescription>
-              </Alert>
+              <div className="px-3.5">
+                <Alert variant="destructive">
+                  <AlertDescription>{logError}</AlertDescription>
+                </Alert>
+              </div>
             ) : (
               <>
                 {rewriteWarning !== null && (
                   <p
                     role="status"
                     aria-label="Rewrite warning"
-                    className="mb-2 text-sm text-destructive"
+                    className="px-3.5 text-sm text-destructive"
                   >
                     {rewriteWarning}
                   </p>
                 )}
-                {commits[0] !== undefined && (
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    {/*
-                      Only the tip. Squash, reword and drop are all narrowed
-                      to ranges ending at HEAD: rewriting mid-branch needs a
-                      rebase, and a rebase that conflicts stops in a state
-                      this pass has no UI for (design §11).
-                    */}
-                    <ConfirmButton
-                      label="Drop commit"
-                      confirmLabel={`Really drop “${commits[0].subject}”?${publishedSuffix(1)}`}
-                      disabled={busy}
-                      onConfirm={() =>
-                        void runMutation('drop', {
-                          worktree: topology.mainRepoPath,
-                          sha: (commits[0] as GitCommit).sha,
-                        })
-                      }
-                    />
-                    {commits[1] !== undefined && (
-                      <ConfirmButton
-                        label="Squash last two"
-                        confirmLabel={`Squash the last two commits into one?${publishedSuffix(2)}`}
-                        disabled={busy}
-                        onConfirm={() =>
-                          void runMutation('squash', {
-                            worktree: topology.mainRepoPath,
-                            from: (commits[1] as GitCommit).sha,
-                            to: (commits[0] as GitCommit).sha,
-                            message: (commits[1] as GitCommit).subject,
-                          })
-                        }
-                      />
-                    )}
-                  </div>
-                )}
-                <CommitLog commits={commits} />
+                <div className="px-2">
+                  <CommitLog commits={commits} />
+                </div>
                 {hasMore && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-2"
-                    disabled={loadingMore}
-                    onClick={() => void loadMore()}
-                  >
-                    Load 50 more
-                  </Button>
+                  <div className="px-3.5">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={loadingMore}
+                      onClick={() => void loadMore()}
+                    >
+                      Load 50 more
+                    </Button>
+                  </div>
                 )}
               </>
             )}
           </section>
-        </>
+
+          {/* Topology, right. */}
+          <div className="flex flex-col gap-4">
+            <TopologyPanel title="Branches" count={topology.branches.length}>
+              <ul className="flex flex-col" aria-label="Branches">
+                {topology.branches.map((b) => (
+                  <li
+                    key={b.name}
+                    className={`flex flex-wrap items-center gap-2.5 rounded-lg px-2 py-2 ${
+                      b.isCurrent ? 'bg-accent' : ''
+                    }`}
+                  >
+                    <span aria-hidden="true" className={`size-2 rounded-full ${branchDot(b)}`} />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="flex items-center gap-1.5">
+                        <code
+                          className={`min-w-0 truncate text-[13px] ${b.isCurrent ? 'font-medium' : ''}`}
+                        >
+                          {b.name}
+                        </code>
+                        {b.isCurrent && (
+                          <Badge className="h-4 bg-status-active/15 px-1.5 text-[10px] text-foreground">
+                            current
+                          </Badge>
+                        )}
+                      </span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {b.upstream !== null ? `→ ${b.upstream}` : 'no upstream'}
+                        {b.ahead !== null && ` · ${b.ahead} ahead`}
+                        {b.behind !== null && ` · ${b.behind} behind`}
+                      </span>
+                    </span>
+                    <OwnerBadge owner={b.owner} />
+                    {/* The current branch's Push and Pull live in the header;
+                        it cannot be deleted, so it has nothing left to disclose. */}
+                    {!b.isCurrent && (
+                      <RowActions name={b.name}>
+                        {/*
+                          One control per remote rather than guessing which of
+                          several a click meant — the common single-remote case
+                          still reads as one plain "Push" button.
+                        */}
+                        {remotes.map((r) => (
+                          <ConfirmButton
+                            key={`push-${r.name}`}
+                            label={remotes.length > 1 ? `Push to ${r.name}` : 'Push'}
+                            /*
+                              Both arms name the remote. The VADD arm used to drop
+                              it, so with two remotes configured the two push
+                              buttons on one `vadd/<8hex>` row showed identical
+                              armed text naming neither — at the exact moment of
+                              the destructive second click.
+                            */
+                            confirmLabel={
+                              b.owner.kind === 'vadd'
+                                ? `Push ${b.name} to ${r.name}? The remote copy outlives integrate: discard.`
+                                : `Push ${b.name} to ${r.name}?`
+                            }
+                            disabled={busy}
+                            onConfirm={() =>
+                              void runMutation('push', {
+                                worktree: topology.mainRepoPath,
+                                remote: r.name,
+                                branch: b.name,
+                                setUpstream: b.upstream === null,
+                              })
+                            }
+                          />
+                        ))}
+                        {b.owner.kind !== 'vadd' && (
+                          <ConfirmButton
+                            label="Delete branch"
+                            confirmLabel={`Delete ${b.name}?`}
+                            disabled={busy}
+                            onConfirm={() => {
+                              if (selectedId === null) return
+                              setBusy(true)
+                              setOutcome(null)
+                              void api
+                                .gitMutate(selectedId, 'branch/delete', { name: b.name })
+                                .then(({ report }) => setOutcome({ kind: 'ok', report }))
+                                .catch((e: Error) =>
+                                  setOutcome({
+                                    kind: 'refused',
+                                    message: e.message,
+                                    objectiveId: null,
+                                  }),
+                                )
+                                .finally(() => {
+                                  setBusy(false)
+                                  void load()
+                                })
+                            }}
+                          />
+                        )}
+                      </RowActions>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </TopologyPanel>
+
+            <TopologyPanel title="Worktrees" count={topology.worktrees.length}>
+              <ul className="flex flex-col" aria-label="Worktrees">
+                {topology.worktrees.map((w) => (
+                  <li
+                    key={w.path}
+                    className="flex flex-wrap items-center gap-2.5 rounded-lg px-2 py-2"
+                  >
+                    {w.isMain ? (
+                      <Home className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    ) : (
+                      <Layers
+                        className="size-4 shrink-0 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <code className="min-w-0 truncate text-[13px]">{w.path}</code>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {w.branch ?? 'detached'}
+                        {w.isMain && ' · main checkout'}
+                        {w.prunable && ' · prunable'}
+                      </span>
+                    </span>
+                    <OwnerBadge owner={w.owner} />
+                    <span className="flex w-full flex-wrap gap-2 pl-6">
+                      <ConfirmButton
+                        label="Stash"
+                        confirmLabel="Stash all changes here?"
+                        disabled={busy}
+                        tone="caution"
+                        onConfirm={() => void runMutation('stash', { worktree: w.path })}
+                      />
+                      {/*
+                        Refused on a VADD-owned worktree, so it is not offered
+                        there either: /diff, rollback and integrate: discard all
+                        depend on objectives.branchName, and discard deletes the
+                        branch it is handed. The server refuses this
+                        independently — the UI hiding it is convenience, not the
+                        guard.
+                      */}
+                      {w.owner.kind !== 'vadd' && topology.currentBranch !== null && (
+                        <ConfirmButton
+                          label="Switch branch"
+                          confirmLabel={`Switch to ${topology.currentBranch}?`}
+                          disabled={busy}
+                          tone="caution"
+                          onConfirm={() =>
+                            void runMutation('checkout', {
+                              worktree: w.path,
+                              branch: topology.currentBranch as string,
+                            })
+                          }
+                        />
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </TopologyPanel>
+
+            <TopologyPanel title="Remotes" count={remotes.length}>
+              {remotesError !== null ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{remotesError}</AlertDescription>
+                </Alert>
+              ) : (
+                <ul className="flex flex-col" aria-label="Remotes">
+                  {/*
+                    An empty list under a heading reads as a broken section
+                    rather than as an answer — seen in a browser on 2026-08-25.
+                    Say the true thing instead.
+                  */}
+                  {remotes.length === 0 && (
+                    <li className="px-2 py-2 text-sm text-muted-foreground">
+                      No remotes configured. Fetch, pull and push need one.
+                    </li>
+                  )}
+                  {remotes.map((r) => (
+                    <li key={r.name} className="flex items-center gap-2.5 rounded-lg px-2 py-2">
+                      <Cloud className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="text-[13px] font-medium">{r.name}</span>
+                        <code className="min-w-0 truncate text-xs text-muted-foreground">
+                          {r.fetchUrl}
+                        </code>
+                        {/* Shown only when it diverges — most remotes push where they fetch. */}
+                        {r.pushUrl !== r.fetchUrl && (
+                          <code className="min-w-0 truncate text-xs text-muted-foreground">
+                            push: {r.pushUrl}
+                          </code>
+                        )}
+                      </span>
+                      <ConfirmButton
+                        label="Fetch"
+                        confirmLabel={`Fetch ${r.name}?`}
+                        disabled={busy}
+                        tone="caution"
+                        onConfirm={() => void runMutation('fetch', { remote: r.name })}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </TopologyPanel>
+
+            {(strays.length > 0 || straysError !== null) && (
+              <TopologyPanel
+                tone="attention"
+                title={
+                  <>
+                    <CircleAlert className="size-4 text-status-attention" aria-hidden="true" />
+                    Stray worktrees
+                  </>
+                }
+                count={straysError === null ? strays.length : undefined}
+              >
+                {straysError !== null ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>{straysError}</AlertDescription>
+                  </Alert>
+                ) : (
+                  <ul className="flex flex-col" aria-label="Stray worktrees">
+                    {/*
+                      Rows wrap (`flex-wrap`), so an armed confirm label moves to
+                      its own line rather than crushing the path beside it. Seen
+                      in a browser on 2026-08-25.
+                    */}
+                    {strays.map((s) => (
+                      <li
+                        key={s.path}
+                        className="flex flex-wrap items-center gap-2.5 rounded-lg px-2 py-2"
+                      >
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <code className="min-w-0 truncate text-[13px]">{s.path}</code>
+                          <span className="truncate text-xs text-muted-foreground">
+                            {s.kind === 'vanished'
+                              ? 'directory is gone'
+                              : 'git does not track this'}
+                            {s.claim !== null && ` · ${s.claim.objectiveTitle}`}
+                          </span>
+                        </span>
+                        {/*
+                          Two labels, because the two kinds cost different
+                          things. Releasing a vanished row clears a record and
+                          touches no file; releasing a stranded one deletes a
+                          directory whose size is not knowable from here, which
+                          is why that label names the path rather than an
+                          objective — an unclaimed stray has no objective, and a
+                          label implying otherwise would be worse than none.
+                          `vanished`'s `claim` is never null by construction
+                          (see `strays.ts`), so the objective's own title is
+                          always available to name.
+                        */}
+                        <ConfirmButton
+                          label="Release"
+                          confirmLabel={
+                            s.kind === 'vanished'
+                              ? `Clear the record for “${s.claim.objectiveTitle}”? Nothing on disk is touched.`
+                              : `Delete ${s.path} and everything in it?`
+                          }
+                          disabled={busy}
+                          onConfirm={() => void runMutation('release', { path: s.path })}
+                          // Only one of these two actually destroys anything.
+                          tone={s.kind === 'stranded' ? 'destructive' : 'caution'}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </TopologyPanel>
+            )}
+          </div>
+        </div>
       )}
     </main>
   )

@@ -97,6 +97,7 @@ describe('GitConsole remotes', () => {
     const list = await screen.findByLabelText('Branches')
     const rows = within(list).getAllByRole('listitem')
     const vaddRow = rows.find((r) => r.textContent?.includes('vadd/fdca5ca3')) as HTMLElement
+    await userEvent.click(within(vaddRow).getByRole('button', { name: /^Actions for/ }))
     await userEvent.click(within(vaddRow).getByRole('button', { name: /^push/i }))
     // The consequence is named while the user can still decline, exactly as
     // the cleared-checkpoint warning is. VADD will not delete from a remote,
@@ -123,6 +124,10 @@ describe('GitConsole remotes', () => {
       const rows = within(screen.getByLabelText('Branches')).getAllByRole('listitem')
       return rows.find((r) => r.textContent?.includes('vadd/fdca5ca3')) as HTMLElement
     }
+
+    // The row's push controls sit behind its Actions toggle; opened once,
+    // the disclosure survives the reloads each push triggers (same row key).
+    await userEvent.click(within(vaddRow()).getByRole('button', { name: /^Actions for/ }))
 
     const armedLabels: string[] = []
     for (const remote of ['origin', 'upstream']) {
@@ -185,11 +190,10 @@ describe('GitConsole remotes', () => {
       },
     })
     renderConsole()
-    const list = await screen.findByLabelText('Branches')
-    const rows = within(list).getAllByRole('listitem')
-    const row = rows.find((r) => r.textContent?.includes('master')) as HTMLElement
-    await userEvent.click(within(row).getByRole('button', { name: /^push/i }))
-    await userEvent.click(within(row).getByRole('button', { name: /push master/i }))
+    await screen.findByLabelText('Branches')
+    // The current branch's Push lives in the sync header, not on its row.
+    await userEvent.click(screen.getByRole('button', { name: /^push/i }))
+    await userEvent.click(screen.getByRole('button', { name: /push master/i }))
     await waitFor(() => expect(screen.getByText('Push master to origin')).toBeTruthy())
     // The UI consequence of MutationKind.undoable: an Undo here would reset
     // the local branch and un-push nothing.

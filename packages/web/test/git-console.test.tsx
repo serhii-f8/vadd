@@ -285,7 +285,9 @@ describe('GitConsole', () => {
       'GET /api/projects/p1/git/log': { body: log },
     })
     renderConsole()
-    expect(await screen.findByText('origin/master', { exact: false })).toBeTruthy()
+    // The sync header names the current upstream too; the row is what this checks.
+    const list = await screen.findByRole('list', { name: 'Branches' })
+    expect(within(list).getByText('origin/master', { exact: false })).toBeTruthy()
   })
 
   it('discards a stale loadMore response that resolves after a fresh load() has already replaced the page', async () => {
