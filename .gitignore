@@ -18,3 +18,8 @@ dist-types/
 .env
 .env.*
 coverage/
+
+# Internal specs and working notes — not part of the public repository
+docs/superpowers/
+vadd-spec-final.md
+vadd-spec-phase2.md
