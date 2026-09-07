@@ -13,6 +13,7 @@
   ],
   "type": "module",
   "license": "Apache-2.0",
+  "author": "Serhii Fedorenko",
   "publishConfig": {
     "access": "public"
   },
@@ -31,20 +32,20 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
-    "fastify": "^5.11.0",
-    "@fastify/static": "^8.0.4",
+    "@agentclientprotocol/codex-acp": "1.4.0",
+    "@anthropic-ai/sdk": "^0.115.0",
+    "@fastify/static": "^10.1.3",
+    "@zed-industries/agent-client-protocol": "0.4.5",
+    "@zed-industries/claude-code-acp": "0.16.2",
     "better-sqlite3": "^13.0.2",
     "drizzle-orm": "^0.45.2",
     "execa": "^10.0.1",
+    "fastify": "^5.12.1",
     "xstate": "^5.20.1",
-    "zod": "^3.25.76",
-    "@anthropic-ai/sdk": "^0.115.0",
-    "@zed-industries/agent-client-protocol": "0.4.5",
-    "@zed-industries/claude-code-acp": "0.16.2",
-    "@agentclientprotocol/codex-acp": "1.4.0"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.4"
   }
 }

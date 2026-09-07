@@ -5,11 +5,11 @@ import { FolderBrowser } from '../src/projects/FolderBrowser.js'
 import { mockFetch } from './setup.js'
 
 const home = {
-  path: '/home/serhii',
+  path: '/home/alice',
   parent: '/home',
   entries: [
-    { name: 'projects', path: '/home/serhii/projects', isGitRepo: false },
-    { name: 'flexpick.net', path: '/home/serhii/flexpick.net', isGitRepo: true },
+    { name: 'projects', path: '/home/alice/projects', isGitRepo: false },
+    { name: 'flexpick.net', path: '/home/alice/flexpick.net', isGitRepo: true },
   ],
 }
 
@@ -22,14 +22,14 @@ describe('FolderBrowser', () => {
   })
 
   it('navigates into a directory on click', async () => {
-    const nested = { path: '/home/serhii/projects', parent: '/home/serhii', entries: [] }
+    const nested = { path: '/home/alice/projects', parent: '/home/alice', entries: [] }
     mockFetch({
       'GET /api/fs/browse': { body: home },
-      'GET /api/fs/browse?path=%2Fhome%2Fserhii%2Fprojects': { body: nested },
+      'GET /api/fs/browse?path=%2Fhome%2Falice%2Fprojects': { body: nested },
     })
     render(<FolderBrowser onSelect={() => undefined} onClose={() => undefined} />)
     await userEvent.click(await screen.findByText('projects'))
-    await screen.findByText('/home/serhii/projects')
+    await screen.findByText('/home/alice/projects')
   })
 
   it('navigates up via Up, and disables Up once there is no parent', async () => {
@@ -52,7 +52,7 @@ describe('FolderBrowser', () => {
     render(<FolderBrowser onSelect={onSelect} onClose={() => undefined} />)
     await screen.findByText('projects')
     await userEvent.click(screen.getByRole('button', { name: 'Select this folder' }))
-    expect(onSelect).toHaveBeenCalledWith('/home/serhii')
+    expect(onSelect).toHaveBeenCalledWith('/home/alice')
   })
 
   it('closes on Cancel', async () => {

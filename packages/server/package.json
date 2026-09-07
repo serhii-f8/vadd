@@ -10,12 +10,12 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
-    "@fastify/static": "^8.0.4",
+    "@fastify/static": "^10.1.3",
     "@vadd/core": "workspace:*",
     "better-sqlite3": "^13.0.2",
     "drizzle-orm": "^0.45.2",
     "execa": "^10.0.1",
-    "fastify": "^5.11.0",
+    "fastify": "^5.12.1",
     "xstate": "^5.20.1",
     "zod": "^3.25.76"
   },

@@ -1,7 +1,7 @@
 # Demo recording script
 
-For a human to follow with real screen-recording software (no browser automation exists in
-this environment). Produces `assets/demo.gif`, referenced from `README.md`.
+For a human to follow with real screen-recording software. Produces `assets/demo.gif`,
+referenced from `README.md`.
 
 **Setup before recording:** a project already added, a real Claude Code session
 authenticated, and a small real repo with an obvious one-line bug to fix — the smaller the

@@ -1,9 +1,20 @@
+# Dependencies and build output
 node_modules/
 dist/
 dist-types/
-.idea/
-*.log
-.serena/
 *.tsbuildinfo
+*.tgz
+
+# Editors and local tooling
+.idea/
+.vscode/
+.serena/
 .superpowers/
 .worktrees/
+.DS_Store
+
+# Logs and local environment
+*.log
+.env
+.env.*
+coverage/

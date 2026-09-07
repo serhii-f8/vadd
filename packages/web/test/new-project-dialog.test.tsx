@@ -100,13 +100,13 @@ describe('NewProjectDialog', () => {
       ...routes({ status: 201, body: created }),
       'GET /api/fs/browse': {
         body: {
-          path: '/home/serhii',
+          path: '/home/alice',
           parent: '/home',
-          entries: [{ name: 'flexpick.net', path: '/home/serhii/flexpick.net', isGitRepo: true }],
+          entries: [{ name: 'flexpick.net', path: '/home/alice/flexpick.net', isGitRepo: true }],
         },
       },
-      'GET /api/fs/browse?path=%2Fhome%2Fserhii%2Fflexpick.net': {
-        body: { path: '/home/serhii/flexpick.net', parent: '/home/serhii', entries: [] },
+      'GET /api/fs/browse?path=%2Fhome%2Falice%2Fflexpick.net': {
+        body: { path: '/home/alice/flexpick.net', parent: '/home/alice', entries: [] },
       },
     })
     await renderDialog()
@@ -114,7 +114,7 @@ describe('NewProjectDialog', () => {
     await userEvent.click(await screen.findByText('flexpick.net'))
     await userEvent.click(screen.getByRole('button', { name: 'Select this folder' }))
     expect((screen.getByLabelText('Repository path') as HTMLInputElement).value).toBe(
-      '/home/serhii/flexpick.net',
+      '/home/alice/flexpick.net',
     )
   })
 
@@ -184,7 +184,7 @@ describe('NewProjectDialog — Clone repository tab', () => {
       'GET /api/projects': { body: [] },
       'POST /api/projects/clone': { status: 201, body: created },
       'GET /api/fs/browse': {
-        body: { path: '/home/serhii', parent: '/home', entries: [] },
+        body: { path: '/home/alice', parent: '/home', entries: [] },
       },
     })
     await renderDialog()
@@ -196,7 +196,7 @@ describe('NewProjectDialog — Clone repository tab', () => {
     await waitFor(() => expect(postBody(calls)).toBeDefined())
     expect(postBody(calls)).toEqual({
       url: 'https://example.com/r.git',
-      destPath: '/home/serhii/r',
+      destPath: '/home/alice/r',
       agentKind: 'claude-code',
     })
   })
@@ -205,7 +205,7 @@ describe('NewProjectDialog — Clone repository tab', () => {
     mockFetch({
       'GET /api/projects': { body: [] },
       'POST /api/projects/clone': { status: 400, body: { error: 'Invalid clone URL: bad scheme' } },
-      'GET /api/fs/browse': { body: { path: '/home/serhii', parent: '/home', entries: [] } },
+      'GET /api/fs/browse': { body: { path: '/home/alice', parent: '/home', entries: [] } },
     })
     await renderDialog()
     await userEvent.click(screen.getByRole('tab', { name: 'Clone repository' }))
