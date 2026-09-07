@@ -14,6 +14,14 @@
   "type": "module",
   "license": "Apache-2.0",
   "author": "Serhii Fedorenko",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/serhii-f8/vadd.git"
+  },
+  "homepage": "https://github.com/serhii-f8/vadd#readme",
+  "bugs": {
+    "url": "https://github.com/serhii-f8/vadd/issues"
+  },
   "publishConfig": {
     "access": "public"
   },

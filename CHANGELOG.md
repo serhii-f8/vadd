@@ -6,7 +6,7 @@ semantic versioning.
 
 ## [Unreleased]
 
-## [0.1.0] — first public release
+## [0.1.0] — 2026-09-07 — first public release
 
 - Localhost web app wrapping Claude Code (and Codex) over the Agent Client Protocol.
 - Output contract: typed agent events validated against a Zod schema, with every parse or
