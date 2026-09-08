@@ -42,6 +42,17 @@ function RefChip({ name }: { name: string }) {
   )
 }
 
+/**
+ * How many ref chips a row draws before it stops.
+ *
+ * Every objective branches from the same starting commit, so one commit can
+ * carry a chip per open objective. The subject beside them is already
+ * `min-w-0 truncate` and shrinks to nothing; a chip does not shrink at all, so
+ * an uncapped list runs past the card's right edge and over whatever sits
+ * next to it — seen with seven `vadd/…` chips on 2026-09-08.
+ */
+const MAX_REFS = 3
+
 export function CommitLog({ commits }: { commits: GitCommit[] }) {
   const laid = layoutCommits(commits)
   const lanes = Math.max(1, laneCount(laid))
@@ -83,9 +94,18 @@ export function CommitLog({ commits }: { commits: GitCommit[] }) {
             >
               {commit.subject}
             </span>
-            {commit.refs.map((r) => (
+            {commit.refs.slice(0, MAX_REFS).map((r) => (
               <RefChip key={r} name={r} />
             ))}
+            {commit.refs.length > MAX_REFS && (
+              <Badge
+                variant="outline"
+                className="h-[18px] shrink-0 font-mono font-normal text-muted-foreground"
+                title={commit.refs.slice(MAX_REFS).join(', ')}
+              >
+                +{commit.refs.length - MAX_REFS}
+              </Badge>
+            )}
             <span className="hidden w-16 shrink-0 truncate text-right text-xs text-muted-foreground sm:inline">
               {commit.author}
             </span>

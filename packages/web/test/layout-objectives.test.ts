@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { ObjectiveListRow } from '../src/api.js'
-import { layoutObjectives, TONE_ORDER } from '../src/map/layout-objectives.js'
+import {
+  layoutObjectives,
+  NODE_HEIGHT,
+  ROW_HEIGHT,
+  TONE_ORDER,
+} from '../src/map/layout-objectives.js'
 
 function row(over: Partial<ObjectiveListRow> = {}): ObjectiveListRow {
   return {
@@ -65,5 +70,23 @@ describe('layoutObjectives', () => {
 
   it('exports column order matching StatusTone declaration order', () => {
     expect(TONE_ORDER).toEqual(['idle', 'active', 'attention', 'done', 'failed'])
+  })
+})
+
+/**
+ * The map lays nodes out on a fixed vertical grid, so a card that renders
+ * taller than its slot overlaps the one below it. Seen on 2026-09-08: an
+ * investigation objective's chip row wraps to two lines, measuring 116px in a
+ * real browser against a 96px `ROW_HEIGHT` — the card below it was covered by
+ * 20px. Both constants live in one module so they cannot drift apart again.
+ */
+describe('map row spacing', () => {
+  it('leaves a gap between a full-height node and the next row', () => {
+    expect(ROW_HEIGHT).toBeGreaterThan(NODE_HEIGHT)
+  })
+
+  it('is tall enough for a node whose chip row wraps to two lines', () => {
+    // Measured in Chrome at 1440px: 92px with one chip line, 116px with two.
+    expect(NODE_HEIGHT).toBeGreaterThanOrEqual(116)
   })
 })

@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import { ProjectsProvider } from '../src/app/ProjectsContext.js'
+import { NODE_HEIGHT } from '../src/map/layout-objectives.js'
 import { QuestMap } from '../src/map/QuestMap.js'
 import { mockFetch } from './setup.js'
 
@@ -99,4 +100,26 @@ it('names its five columns, so the layout means something', async () => {
     .getAllByRole('listitem')
     .map((li) => li.textContent)
   expect(labels).toEqual(['Idle', 'Working', 'Needs you', 'Done', 'Failed'])
+})
+
+/**
+ * The canvas positions nodes on a fixed pitch, so the card must not be free to
+ * size itself: an investigation objective's chip row wraps to a second line and
+ * measured 116px in Chrome against the 96px pitch this shipped with, covering
+ * 20px of the node below. Asserting the card carries `NODE_HEIGHT` is what
+ * makes the two constants one fact rather than two that happened to agree.
+ */
+describe('QuestMap node height', () => {
+  it('pins every card to NODE_HEIGHT, whatever its chips wrap to', async () => {
+    mockFetch({
+      'GET /api/projects': { body: [] },
+      'GET /api/objectives': {
+        body: [objective({ mode: 'investigation', status: 'exploring' })],
+      },
+    })
+    renderMap()
+    const title = await screen.findByText('Fix the login redirect')
+    const card = title.closest('div[style]') as HTMLElement | null
+    expect(card?.style.height).toBe(`${NODE_HEIGHT}px`)
+  })
 })

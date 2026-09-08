@@ -7,7 +7,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { api, type ObjectiveListRow } from '../api.js'
 import { useProjects } from '../app/ProjectsContext.js'
 import { statusFor } from '../routes/stateColor.js'
-import { layoutObjectives, TONE_ORDER } from './layout-objectives.js'
+import { layoutObjectives, ROW_HEIGHT, TONE_ORDER } from './layout-objectives.js'
 import { type ObjectiveFlowNode, ObjectiveNode } from './ObjectiveNode.js'
 
 const COLUMN_WIDTH = 260
@@ -26,7 +26,6 @@ const TONE_STATUS = {
   done: 'done',
   failed: 'failed',
 } as const
-const ROW_HEIGHT = 96
 
 const nodeTypes = { objective: ObjectiveNode }
 

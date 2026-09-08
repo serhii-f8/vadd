@@ -74,13 +74,20 @@ describe('CommitGraph gutter', () => {
     expect(rows.every((r) => r.dots === 1)).toBe(true)
   })
 
+  // Two commits, not one carrying all four: a row draws at most MAX_REFS chips
+  // (see `CommitLog`), so four on one commit would be summarised rather than
+  // labelled, and this test is about the labelling.
   it('labels refs by kind and mutes checkpoint commits', () => {
     const { container } = render(
       <CommitLog
         commits={[
           {
-            ...commit('a'.repeat(40), [], 'vadd-checkpoint: task 1'),
-            refs: ['main', 'origin/main', 'vadd/12345678', 'v1.2.0'],
+            ...commit('a'.repeat(40), ['b'.repeat(40)], 'vadd-checkpoint: task 1'),
+            refs: ['main', 'origin/main'],
+          },
+          {
+            ...commit('b'.repeat(40), [], 'chore: scaffold'),
+            refs: ['vadd/12345678', 'v1.2.0'],
           },
         ]}
       />,

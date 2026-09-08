@@ -8,6 +8,7 @@ import type { ObjectiveListRow } from '../api.js'
 import type { ViewStateName } from '../focus/primary.js'
 import { stateLabel } from '../focus/state-label.js'
 import { statusFor } from '../routes/stateColor.js'
+import { NODE_HEIGHT } from './layout-objectives.js'
 
 export type ObjectiveFlowNode = Node<{ objective: ObjectiveListRow }, 'objective'>
 
@@ -24,8 +25,16 @@ export function ObjectiveNode({ data }: NodeProps<ObjectiveFlowNode>) {
   const { objective: o } = data
   const status = statusFor(o.status as ViewStateName)
   return (
-    <div className="w-60 rounded-xl bg-card text-sm ring-1 ring-foreground/10">
-      <Link to={`/o/${o.id}`} className="nodrag flex flex-col gap-2 px-3.5 py-3 hover:no-underline">
+    // Height pinned, not measured: the canvas positions nodes on a fixed
+    // pitch, so a card free to grow overlaps its neighbour. See NODE_HEIGHT.
+    <div
+      className="w-60 overflow-hidden rounded-xl bg-card text-sm ring-1 ring-foreground/10"
+      style={{ height: NODE_HEIGHT }}
+    >
+      <Link
+        to={`/o/${o.id}`}
+        className="nodrag flex h-full flex-col justify-between gap-2 px-3.5 py-3 hover:no-underline"
+      >
         <span className="flex items-center gap-2">
           <Tooltip>
             <TooltipTrigger asChild>

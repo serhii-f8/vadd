@@ -49,32 +49,30 @@ but non-blocking.
 
 ## The specification is binding
 
-`vadd-spec-final.md` is final. Every decision in its §1 and §2 is locked, and §11 lists what
-is deliberately out of scope. A change that deviates from it — a different framework, a
-different isolation model, telemetry, anything §11 names — is made by **amending the spec in
-the same commit as the design that justifies it**, following the numbered amendments already
-recorded there. Do not implement the deviation first and document it later.
+[`docs/spec.md`](docs/spec.md) records the locked product decisions (§2), the architecture,
+and every amendment made to a locked decision so far (§13). A change that deviates from it —
+a different framework, a different isolation model, telemetry, anything §1's non-goals name —
+is made by **amending the spec in the same commit as the design that justifies it**,
+following the numbered amendments already there. Do not implement the deviation first and
+document it later.
 
-`CLAUDE.md` is the working engineering guide: the current state, the standing constraints,
-and a long list of traps that each cost a real defect. Read the relevant section before
-touching the area it describes.
+`CLAUDE.md` is the working engineering guide: the standing constraints and a long list of
+traps that each cost a real defect. Read the relevant section before touching the area it
+describes.
 
 ## How work is done
 
-1. **Design first.** A non-trivial change starts as a design note under
-   `docs/superpowers/specs/` and, for multi-step work, a plan under `docs/superpowers/plans/`.
-   Both are dated.
+1. **Design first.** A non-trivial change starts as a dated design note, and for multi-step
+   work a dated plan, before any code is written.
 2. **Test first.** Write the failing test, watch it fail for the right reason, then make it
    pass. A test that was never seen red proves nothing.
 3. **Verify for real.** Unit tests are the floor, not the ceiling. UI changes are opened in a
-   browser (`scripts/browser-shot.mjs` drives a headless Chrome; the recipe is in
-   `docs/superpowers/notes/2026-08-25-first-agent-browser-render.md`). Server changes that
-   the suite drives only through `app.inject` are exercised against a running server. The
-   result goes in a dated note under `docs/superpowers/notes/`, including what was *not*
-   proven.
-4. **Record the status.** `docs/superpowers/notes/status-ledger.md` and the "Current state"
-   section of `CLAUDE.md` are updated in the same commit as the work. A row is marked done
-   when a command was run and its output seen, never from intent.
+   browser — `scripts/browser-shot.mjs` drives a headless Chrome over the DevTools Protocol
+   with no extra dependency, always against a scratch `VADD_HOME` and a scratch port. Server
+   changes the suite drives only through `app.inject` are exercised against a running server.
+   Record what was verified, including what was *not* proven.
+4. **Claim only what you ran.** A change is done when a command was run and its output seen,
+   never from intent.
 
 ## Layering rules
 
