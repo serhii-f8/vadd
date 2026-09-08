@@ -1,6 +1,6 @@
 {
   "name": "@vadd/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "description": "VADD — a localhost comprehension and verification layer for Claude Code and Codex, wrapping them over ACP.",
   "keywords": [

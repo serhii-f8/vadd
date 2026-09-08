@@ -6,6 +6,15 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-09-08
+
+- Documentation: a public specification (`docs/spec.md`) and a screen-by-screen user guide
+  (`docs/user-guide.md`), both linked from a rewritten README with screenshots.
+- Fixed: Quest Map cards whose status chips wrapped to a second line overlapped the card
+  below them, because the canvas lays nodes out on a fixed vertical pitch.
+- Fixed: a commit carrying many branch refs drew a chip per ref, running the row past the
+  right edge of the history card. At most three are drawn and the rest are counted.
+
 ## [0.1.0] — 2026-09-07 — first public release
 
 - Localhost web app wrapping Claude Code (and Codex) over the Agent Client Protocol.
